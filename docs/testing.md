@@ -30,7 +30,7 @@ For a new Paperless version or a meaningful pipeline change:
 
 1. Start the target Paperless release and an external Ollama instance.
 2. Build/pull both project images.
-3. Start Studio and configure App-Einstellungen.
+3. Start the Control Center and configure App settings.
 4. Run `doctor`.
 5. Import a native-text PDF: OCR should avoid unnecessary Paddle inference and hand off to LLM.
 6. Import a scanned PDF: selected pages should use PaddleOCR and update Paperless `content`.

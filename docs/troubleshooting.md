@@ -6,7 +6,7 @@
 docker compose --profile tools run --rm doctor
 ```
 
-It checks the saved App-Einstellungen, Paperless reachability/token, required queue/review tags, Ollama reachability and currently configured model names.
+It checks the saved App settings, Paperless reachability/token, required queue/review tags, Ollama reachability and currently configured model names.
 
 ## Logs
 
@@ -21,16 +21,16 @@ docker compose logs --tail 200 suggestion-bridge
 
 Check:
 
-- Paperless workflow adds the OCR queue tag configured under **App-Einstellungen -> Pipeline & Tags**;
+- Paperless workflow adds the OCR queue tag configured under **App settings -> Pipeline & Tags**;
 - Paperless API token has document read/write permission;
-- OCR language/version/device under **App-Einstellungen -> OCR** are valid for the installed PaddleOCR version;
+- OCR language/version/device under **App settings -> OCR** are valid for the installed PaddleOCR version;
 - enough Docker RAM/shared memory is assigned in `.env`.
 
 ## LLM queue never moves
 
 Check:
 
-- **App-Einstellungen -> Verbindungen -> Verbindungen testen** succeeds for Ollama;
+- **App settings -> Connections -> Test connections with current draft** succeeds for Ollama;
 - the model configured in the relevant LLM stage exists in Ollama;
 - no configured OCR queue/error blocking tag remains;
 - the shared `ai.lock` is not held indefinitely by another worker/container.
@@ -45,7 +45,7 @@ Docker-only values such as bind ports, volumes and CPU/RAM limits are different:
 
 Check:
 
-- `Produktiv verwenden` is enabled under **Korrespondent-Vorschlag -> Einstellungen**;
+- **Enable in production** is on under **Correspondent fallback -> Settings**;
 - fallback produced a genuinely new name, not an exact existing correspondent;
 - document still carries the configured review tag;
 - Paperless AI settings point at the suggestion bridge and embeddings are disabled;

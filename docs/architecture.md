@@ -34,7 +34,7 @@ One Compose project runs four long-lived services from two images:
 |---|---|
 | `ocr-worker` | page analysis and PaddleOCR |
 | `metadata-worker` | metadata classification and optional correspondent fallback |
-| `prompt-ui` | configuration, prompt editing and testing |
+| `prompt-ui` | Control Center: configuration, testing and history |
 | `suggestion-bridge` | Paperless native review adapter for new correspondent candidates |
 
 Ollama remains external.
@@ -71,7 +71,7 @@ They are useful features, but they are outside this project's goal. The target i
 
 ## Configuration and state
 
-Deployment owns secrets and Docker-level settings. Prompt Studio owns normal runtime settings and both LLM-stage configurations.
+Deployment owns secrets and Docker-level settings. The Control Center owns normal runtime settings and both LLM-stage configurations.
 
 Persistent state lives below one `APP_DATA_DIR`:
 

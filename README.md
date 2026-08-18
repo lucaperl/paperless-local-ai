@@ -1,11 +1,10 @@
-> [!NOTE]
-> This project has been entirely vibe-coded. It works in my setup, but it has not been thoroughly reviewed or tested. Expect bugs and use it at your own discretion.
-
 # paperless-local-ai
+
+[![Tests](https://github.com/lucaperl/paperless-local-ai/actions/workflows/test.yml/badge.svg)](https://github.com/lucaperl/paperless-local-ai/actions/workflows/test.yml)
 
 Selective OCR and local AI metadata automation for Paperless-ngx — built for small CPU-only homeservers.
 
-`paperless-local-ai` uses **PaddleOCR** for scanned pages and a local **Ollama** model to classify title, document type, date, tags and correspondents. Normal runtime settings, prompts and tests are handled through the included **Prompt Studio** web UI.
+`paperless-local-ai` uses **PaddleOCR** for scanned pages and a local **Ollama** model to classify title, document type, date, tags and correspondents. The included **Control Center** is the main web UI for configuration, testing and runtime settings.
 
 ## How it works
 
@@ -36,16 +35,11 @@ new correspondent      → suggest for review in Paperless
 
 New correspondents are never created automatically.
 
-## Prompt Studio
+## Control Center
 
-The web UI controls the normal application workflow:
+The web UI manages connections, OCR/workflow settings, both LLM stages, history and runtime behavior.
 
-- Paperless and Ollama connections
-- OCR settings
-- queue and review tags
-- classification prompt and model
-- correspondent fallback prompt and model
-- testing, history, polling and dry-run
+It is designed around **test before production**: test Paperless/Ollama connections, preview the exact rendered prompts and run real model tests against existing Paperless documents without changing them. Dry Run can validate automatic metadata processing before metadata writes are enabled.
 
 ## Why this project?
 
@@ -88,11 +82,11 @@ Tested with **Paperless-ngx 3.0.5**, **TrueNAS SCALE 25.10.4** and **qwen3.5:4b*
 - [TrueNAS SCALE](docs/truenas.md)
 - [Paperless setup](docs/paperless-setup.md)
 
-More: [Configuration](docs/configuration.md) · [Troubleshooting](docs/troubleshooting.md) · [Architecture](docs/architecture.md)
+More: [Control Center](docs/control-center.md) · [Configuration](docs/configuration.md) · [Troubleshooting](docs/troubleshooting.md) · [Architecture](docs/architecture.md)
 
 ## Security
 
-Prompt Studio has no built-in authentication. Keep it on localhost or a trusted network.
+The Control Center has no built-in authentication. Keep it on localhost or a trusted network.
 
 ## License
 

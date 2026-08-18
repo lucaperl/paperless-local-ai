@@ -17,12 +17,15 @@ def test_ollama_is_not_bundled_as_service():
 
 def test_prompt_ui_keeps_two_stage_structure_plus_central_app_settings():
     text = (ROOT / "src/core/prompt_ui.py").read_text(encoding="utf-8")
-    assert "1 · Klassifizierung" in text
-    assert "2 · Korrespondent-Vorschlag" in text
-    assert "App-Einstellungen" in text
+    assert "paperless-local-ai Control Center" in text
+    assert "1 · Classification" in text
+    assert "2 · Correspondent fallback" in text
+    assert "App settings" in text
     assert "Pipeline &amp; Tags" in text
-    assert "Aus – nur manuell testen" in text
-    assert "Ein – bei leerem Korrespondenten ausführen" in text
+    assert "Test before production." in text
+    assert "Off — manual testing only" in text
+    assert "On — run when correspondent is empty" in text
+    assert "Prompt Studio" not in text
 
 
 def test_env_example_contains_only_deployment_and_secret_settings():
