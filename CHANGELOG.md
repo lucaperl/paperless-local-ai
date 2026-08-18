@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- rename the TrueNAS portal button to **Control Center** in the published Custom App template and document the one-time YAML metadata change for existing installations that still show **Prompt UI**.
+
 ## 0.1.1 - 2026-08-19
 
 - rename the web UI from Prompt Studio to **Control Center** to reflect its app-wide role;

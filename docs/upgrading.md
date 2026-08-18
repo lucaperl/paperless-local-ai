@@ -56,6 +56,18 @@ TrueNAS can monitor image updates for Custom Apps. With **Check for docker image
 
 Apply it from the TrueNAS UI. No custom shell updater is required for an image-only release.
 
+The current TrueNAS template declares the app portal as **Control Center**. Existing Custom Apps keep the `x-portals` metadata stored in their YAML, so an older installation may still show **Prompt UI** after an image update. In that case edit the stored YAML once and change only:
+
+```yaml
+name: Prompt UI
+```
+
+to:
+
+```yaml
+name: Control Center
+```
+
 ## Compose-contract changes
 
 A container image cannot change the Compose YAML already stored by Docker/TrueNAS.
@@ -74,4 +86,4 @@ APP_VERSION=0.1.0
 
 If release notes describe a persistent-data migration, follow the release-specific rollback instructions instead of blindly downgrading.
 
-For 0.1.0, AppConfig and prompt configs are JSON files with version history; the app does not use a database of its own.
+For 0.1.x, AppConfig and prompt configs are JSON files with version history; the app does not use a database of its own.

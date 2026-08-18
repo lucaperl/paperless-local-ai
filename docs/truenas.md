@@ -40,7 +40,7 @@ Copy [`deploy/truenas/compose.example.yaml`](../deploy/truenas/compose.example.y
 
 with your dataset path.
 
-The template uses the public `stable` images and exposes the Control Center on port `30148` and the suggestion bridge on `30149`.
+The template uses the public `stable` images, exposes the Control Center on port `30148` and the suggestion bridge on `30149`, and declares a TrueNAS portal named **Control Center** for direct access from the app details page.
 
 The included CPU/RAM values are conservative container limits, not measured minimum requirements.
 
@@ -56,7 +56,7 @@ In TrueNAS:
 
 ## 4. Configure through the Control Center
 
-Open:
+Open the **Control Center** portal from the TrueNAS app details page, or browse to:
 
 ```text
 http://<truenas-ip>:30148/
@@ -70,6 +70,8 @@ The Control Center has no built-in authentication. Keep it on a trusted network 
 
 The supplied YAML follows the floating `stable` GHCR tag. With Docker image update checks enabled, TrueNAS can present its normal **Update** action when a new image digest is published.
 
-If release notes mention a Compose change, update the stored Custom App YAML as part of that release. Image updates alone cannot rewrite the YAML.
+Image-only updates keep the stored Custom App YAML unchanged. If release notes mention a Compose change, update that YAML as part of the release.
 
-For fully pinned deployments, replace `stable` in both image names with an exact release such as `0.1.0`.
+Existing installations created from an older template may still show a **Prompt UI** portal button even after the application itself has been updated. Edit the stored Custom App YAML once and change only the `x-portals` entry from `name: Prompt UI` to `name: Control Center`.
+
+For fully pinned deployments, replace `stable` in both image names with an exact release such as `0.1.1`.
