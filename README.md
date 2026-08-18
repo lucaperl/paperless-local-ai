@@ -1,6 +1,7 @@
-# paperless-local-ai
+> [!NOTE]
+> This project has been entirely vibe-coded. It works in my setup, but it has not been thoroughly reviewed or tested. Expect bugs and use it at your own discretion.
 
-[![Tests](https://github.com/lucaperl/paperless-local-ai/actions/workflows/test.yml/badge.svg)](https://github.com/lucaperl/paperless-local-ai/actions/workflows/test.yml)
+# paperless-local-ai
 
 Selective OCR and local AI metadata automation for Paperless-ngx — built for small CPU-only homeservers.
 
