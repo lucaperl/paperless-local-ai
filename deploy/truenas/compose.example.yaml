@@ -1,5 +1,12 @@
 name: paperless-local-ai
 
+x-portals:
+  - name: Control Center
+    scheme: http
+    host: 0.0.0.0
+    port: 30148
+    path: /
+
 x-core-image: &core-image
   image: ghcr.io/lucaperl/paperless-local-ai-core:stable
   restart: unless-stopped
