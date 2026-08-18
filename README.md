@@ -1,3 +1,6 @@
+> [!NOTE]
+> This project has been entirely vibe-coded. It works in my setup, but it has not been thoroughly reviewed or tested. Expect bugs and use it at your own discretion.
+
 # paperless-local-ai
 
 [![Tests](https://github.com/lucaperl/paperless-local-ai/actions/workflows/test.yml/badge.svg)](https://github.com/lucaperl/paperless-local-ai/actions/workflows/test.yml)
