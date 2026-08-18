@@ -22,12 +22,12 @@ CONFIG_LOCK_FILE = Path("/config/correspondent-suggestion.lock")
 PLACEHOLDER_RE = re.compile(r"\{\{([A-Z0-9_]+)\}\}")
 
 PLACEHOLDERS = {
-    "DOCUMENT_TEXT": "Aufbereiteter Paperless-Dokumenttext für diesen separaten Korrespondenten-Lauf.",
-    "DOCUMENT_ID": "Paperless-Dokument-ID.",
-    "CURRENT_TITLE": "Aktueller Dokumenttitel in Paperless.",
-    "CURRENT_CREATED": "Aktuelles Dokumentdatum in Paperless.",
-    "CORRESPONDENTS_JSON": "Aktuelle Paperless-Korrespondenten als JSON-Liste.",
-    "CORRESPONDENTS_LINES": "Aktuelle Paperless-Korrespondenten, je ein Name pro Zeile.",
+    "DOCUMENT_TEXT": "Prepared Paperless document text for this separate correspondent pass.",
+    "DOCUMENT_ID": "Paperless document ID.",
+    "CURRENT_TITLE": "Current document title in Paperless.",
+    "CURRENT_CREATED": "Current document date in Paperless.",
+    "CORRESPONDENTS_JSON": "Current Paperless correspondents as a JSON list.",
+    "CORRESPONDENTS_LINES": "Current Paperless correspondents, one name per line.",
 }
 
 DEFAULT_CONFIG = {
@@ -116,27 +116,27 @@ def _validate_placeholders(config):
     )
     if unknown:
         raise ConfigError(
-            "Unbekannte Platzhalter: " + ", ".join(unknown)
+            "Unknown placeholders: " + ", ".join(unknown)
         )
     if "DOCUMENT_TEXT" not in prompt_names:
         raise ConfigError(
-            "{{DOCUMENT_TEXT}} muss im Korrespondenten-Prompt enthalten sein"
+            "{{DOCUMENT_TEXT}} must be present in the correspondent prompt"
         )
 
 
 def validate_config(raw):
     if not isinstance(raw, dict):
-        raise ConfigError("Konfiguration muss ein JSON-Objekt sein")
+        raise ConfigError("Configuration must be a JSON object")
 
     cfg = dict(DEFAULT_CONFIG)
     cfg.update(raw)
 
     for key in ("system_prompt", "prompt_template", "model"):
         if not isinstance(cfg[key], str) or not cfg[key].strip():
-            raise ConfigError(f"{key} muss ein nicht-leerer String sein")
+            raise ConfigError(f"{key} must be a non-empty string")
 
     if not isinstance(cfg["enabled"], bool):
-        raise ConfigError("enabled muss true oder false sein")
+        raise ConfigError("enabled must be true or false")
 
     for key, minimum, maximum in (
         ("num_ctx", 1024, 131072),
@@ -146,10 +146,10 @@ def validate_config(raw):
     ):
         value = cfg[key]
         if isinstance(value, bool) or not isinstance(value, int):
-            raise ConfigError(f"{key} muss eine Ganzzahl sein")
+            raise ConfigError(f"{key} must be an integer")
         if not minimum <= value <= maximum:
             raise ConfigError(
-                f"{key} muss zwischen {minimum} und {maximum} liegen"
+                f"{key} must be between {minimum} and {maximum}"
             )
 
     temperature = cfg["temperature"]
@@ -158,7 +158,7 @@ def validate_config(raw):
         or not isinstance(temperature, (int, float))
         or not 0 <= float(temperature) <= 2
     ):
-        raise ConfigError("temperature muss zwischen 0 und 2 liegen")
+        raise ConfigError("temperature must be between 0 and 2")
     cfg["temperature"] = float(temperature)
 
     ratio = cfg["content_head_ratio"]
@@ -168,18 +168,18 @@ def validate_config(raw):
         or not 0.5 <= float(ratio) <= 0.95
     ):
         raise ConfigError(
-            "content_head_ratio muss zwischen 0.5 und 0.95 liegen"
+            "content_head_ratio must be between 0.5 and 0.95"
         )
     cfg["content_head_ratio"] = float(ratio)
 
     if not isinstance(cfg["think"], bool):
-        raise ConfigError("think muss true oder false sein")
+        raise ConfigError("think must be true or false")
 
     if (
         not isinstance(cfg["keep_alive"], (int, str))
         or isinstance(cfg["keep_alive"], bool)
     ):
-        raise ConfigError("keep_alive muss Zahl oder String sein")
+        raise ConfigError("keep_alive must be a number or string")
 
     version = cfg.get("version", 1)
     if (
@@ -187,11 +187,11 @@ def validate_config(raw):
         or not isinstance(version, int)
         or version < 1
     ):
-        raise ConfigError("version muss eine positive Ganzzahl sein")
+        raise ConfigError("version must be a positive integer")
 
     updated_at = cfg.get("updated_at")
     if updated_at is not None and not isinstance(updated_at, str):
-        raise ConfigError("updated_at muss String oder null sein")
+        raise ConfigError("updated_at must be a string or null")
 
     _validate_placeholders(cfg)
     return cfg
@@ -239,7 +239,7 @@ def load_config():
         )
     except Exception as exc:
         raise ConfigError(
-            f"correspondent-suggestion.json ist nicht lesbar: {exc}"
+            f"correspondent-suggestion.json is not readable: {exc}"
         ) from exc
     return validate_config(raw)
 
@@ -287,7 +287,7 @@ def list_history():
         except Exception:
             items.append({
                 "file": path.name,
-                "error": "nicht lesbar",
+                "error": "not readable",
             })
     return items
 
@@ -297,11 +297,11 @@ def restore_history(filename):
         Path(filename).name != filename
         or not filename.startswith("correspondent-config-v")
     ):
-        raise ConfigError("Ungültiger History-Dateiname")
+        raise ConfigError("Invalid history filename")
 
     path = HISTORY_DIR / filename
     if not path.exists():
-        raise ConfigError("History-Version nicht gefunden")
+        raise ConfigError("History version not found")
 
     raw = json.loads(path.read_text(encoding="utf-8"))
     raw = {
@@ -332,7 +332,7 @@ def render_template(template, values):
     def replace(match):
         name = match.group(1)
         if name not in values:
-            raise ConfigError(f"Kein Wert für Platzhalter {name}")
+            raise ConfigError(f"No value for placeholder {name}")
         return str(values[name])
     return PLACEHOLDER_RE.sub(replace, template)
 
@@ -354,7 +354,7 @@ def render_prompts(document, taxonomy, config):
         config,
     )
     if not content:
-        raise RuntimeError("Paperless content ist leer")
+        raise RuntimeError("Paperless content is empty")
 
     correspondents = taxonomy["correspondents"]
     values = {
@@ -418,16 +418,16 @@ def normalize_result(result):
 
 def validate_result(result):
     if not isinstance(result, dict):
-        return ["Antwort ist kein JSON-Objekt"]
+        return ["Response is not a JSON object"]
     if set(result) != {"correspondent"}:
         return [
-            "Antwort muss ausschließlich das Feld correspondent enthalten"
+            "Response must contain only the correspondent field"
         ]
     candidate = result.get("correspondent")
     if not isinstance(candidate, str):
-        return ["correspondent ist kein String"]
+        return ["correspondent is not a string"]
     if len(candidate) > 255:
-        return ["correspondent ist länger als 255 Zeichen"]
+        return ["correspondent is longer than 255 characters"]
     return []
 
 
@@ -447,7 +447,7 @@ def call_ollama(rendered, config):
     text = raw.get("message", {}).get("content", "")
     if not text:
         raise RuntimeError(
-            "Ollama hat keinen normalen Response-Text geliefert"
+            "Ollama did not return a normal response text"
         )
 
     result = normalize_result(json.loads(text))

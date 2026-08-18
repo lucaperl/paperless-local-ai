@@ -22,7 +22,7 @@ Fresh-install defaults are:
 
 `TODO` is the default additional tag excluded from normal LLM content-tag candidates.
 
-You may rename the tags in Prompt Studio. Paperless and Studio names must match exactly.
+You may rename the tags in the Control Center. Paperless and Control Center names must match exactly.
 
 Set automatic matching to **None** for the four queue/error tags so Paperless does not assign them independently.
 
