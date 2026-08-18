@@ -1,49 +1,34 @@
 # Paperless-ngx setup
 
-This document describes the Paperless-side configuration expected by `paperless-local-ai` 0.1.0.
+`paperless-local-ai` needs five technical/review tags and one import workflow.
 
-The native new-correspondent bridge is verified specifically with **Paperless-ngx 3.0.5**.
+## API token
 
-## 1. API token
+Create a Paperless API token under **My Profile** and provide it to the deployment as `PAPERLESS_TOKEN`.
 
-`paperless-local-ai` uses Paperless' normal REST API with token authentication.
+The token's Paperless user must be allowed to read and update the documents and taxonomy the app should manage.
 
-In Paperless open **My Profile** and create/regenerate an API token. Put the value only in the deployment `.env`/secret environment as `PAPERLESS_TOKEN`.
+## Tags
 
-Use a token belonging to a Paperless user that may read/update the documents and taxonomy this app should manage.
+Fresh-install defaults are:
 
-## 2. Required technical tags
-
-Fresh-install defaults from **Studio -> App-Einstellungen -> Pipeline & Tags** are:
-
-```text
-PaddleOCR
-PaddleOCR Fehler
-LLM
-LLM Fehler
-Inbox
-```
+| Tag | Purpose |
+|---|---|
+| `PaddleOCR` | OCR queue |
+| `PaddleOCR Fehler` | OCR errors |
+| `LLM` | metadata queue |
+| `LLM Fehler` | metadata errors |
+| `Inbox` | human review |
 
 `TODO` is the default additional tag excluded from normal LLM content-tag candidates.
 
-You may rename all technical tags. The names configured in Paperless and Studio must match exactly.
+You may rename the tags in Prompt Studio. Paperless and Studio names must match exactly.
 
-Set the matching algorithm of the four queue/error tags to **None** so Paperless' automatic matching does not assign them independently:
+Set automatic matching to **None** for the four queue/error tags so Paperless does not assign them independently.
 
-```text
-PaddleOCR
-PaddleOCR Fehler
-LLM
-LLM Fehler
-```
+## Import workflow
 
-The review tag (`Inbox` by default) can follow your normal Paperless review workflow.
-
-## 3. Import workflow
-
-Create a Paperless workflow that queues newly added documents for the OCR stage.
-
-Example:
+Create a workflow such as:
 
 ```text
 Name:    PaddleOCR Queue
@@ -51,57 +36,38 @@ Trigger: Document added
 Action:  add tag PaddleOCR
 ```
 
-If you renamed the OCR queue tag in Studio, use that name instead.
-
-The runtime then owns the technical handoff:
+The app then owns the handoff:
 
 ```text
-Paperless workflow
-  -> OCR queue tag
-  -> ocr-worker
-  -> LLM queue tag
-  -> metadata-worker
-  -> human review tag remains
+PaddleOCR → ocr-worker → LLM → metadata-worker → Inbox/review
 ```
 
-On a real OCR error the OCR queue tag is removed and the configured OCR error tag is set. The LLM worker follows the equivalent behavior for its queue/error tags.
+On processing errors, the active queue tag is removed and the configured error tag is applied.
 
-## 4. Taxonomy behavior
+## Taxonomy behavior
 
-The main classification stage does not invent arbitrary document types, normal correspondents or content tags. Allowed values are loaded from the current Paperless taxonomy for each job.
+The main classifier is constrained to the current Paperless document types, normal correspondents and content tags.
 
-The separate correspondent fallback is the only stage that can return a free-text correspondent name:
+If the optional correspondent fallback finds an exact existing correspondent, it can be applied automatically. A genuinely new name is stored only as a review candidate and is never auto-created.
 
-- exact normalized match to an existing Paperless correspondent -> apply it;
-- genuinely new name -> save a review candidate;
-- never automatically create a new correspondent.
+## Optional: native new-correspondent review
 
-## 5. Optional native new-correspondent review
+This integration is only needed if new correspondent candidates should appear in Paperless' native Suggestions UI.
 
-This feature is **not required** for selective OCR or normal metadata classification.
+Paperless must be able to reach the suggestion bridge. For the default host port:
 
-Enable it only if a new correspondent candidate should appear in Paperless' native Suggestions UI.
+```text
+http://<bridge-host>:30149
+```
 
-### What the bridge replaces
-
-Paperless 3.0.5 is configured to use `suggestion-bridge` as its Ollama-compatible AI suggestion backend. The bridge itself performs **no LLM inference**. It preserves classic Paperless suggestions and adds only a uniquely matched, still-open correspondent review candidate.
-
-Because this occupies Paperless' AI-suggestions backend, it does not proxy or chain to a second Paperless LLM backend.
-
-### Network requirement
-
-Paperless must be able to reach the bridge URL. If Paperless runs in a container, a bridge bound only to host `127.0.0.1` is normally **not** reachable from that Paperless container. Bind the bridge to a trusted host/LAN address and do not expose it publicly.
-
-### Tested Paperless 3.0.5 AI settings
-
-In **Application Configuration -> AI**, configure the equivalent of:
+For the tested Paperless-ngx 3.0.5 setup, configure **Application Configuration → AI** as follows:
 
 ```text
 Enable AI features:        on
 LLM backend:               ollama
 LLM model:                 paperless-correspondent-bridge
 LLM endpoint:              http://<bridge-host>:30149
-Allow internal endpoints:  on   (required when the bridge is on a private/LAN address)
+Allow internal endpoints:  on   # when using a private/LAN address
 LLM embedding backend:     none / empty
 LLM embedding model:       empty
 LLM embedding endpoint:    empty
@@ -111,26 +77,6 @@ LLM output language:       empty
 LLM API key:               empty
 ```
 
-Do not enable an embedding backend for this bridge integration; the tested request identity is the Paperless 3.0.5 no-RAG suggestion shape.
+The bridge does not run another LLM. It preserves Paperless' classic suggestions and adds only a uniquely matched, still-open correspondent candidate.
 
-### Health check
-
-The bridge exposes:
-
-```text
-GET /health
-```
-
-For a default host port:
-
-```text
-http://<bridge-host>:30149/health
-```
-
-A healthy bridge still returns no new correspondent if request identity is missing/ambiguous or the review record is no longer open. That fail-closed behavior is intentional.
-
-## 6. Paperless version changes
-
-The OCR and metadata workers mostly use normal REST API behavior. The native suggestion bridge is more tightly coupled to Paperless' AI prompt/request contract.
-
-Before upgrading Paperless beyond a version marked tested in [compatibility.md](compatibility.md), either disable the native bridge integration or validate it against the new Paperless release first.
+The bridge is version-sensitive. Check [Compatibility](compatibility.md) before upgrading Paperless.
