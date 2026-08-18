@@ -1,114 +1,89 @@
 # Architecture
 
-## Design goals
-
-1. Keep Paperless-ngx stock and updateable.
-2. Make expensive processing CPU-first and serialized for small homeservers.
-3. OCR only pages that need it.
-4. Keep metadata classification text-only.
-5. Never auto-create a genuinely new correspondent.
-6. Keep code in Git/images and user configuration in one persistent app directory.
-7. Give every setting one obvious owner.
+`paperless-local-ai` is intentionally narrow: improve scan OCR, classify metadata with a small local model, and keep uncertain new correspondents behind human review.
 
 ## Pipeline
 
 ```text
-Paperless-ngx
-   |
-   | workflow: add OCR queue tag
-   v
-ocr-worker ------------------------------+
-   |                                      |
-   | native / OCR_PAGE / VERIFY           | shared exclusive ai.lock
-   |                                      |
-   +--> update content if justified       |
-   +--> add LLM queue tag                 |
-                                          |
-metadata-worker --------------------------+
-   |
-   +--> main structured classification
-   |      title / type / correspondent / tags / created
-   |
-   +--> if correspondent == "" and fallback enabled:
-   |      second correspondent-only Ollama request
-   |
-   +--> existing exact name: apply
-   +--> new name: persist review candidate
-   v
-Paperless metadata + human review
-
-Paperless native AI-suggestions request
-   -> suggestion-bridge
-   -> uniquely match persistent review record
-   -> fetch classic /suggestions/ from Paperless
-   -> preserve classic suggestions
-   -> append only a still-open new correspondent candidate
-   -> return Ollama-compatible structured response
+Paperless workflow
+      ↓
+ocr-worker
+  native text → keep
+  scan/raster → PaddleOCR
+      ↓
+metadata-worker
+  one structured LLM request
+  title · type · tags · date · existing correspondent
+      ↓
+  no correspondent?
+      ↓
+optional correspondent-only request
+  existing → apply
+  new      → review candidate
+      ↓
+Paperless metadata + review
 ```
 
-## Containers
+The original PDF stored by Paperless is never replaced. The OCR worker updates Paperless' extracted content only when the page classification justifies it.
 
-The public app uses two images but four services:
+## Services
 
-- `paperless-local-ai-ocr`: PaddlePaddle + PaddleOCR + PyMuPDF + OCR worker.
-- `paperless-local-ai-core`: small Python image reused for metadata worker, Studio and suggestion bridge.
+One Compose project runs four long-lived services from two images:
 
-Ollama is external by design.
+| Service | Purpose |
+|---|---|
+| `ocr-worker` | page analysis and PaddleOCR |
+| `metadata-worker` | metadata classification and optional correspondent fallback |
+| `prompt-ui` | configuration, prompt editing and testing |
+| `suggestion-bridge` | Paperless native review adapter for new correspondent candidates |
 
-## Configuration ownership
+Ollama remains external.
 
-### Deployment configuration: `.env`
+Heavy OCR and LLM work share one exclusive `ai.lock` so they do not compete for the same low-power CPU at the same time.
 
-Only values that Docker must know before a process starts, plus secrets:
+## Design rationale
 
-- `PAPERLESS_TOKEN`
-- image prefix/version
-- `APP_DATA_DIR`
-- host bind addresses/ports
-- CPU, RAM and shared-memory limits
+### Why PaddleOCR?
 
-### Shared runtime configuration: `/config/app-config.json`
+Paperless/Tesseract remains useful for normal Paperless ingestion, but on the scans that motivated this project its text was often not clean enough as input for a small local LLM. Scan-like pages are therefore selectively reprocessed with PaddleOCR.
 
-Owned by **Studio -> App-Einstellungen**:
+Native digital PDF text is kept because OCRing already-good text adds CPU cost and can reduce quality.
 
-- Paperless URL
-- Ollama URL
-- OCR/LLM/review tag names
-- extra taxonomy-excluded tags
-- OCR language/version/device
-- worker poll interval
-- review cleanup interval
-- dry-run
+### Why one metadata request?
 
-Workers reload this configuration while running. No container restart is required for these values.
+The reference system is an Intel Core i3-8100 without a GPU. Repeating prompt processing for title, tags, type, date and correspondent made per-field LLM workflows too slow in practice.
 
-### Stage-specific configuration
+The main stage therefore returns all normal metadata in one structured request constrained by the current Paperless taxonomy.
 
-`prompt-config.json` and `correspondent-suggestion.json` intentionally remain separate because they are two independently testable/versioned LLM programs. Their model/request parameters live with their prompts in the same Studio section.
+### Why a separate correspondent fallback?
 
-### Internal constants
+The main request should stay constrained to existing values. Only when it cannot resolve a correspondent does a second, narrow prompt get permission to return a free-text name.
 
-Protocol/body/cache/safety constants that ordinary users should not tune are not exposed as fake settings. If a value has no supported operational use case, it stays code.
+An exact existing match can be applied. A genuinely new name becomes a review candidate and is never auto-created.
 
-## Persistent state
+### Why not just use Paperless native AI?
+
+Paperless native AI is a general suggestion feature. This project is built as an automatic queue-driven pipeline with selective OCR, constrained values and serialized resource-heavy work.
+
+### Why no chat, RAG or semantic search?
+
+They are useful features, but they are outside this project's goal. The target is reliable OCR plus automatic metadata classification on modest local hardware, without turning the app into a general document-AI platform.
+
+## Configuration and state
+
+Deployment owns secrets and Docker-level settings. Prompt Studio owns normal runtime settings and both LLM-stage configurations.
+
+Persistent state lives below one `APP_DATA_DIR`:
 
 ```text
-APP_DATA_DIR/
-├── config/       shared app + stage configs/history
-├── core/         results + correspondent review records
-├── ocr/          Paddle cache/temp state
-└── coordination/ shared ai.lock
+config/        app and prompt configuration/history
+core/          result and open review records
+ocr/           PaddleOCR cache/temp state
+coordination/  shared ai.lock
 ```
 
-## Failure behavior
+## Suggestion bridge identity
 
-- OCR processing error: OCR queue tag is removed and OCR error tag is set.
-- LLM processing error: LLM queue tag is removed and LLM error tag is set.
-- Bridge cannot uniquely map a Paperless request: no new correspondent suggestion is returned.
-- New correspondent: never created automatically.
+For Paperless-ngx 3.0.5, open correspondent review records are matched primarily by a SHA-256 signature of the normalized document content used by Paperless' no-RAG AI classifier. Ambiguous matches fail closed.
 
-### Suggestion identity
-
-The bridge uses review-record schema v4. Its primary identity is a SHA-256 signature of the normalized content that Paperless 3.0.5 feeds into the no-RAG AI classifier (`document.content[:4000]` before Paperless token-budget truncation). The old 96-word content signature remains only as a compatibility fallback for migrated v2/v3 records. If an old short-prefix collision occurs, the bridge compares the prompt-content signature against the current Paperless API content for each candidate; unresolved ambiguity fails closed.
-
-Filename matching is deliberately not used for identity. Paperless 3.0.5 places the model's internal `Document.filename` (current storage path) in its AI prompt, while the normal REST serializer exposes `original_file_name` and a generated `archived_file_name`, not that internal `filename` value. Treating those fields as equivalent would be unsafe.
+The legacy short-prefix signature remains only for migrated older records. Filename matching is deliberately not used because Paperless' internal model filename and normal REST filename fields are not equivalent.
