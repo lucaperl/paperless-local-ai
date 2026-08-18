@@ -1,0 +1,86 @@
+name: paperless-local-ai
+
+x-core-image: &core-image
+  image: ${IMAGE_PREFIX:-ghcr.io/lucaperl/paperless-local-ai}-core:${APP_VERSION:-stable}
+  restart: unless-stopped
+
+x-core-volumes: &core-volumes
+  - ${APP_DATA_DIR:-./data}/config:/config
+  - ${APP_DATA_DIR:-./data}/core:/data
+  - ${APP_DATA_DIR:-./data}/coordination:/coordination
+
+services:
+  ocr-worker:
+    image: ${IMAGE_PREFIX:-ghcr.io/lucaperl/paperless-local-ai}-ocr:${APP_VERSION:-stable}
+    restart: unless-stopped
+    environment:
+      PAPERLESS_TOKEN: ${PAPERLESS_TOKEN:?set PAPERLESS_TOKEN in .env}
+      HOME: /ocr-data
+      PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True"
+    volumes:
+      - ${APP_DATA_DIR:-./data}/config:/config:ro
+      - ${APP_DATA_DIR:-./data}/ocr:/ocr-data
+      - ${APP_DATA_DIR:-./data}/coordination:/coordination
+    mem_limit: ${OCR_MEMORY_LIMIT:-6g}
+    cpus: ${OCR_CPU_LIMIT:-2.0}
+    shm_size: ${OCR_SHM_SIZE:-2gb}
+
+  metadata-worker:
+    <<: *core-image
+    command: ["python", "/app/worker.py"]
+    environment:
+      PAPERLESS_TOKEN: ${PAPERLESS_TOKEN:?set PAPERLESS_TOKEN in .env}
+    volumes: *core-volumes
+    mem_limit: ${METADATA_MEMORY_LIMIT:-512m}
+    cpus: ${METADATA_CPU_LIMIT:-0.5}
+
+  prompt-ui:
+    <<: *core-image
+    command: ["python", "/app/prompt_ui.py"]
+    environment:
+      PAPERLESS_TOKEN: ${PAPERLESS_TOKEN:?set PAPERLESS_TOKEN in .env}
+      PROMPT_UI_HOST: 0.0.0.0
+      PROMPT_UI_PORT: "8080"
+    ports:
+      - ${PROMPT_UI_BIND:-127.0.0.1}:${PROMPT_UI_PORT:-30148}:8080
+    volumes: *core-volumes
+    mem_limit: ${PROMPT_UI_MEMORY_LIMIT:-256m}
+    cpus: ${PROMPT_UI_CPU_LIMIT:-0.25}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  suggestion-bridge:
+    <<: *core-image
+    command: ["python", "/app/suggestion_bridge.py"]
+    environment:
+      PAPERLESS_TOKEN: ${PAPERLESS_TOKEN:?set PAPERLESS_TOKEN in .env}
+      SUGGESTION_BRIDGE_HOST: 0.0.0.0
+      SUGGESTION_BRIDGE_PORT: "8081"
+    ports:
+      - ${SUGGESTION_BRIDGE_BIND:-127.0.0.1}:${SUGGESTION_BRIDGE_PORT:-30149}:8081
+    volumes:
+      - ${APP_DATA_DIR:-./data}/config:/config:ro
+      - ${APP_DATA_DIR:-./data}/core:/data:ro
+    mem_limit: ${BRIDGE_MEMORY_LIMIT:-128m}
+    cpus: ${BRIDGE_CPU_LIMIT:-0.1}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/health', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  doctor:
+    profiles: ["tools"]
+    <<: *core-image
+    restart: "no"
+    command: ["python", "/app/doctor.py"]
+    environment:
+      PAPERLESS_TOKEN: ${PAPERLESS_TOKEN:?set PAPERLESS_TOKEN in .env}
+    volumes:
+      - ${APP_DATA_DIR:-./data}/config:/config:ro
+      - ${APP_DATA_DIR:-./data}/core:/data:ro

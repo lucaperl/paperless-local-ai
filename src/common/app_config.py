@@ -1,0 +1,252 @@
+from __future__ import annotations
+
+import fcntl
+import hashlib
+import json
+import os
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+from urllib.parse import urlparse
+
+
+CONFIG_FILE = Path(os.getenv("APP_CONFIG_FILE", "/config/app-config.json"))
+HISTORY_DIR = Path(os.getenv("APP_CONFIG_HISTORY_DIR", "/config/app-history"))
+LOCK_FILE = Path(os.getenv("APP_CONFIG_LOCK_FILE", "/config/app-config.lock"))
+
+DEFAULT_CONFIG = {
+    "version": 1,
+    "updated_at": None,
+    "connections": {
+        "paperless_url": "http://paperless:8000",
+        "ollama_url": "http://ollama:11434",
+    },
+    "workflow": {
+        "ocr_queue_tag": "PaddleOCR",
+        "ocr_error_tag": "PaddleOCR Fehler",
+        "llm_queue_tag": "LLM",
+        "llm_error_tag": "LLM Fehler",
+        "review_tag": "Inbox",
+        "extra_excluded_tags": ["TODO"],
+    },
+    "ocr": {
+        "language": "de",
+        "version": "PP-OCRv6",
+        "device": "cpu",
+    },
+    "runtime": {
+        "poll_interval_seconds": 10,
+        "review_prune_interval_seconds": 3600,
+        "dry_run": False,
+    },
+}
+
+
+class ConfigError(ValueError):
+    pass
+
+
+def utc_now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _deepcopy_default():
+    return json.loads(json.dumps(DEFAULT_CONFIG, ensure_ascii=False))
+
+
+def _canonical_json(data):
+    return json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def config_hash(config):
+    return hashlib.sha256(_canonical_json(config).encode("utf-8")).hexdigest()
+
+
+def _require_nonempty_string(value, name):
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError(f"{name} muss ein nicht-leerer String sein")
+    return value.strip()
+
+
+def _validate_url(value, name):
+    value = _require_nonempty_string(value, name).rstrip("/")
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ConfigError(f"{name} muss eine vollständige http(s)-URL sein")
+    return value
+
+
+def _positive_int(value, name, minimum=1, maximum=None):
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ConfigError(f"{name} muss eine Ganzzahl sein")
+    if value < minimum or (maximum is not None and value > maximum):
+        hi = f" und <= {maximum}" if maximum is not None else ""
+        raise ConfigError(f"{name} muss >= {minimum}{hi} sein")
+    return value
+
+
+def validate_config(raw):
+    if not isinstance(raw, dict):
+        raise ConfigError("App-Konfiguration muss ein JSON-Objekt sein")
+
+    cfg = _deepcopy_default()
+    for section in ("connections", "workflow", "ocr", "runtime"):
+        incoming = raw.get(section, {})
+        if not isinstance(incoming, dict):
+            raise ConfigError(f"{section} muss ein Objekt sein")
+        cfg[section].update(incoming)
+
+    cfg["version"] = raw.get("version", 1)
+    cfg["updated_at"] = raw.get("updated_at")
+
+    cfg["version"] = _positive_int(cfg["version"], "version")
+    if cfg["updated_at"] is not None and not isinstance(cfg["updated_at"], str):
+        raise ConfigError("updated_at muss String oder null sein")
+
+    conn = cfg["connections"]
+    conn["paperless_url"] = _validate_url(conn["paperless_url"], "connections.paperless_url")
+    conn["ollama_url"] = _validate_url(conn["ollama_url"], "connections.ollama_url")
+
+    workflow = cfg["workflow"]
+    for key in ("ocr_queue_tag", "ocr_error_tag", "llm_queue_tag", "llm_error_tag", "review_tag"):
+        workflow[key] = _require_nonempty_string(workflow[key], f"workflow.{key}")
+
+    technical = [
+        workflow["ocr_queue_tag"], workflow["ocr_error_tag"], workflow["llm_queue_tag"],
+        workflow["llm_error_tag"], workflow["review_tag"],
+    ]
+    if len({x.casefold() for x in technical}) != len(technical):
+        raise ConfigError("Technische Workflow-Tags müssen unterschiedliche Namen haben")
+
+    extra = workflow.get("extra_excluded_tags", [])
+    if not isinstance(extra, list) or any(not isinstance(x, str) or not x.strip() for x in extra):
+        raise ConfigError("workflow.extra_excluded_tags muss eine Liste nicht-leerer Strings sein")
+    dedup = []
+    seen = set()
+    for item in extra:
+        item = item.strip()
+        key = item.casefold()
+        if key not in seen:
+            dedup.append(item)
+            seen.add(key)
+    workflow["extra_excluded_tags"] = dedup
+
+    ocr = cfg["ocr"]
+    for key in ("language", "version", "device"):
+        ocr[key] = _require_nonempty_string(ocr[key], f"ocr.{key}")
+
+    runtime = cfg["runtime"]
+    runtime["poll_interval_seconds"] = _positive_int(
+        runtime["poll_interval_seconds"], "runtime.poll_interval_seconds", 5, 3600
+    )
+    runtime["review_prune_interval_seconds"] = _positive_int(
+        runtime["review_prune_interval_seconds"], "runtime.review_prune_interval_seconds", 60, 86400
+    )
+    if not isinstance(runtime["dry_run"], bool):
+        raise ConfigError("runtime.dry_run muss true oder false sein")
+
+    return cfg
+
+
+def _atomic_write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+
+
+@contextmanager
+def config_lock():
+    LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with LOCK_FILE.open("a+") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def ensure_config():
+    CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+    if CONFIG_FILE.exists():
+        return load_config()
+    cfg = _deepcopy_default()
+    cfg["updated_at"] = utc_now_iso()
+    _atomic_write_json(CONFIG_FILE, cfg)
+    return cfg
+
+
+def load_config():
+    if not CONFIG_FILE.exists():
+        return validate_config(_deepcopy_default())
+    try:
+        raw = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ConfigError(f"app-config.json ist nicht lesbar: {exc}") from exc
+    return validate_config(raw)
+
+
+def _history_filename(config):
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return HISTORY_DIR / f"app-config-v{config['version']:04d}-{stamp}.json"
+
+
+def save_config(raw, source="ui"):
+    with config_lock():
+        current = load_config()
+        candidate = validate_config(raw)
+        candidate["version"] = current["version"] + 1
+        candidate["updated_at"] = utc_now_iso()
+        candidate = validate_config(candidate)
+
+        history = json.loads(json.dumps(current, ensure_ascii=False))
+        history["history_saved_at"] = utc_now_iso()
+        history["history_source"] = source
+        _atomic_write_json(_history_filename(current), history)
+        _atomic_write_json(CONFIG_FILE, candidate)
+        return candidate
+
+
+def list_history():
+    HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+    items = []
+    for path in sorted(HISTORY_DIR.glob("app-config-v*.json"), reverse=True):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            items.append({
+                "file": path.name,
+                "version": data.get("version"),
+                "updated_at": data.get("updated_at"),
+                "history_saved_at": data.get("history_saved_at"),
+                "history_source": data.get("history_source"),
+                "config_sha256": config_hash(data),
+            })
+        except Exception:
+            items.append({"file": path.name, "error": "nicht lesbar"})
+    return items
+
+
+def restore_history(filename):
+    if Path(filename).name != filename or not filename.startswith("app-config-v"):
+        raise ConfigError("Ungültiger History-Dateiname")
+    path = HISTORY_DIR / filename
+    if not path.exists():
+        raise ConfigError("History-Version nicht gefunden")
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw = {k: v for k, v in raw.items() if k in DEFAULT_CONFIG or k in {"version", "updated_at"}}
+    return save_config(raw, source=f"restore:{filename}")
+
+
+def technical_tag_names(config=None):
+    cfg = config or load_config()
+    w = cfg["workflow"]
+    return {
+        w["ocr_queue_tag"], w["ocr_error_tag"], w["llm_queue_tag"],
+        w["llm_error_tag"], w["review_tag"], *w["extra_excluded_tags"],
+    }
+
+
+def blocking_tag_names(config=None):
+    cfg = config or load_config()
+    return {cfg["workflow"]["ocr_queue_tag"], cfg["workflow"]["ocr_error_tag"]}
