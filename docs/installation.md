@@ -36,9 +36,11 @@ SUGGESTION_BRIDGE_BIND / SUGGESTION_BRIDGE_PORT
 
 Use `APP_VERSION=stable` to follow the newest non-prerelease image, or pin an exact release such as `0.1.0`.
 
-Normal runtime settings such as Paperless/Ollama URLs, OCR language, workflow tags and prompts are configured in Prompt Studio, not duplicated in `.env`.
+Normal runtime settings such as Paperless/Ollama URLs, OCR language, workflow tags and prompts are configured in the Control Center, not duplicated in `.env`.
 
-## 3. Start Prompt Studio
+## 3. Start the Control Center
+
+The internal Compose service name remains `prompt-ui`:
 
 ```bash
 docker compose up -d prompt-ui
@@ -50,9 +52,9 @@ Default local URL:
 http://127.0.0.1:30148/
 ```
 
-Prompt Studio has no built-in authentication. Only bind it to localhost or a trusted network.
+The Control Center has no built-in authentication. Only bind it to localhost or a trusted network.
 
-In **App-Einstellungen**, configure and test the Paperless and Ollama connections, then review tags, OCR and runtime settings.
+Under **App settings**, configure and test the Paperless and Ollama connections, then review tags, OCR and runtime settings.
 
 Container networking matters: `localhost` inside a container is not the Docker host. Use addresses the containers can actually reach.
 
@@ -60,14 +62,16 @@ Container networking matters: `localhost` inside a container is not the Docker h
 
 Create the required technical tags and import workflow from [Paperless setup](paperless-setup.md).
 
-## 5. Review the LLM stages
+## 5. Test the LLM stages
 
-In Prompt Studio:
+In the Control Center:
 
-- **Klassifizierung** controls the main structured metadata request;
-- **Korrespondent-Vorschlag** controls the optional second pass used only when the main classifier cannot resolve a correspondent.
+- **Classification** controls the main structured metadata request;
+- **Correspondent fallback** controls the optional second pass used only when the main classifier cannot resolve a correspondent.
 
-Test both stages with known documents before enabling the correspondent fallback for production use.
+Preview the exact prompts and run model tests with known Paperless documents before production use. These interactive tests do not modify the selected document. The correspondent fallback can be tested while its production switch is off.
+
+For an additional end-to-end safety check, enable **Dry Run** before normal metadata writes. Dry Run suppresses document-metadata and persistent-review writes, while technical workflow tags can still change.
 
 ## 6. Start and verify
 

@@ -1,8 +1,19 @@
 # Configuration
 
-Most day-to-day configuration is managed in **Prompt Studio**.
+Most day-to-day configuration is managed in the **Control Center**.
 
-## App-Einstellungen
+## Test before production
+
+The Control Center lets you validate changes before they affect normal metadata processing:
+
+- test Paperless and Ollama connections with the current unsaved settings;
+- preview the exact rendered prompt for a real Paperless document without calling the model;
+- run real Ollama tests for **Classification** and **Correspondent fallback** without modifying the document;
+- use **Dry Run** for automatic metadata processing without document-metadata or persistent-review writes.
+
+Dry Run still allows the technical queue/error tags to be managed as part of the workflow.
+
+## App settings
 
 ### Connections
 
@@ -29,23 +40,17 @@ The token itself remains a deployment secret and is never shown by the UI.
 
 - poll interval
 - review cleanup interval
-- dry-run
+- Dry Run
 
 These settings are stored in `APP_DATA_DIR/config/app-config.json` and hot-reloaded by the workers.
 
-## Klassifizierung
+## Classification
 
-Controls the main metadata request:
+Controls the main structured metadata request: prompt, model/request parameters, output limits, testing and version history.
 
-- prompt
-- model and request parameters
-- context/output limits
-- prompt rendering and real model tests
-- version history
+The response covers title, document type, tags, date and an existing correspondent in one request.
 
-The response covers title, document type, tags, date and an existing correspondent in one structured request.
-
-## Korrespondent-Vorschlag
+## Correspondent fallback
 
 Optional second stage used only when the main classifier cannot resolve a correspondent.
 
@@ -53,7 +58,7 @@ It has its own prompt, model settings, tests, history and production enable swit
 
 ## Deployment-only settings
 
-These remain outside Prompt Studio because Docker needs them before the app starts or because they are secrets:
+These remain outside the Control Center because Docker needs them before the app starts or because they are secrets:
 
 - `PAPERLESS_TOKEN`
 - image/version

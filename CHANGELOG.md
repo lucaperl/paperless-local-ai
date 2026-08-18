@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- rename the web UI from Prompt Studio to **Control Center** to reflect its app-wide role;
+- switch the Control Center interface and UI-facing validation messages to English;
+- make safe pre-production testing explicit: connection tests, prompt previews, live LLM tests and Dry Run.
+
 ## 0.1.0 - 2026-08-18
 
 Initial public release.

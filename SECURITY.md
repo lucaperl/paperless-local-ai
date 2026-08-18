@@ -12,7 +12,7 @@ If GitHub private vulnerability reporting is enabled for this repository, use **
 
 ## Deployment security assumptions
 
-- Prompt Studio has no authentication in 0.1.0 and should be bound only to localhost or a trusted LAN.
+- The Control Center has no built-in authentication and should be bound only to localhost or a trusted LAN.
 - The suggestion bridge is an internal compatibility endpoint and should be reachable by Paperless, not exposed to the public Internet.
 - `PAPERLESS_TOKEN` belongs in deployment secret/environment configuration, never in AppConfig/history or Git.
 - The project has no built-in telemetry/cloud inference endpoint. Document text is sent to the operator-configured Ollama endpoint, which may itself be local or remote.
