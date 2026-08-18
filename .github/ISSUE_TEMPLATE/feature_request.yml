@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest a focused improvement to paperless-local-ai
+title: "[FEATURE] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please keep the project scope in mind: selective OCR, local metadata automation and human review around an existing Paperless/Ollama installation.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / use case
+      description: What workflow problem are you trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: What should paperless-local-ai do differently?
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Relevant environment
+      description: Paperless version, platform/architecture, Ollama model if relevant. Do not include secrets or private document text.

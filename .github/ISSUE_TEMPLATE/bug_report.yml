@@ -1,0 +1,39 @@
+name: Bug report
+description: Report a reproducible paperless-local-ai problem
+title: "[BUG] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste Paperless tokens or private document text. Redact logs before posting.
+  - type: input
+    id: version
+    attributes:
+      label: paperless-local-ai version
+    validations:
+      required: true
+  - type: input
+    id: paperless
+    attributes:
+      label: Paperless-ngx version
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform / CPU / RAM
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and redacted logs
+    validations:
+      required: true

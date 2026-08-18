@@ -1,0 +1,101 @@
+name: publish-images
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements/dev.txt
+      - name: Verify release tag matches VERSION
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d '\r\n' < VERSION)"
+          test "v${VERSION}" = "${RELEASE_TAG}"
+      - name: Run tests
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements/dev.txt
+          python -m compileall -q src tests scripts
+          pytest -q
+      - name: Validate Compose
+        run: |
+          cp .env.example .env
+          docker compose -f compose.yaml config >/dev/null
+          docker compose -f compose.yaml -f compose.dev.yaml config >/dev/null
+
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: core
+            dockerfile: docker/core.Dockerfile
+          - component: ocr
+            dockerfile: docker/ocr.Dockerfile
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read application version
+        id: version
+        shell: bash
+        run: echo "version=$(tr -d '\r\n' < VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/paperless-local-ai-${{ matrix.component }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ github.event.release.tag_name }}
+            type=raw,value=stable,enable=${{ !github.event.release.prerelease }}
+            type=raw,value=latest,enable=${{ !github.event.release.prerelease }}
+          labels: |
+            org.opencontainers.image.title=paperless-local-ai ${{ matrix.component }}
+            org.opencontainers.image.description=Local selective OCR and metadata automation for Paperless-ngx
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.version }}
+            SOURCE_URL=https://github.com/${{ github.repository }}
+
+      - name: Generate build provenance attestation
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/paperless-local-ai-${{ matrix.component }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
