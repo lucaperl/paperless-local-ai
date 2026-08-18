@@ -1,4 +1,4 @@
-FROM paddlepaddle/paddle:3.2.2
+FROM paddlepaddle/paddle:3.3.1
 
 ARG APP_VERSION=dev
 ARG SOURCE_URL=""
