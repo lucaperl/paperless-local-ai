@@ -23,12 +23,14 @@ Do not turn it into a bundled Paperless distribution, an Ollama distribution, or
 Do not scatter settings.
 
 - Deployment/secrets: `.env` / Compose only when Docker needs the value before process start, or when it is a secret.
-- Shared runtime: `/config/app-config.json`, owned by Studio -> App-Einstellungen.
+- Shared runtime: `/config/app-config.json`, owned by Control Center -> App settings.
 - Classification stage: `/config/prompt-config.json`.
 - Correspondent stage: `/config/correspondent-suggestion.json`.
 - Internal implementation constants stay code unless there is a supported operator use case.
 
-The Paperless API token must never be written to app-config/history or returned by the Studio API.
+The Paperless API token must never be written to app-config/history or returned by the Control Center API.
+
+The public Control Center UI is English. Keep internal deployment identifiers such as the `prompt-ui` service and `PROMPT_UI_*` variables stable unless a migration is explicitly planned.
 
 ## Compatibility
 
@@ -40,7 +42,7 @@ Current published OCR support is linux/amd64. Do not claim ARM64 until the Paddl
 
 - Never commit real tokens, `.env`, private document text, OCR dumps, private IP addresses or user-specific paths.
 - Do not add telemetry or cloud dependencies by default.
-- Prompt Studio has no authentication; documentation must continue to warn against public exposure.
+- The Control Center has no authentication; documentation must continue to warn against public exposure.
 - Preserve original Paperless documents; OCR updates Paperless extracted content, not the source file.
 
 ## Required checks

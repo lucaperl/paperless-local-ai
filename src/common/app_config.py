@@ -64,7 +64,7 @@ def config_hash(config):
 
 def _require_nonempty_string(value, name):
     if not isinstance(value, str) or not value.strip():
-        raise ConfigError(f"{name} muss ein nicht-leerer String sein")
+        raise ConfigError(f"{name} must be a non-empty string")
     return value.strip()
 
 
@@ -72,28 +72,28 @@ def _validate_url(value, name):
     value = _require_nonempty_string(value, name).rstrip("/")
     parsed = urlparse(value)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise ConfigError(f"{name} muss eine vollständige http(s)-URL sein")
+        raise ConfigError(f"{name} must be a complete http(s) URL")
     return value
 
 
 def _positive_int(value, name, minimum=1, maximum=None):
     if isinstance(value, bool) or not isinstance(value, int):
-        raise ConfigError(f"{name} muss eine Ganzzahl sein")
+        raise ConfigError(f"{name} must be an integer")
     if value < minimum or (maximum is not None and value > maximum):
-        hi = f" und <= {maximum}" if maximum is not None else ""
-        raise ConfigError(f"{name} muss >= {minimum}{hi} sein")
+        hi = f" and <= {maximum}" if maximum is not None else ""
+        raise ConfigError(f"{name} must be >= {minimum}{hi}")
     return value
 
 
 def validate_config(raw):
     if not isinstance(raw, dict):
-        raise ConfigError("App-Konfiguration muss ein JSON-Objekt sein")
+        raise ConfigError("App configuration must be a JSON object")
 
     cfg = _deepcopy_default()
     for section in ("connections", "workflow", "ocr", "runtime"):
         incoming = raw.get(section, {})
         if not isinstance(incoming, dict):
-            raise ConfigError(f"{section} muss ein Objekt sein")
+            raise ConfigError(f"{section} must be an object")
         cfg[section].update(incoming)
 
     cfg["version"] = raw.get("version", 1)
@@ -101,7 +101,7 @@ def validate_config(raw):
 
     cfg["version"] = _positive_int(cfg["version"], "version")
     if cfg["updated_at"] is not None and not isinstance(cfg["updated_at"], str):
-        raise ConfigError("updated_at muss String oder null sein")
+        raise ConfigError("updated_at must be a string or null")
 
     conn = cfg["connections"]
     conn["paperless_url"] = _validate_url(conn["paperless_url"], "connections.paperless_url")
@@ -116,11 +116,11 @@ def validate_config(raw):
         workflow["llm_error_tag"], workflow["review_tag"],
     ]
     if len({x.casefold() for x in technical}) != len(technical):
-        raise ConfigError("Technische Workflow-Tags müssen unterschiedliche Namen haben")
+        raise ConfigError("Technical workflow tags must have distinct names")
 
     extra = workflow.get("extra_excluded_tags", [])
     if not isinstance(extra, list) or any(not isinstance(x, str) or not x.strip() for x in extra):
-        raise ConfigError("workflow.extra_excluded_tags muss eine Liste nicht-leerer Strings sein")
+        raise ConfigError("workflow.extra_excluded_tags must be a list of non-empty strings")
     dedup = []
     seen = set()
     for item in extra:
@@ -143,7 +143,7 @@ def validate_config(raw):
         runtime["review_prune_interval_seconds"], "runtime.review_prune_interval_seconds", 60, 86400
     )
     if not isinstance(runtime["dry_run"], bool):
-        raise ConfigError("runtime.dry_run muss true oder false sein")
+        raise ConfigError("runtime.dry_run must be true or false")
 
     return cfg
 
@@ -183,7 +183,7 @@ def load_config():
     try:
         raw = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
     except Exception as exc:
-        raise ConfigError(f"app-config.json ist nicht lesbar: {exc}") from exc
+        raise ConfigError(f"app-config.json is not readable: {exc}") from exc
     return validate_config(raw)
 
 
@@ -223,16 +223,16 @@ def list_history():
                 "config_sha256": config_hash(data),
             })
         except Exception:
-            items.append({"file": path.name, "error": "nicht lesbar"})
+            items.append({"file": path.name, "error": "not readable"})
     return items
 
 
 def restore_history(filename):
     if Path(filename).name != filename or not filename.startswith("app-config-v"):
-        raise ConfigError("Ungültiger History-Dateiname")
+        raise ConfigError("Invalid history filename")
     path = HISTORY_DIR / filename
     if not path.exists():
-        raise ConfigError("History-Version nicht gefunden")
+        raise ConfigError("History version not found")
     raw = json.loads(path.read_text(encoding="utf-8"))
     raw = {k: v for k, v in raw.items() if k in DEFAULT_CONFIG or k in {"version", "updated_at"}}
     return save_config(raw, source=f"restore:{filename}")

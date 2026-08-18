@@ -22,6 +22,6 @@ def test_duplicate_workflow_tag_names_are_rejected():
     try:
         validate_config(cfg)
     except ValueError as exc:
-        assert "unterschiedliche Namen" in str(exc)
+        assert "distinct names" in str(exc)
     else:
         raise AssertionError("duplicate workflow tags must be rejected")

@@ -40,7 +40,7 @@ Copy [`deploy/truenas/compose.example.yaml`](../deploy/truenas/compose.example.y
 
 with your dataset path.
 
-The template uses the public `stable` images and exposes Prompt Studio on port `30148` and the suggestion bridge on `30149`.
+The template uses the public `stable` images and exposes the Control Center on port `30148` and the suggestion bridge on `30149`.
 
 The included CPU/RAM values are conservative container limits, not measured minimum requirements.
 
@@ -54,7 +54,7 @@ In TrueNAS:
 4. paste the edited YAML;
 5. install it.
 
-## 4. Configure through Prompt Studio
+## 4. Configure through the Control Center
 
 Open:
 
@@ -62,9 +62,9 @@ Open:
 http://<truenas-ip>:30148/
 ```
 
-Configure Paperless/Ollama connections, tags, OCR and runtime settings in the UI, then follow [Paperless setup](paperless-setup.md).
+Configure and test the Paperless/Ollama connections, then review tags, OCR and runtime settings in the UI. Preview and test both LLM stages before production use, then follow [Paperless setup](paperless-setup.md).
 
-Prompt Studio has no built-in authentication. Keep it on a trusted network or bind it to a specific trusted address.
+The Control Center has no built-in authentication. Keep it on a trusted network or bind it to a specific trusted address.
 
 ## Updates
 
