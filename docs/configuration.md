@@ -1,66 +1,64 @@
-# Configuration ownership
+# Configuration
 
-`paperless-local-ai` intentionally has **three** configuration owners. A setting should exist in only one of them.
+Most day-to-day configuration is managed in **Prompt Studio**.
 
-## 1. Deployment: `.env`
+## App-Einstellungen
 
-Use `.env` only for values Docker needs before the application starts, plus secrets:
+### Connections
 
-```text
-PAPERLESS_TOKEN
-IMAGE_PREFIX
-APP_VERSION
-APP_DATA_DIR
-PROMPT_UI_BIND / PROMPT_UI_PORT
-SUGGESTION_BRIDGE_BIND / SUGGESTION_BRIDGE_PORT
-container CPU/RAM/shared-memory limits
-```
+- Paperless URL
+- Ollama URL
+- Paperless token presence check
 
-Changing Docker-owned values requires recreating/redeploying the affected container.
+The token itself remains a deployment secret and is never shown by the UI.
 
-The Paperless API token stays here because it is a secret. The Studio never returns its value.
+### Pipeline & tags
 
-## 2. Shared application runtime: App-Einstellungen
+- OCR queue/error tags
+- LLM queue/error tags
+- human-review tag
+- extra taxonomy-excluded tags
 
-Stored together in:
+### OCR
 
-```text
-APP_DATA_DIR/config/app-config.json
-```
+- language
+- PaddleOCR generation
+- device
 
-This owns:
+### Runtime
 
-```text
-Paperless URL
-Ollama URL
-OCR queue/error tag
-LLM queue/error tag
-review tag
-extra taxonomy-excluded tags
-OCR language/version/device
-poll interval
-review cleanup interval
-dry-run
-```
+- poll interval
+- review cleanup interval
+- dry-run
 
-Workers reload these settings while running.
+These settings are stored in `APP_DATA_DIR/config/app-config.json` and hot-reloaded by the workers.
 
-## 3. LLM-stage configuration
+## Klassifizierung
 
-The two LLM stages are deliberately independent programs and therefore keep separate versioned configs:
+Controls the main metadata request:
 
-```text
-Klassifizierung
-  prompt + model/request parameters
+- prompt
+- model and request parameters
+- context/output limits
+- prompt rendering and real model tests
+- version history
 
-Korrespondent-Vorschlag
-  prompt + model/request parameters + enabled switch
-```
+The response covers title, document type, tags, date and an existing correspondent in one structured request.
 
-This is intentional: restoring an old prompt must restore the model/context/output parameters that belonged to that prompt, without rolling back unrelated OCR or connection settings.
+## Korrespondent-Vorschlag
 
-## Not configurable on purpose
+Optional second stage used only when the main classifier cannot resolve a correspondent.
 
-Some implementation values are constants because exposing them would add unsupported tuning without a real operator use case. Examples include bridge request-body limit, taxonomy cache TTL and the review-signature word count.
+It has its own prompt, model settings, tests, history and production enable switch. New correspondents are never created automatically.
 
-If a value becomes operationally useful later, it should be promoted into the single appropriate owner instead of being added as another ad-hoc environment variable.
+## Deployment-only settings
+
+These remain outside Prompt Studio because Docker needs them before the app starts or because they are secrets:
+
+- `PAPERLESS_TOKEN`
+- image/version
+- `APP_DATA_DIR`
+- host bind addresses and ports
+- container CPU/RAM/shared-memory limits
+
+Changing deployment-owned values requires recreating or redeploying the affected containers.
