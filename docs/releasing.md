@@ -4,12 +4,14 @@ This document is for maintainers.
 
 ## Versioning contract
 
-`VERSION` contains the canonical software version without a leading `v`:
+`VERSION` contains the canonical software version without a leading `v`.
+
+For a version `X.Y.Z`:
 
 ```text
-VERSION = 0.1.0
-GitHub Release tag = v0.1.0
-GHCR exact image tag = 0.1.0
+VERSION file          = X.Y.Z
+GitHub Release tag    = vX.Y.Z
+GHCR exact image tag  = X.Y.Z
 ```
 
 The publish workflow refuses a release whose GitHub tag does not match `VERSION`.
@@ -24,7 +26,7 @@ A published GitHub Release:
 4. logs into GHCR using the repository `GITHUB_TOKEN` with `packages: write`;
 5. pushes exact semver tags;
 6. for a non-prerelease, also moves `stable` and `latest`;
-8. generates a GitHub build-provenance attestation for each image digest.
+7. generates a GitHub build-provenance attestation for each image digest.
 
 Images:
 
@@ -50,7 +52,7 @@ The Dockerfiles/workflow include the OCI source label so each package is linked 
 
 1. Update `VERSION`.
 2. Update `CHANGELOG.md`.
-3. Update compatibility docs if a new environment was actually tested.
+3. Update compatibility docs only when a new environment was actually tested.
 4. Run:
 
    ```bash
@@ -68,7 +70,9 @@ The Dockerfiles/workflow include the OCI source label so each package is linked 
 10. Wait for both publish jobs to succeed.
 11. Confirm both GHCR packages are public and anonymously pullable.
 12. Deploy the exact release images to a test/production-like instance.
-13. Run `doctor` and one real document end-to-end before moving `stable` consumers broadly if extra validation is required.
+13. Run `doctor` and one real document end-to-end.
+
+If validation must happen **before** `stable` moves, publish a prerelease first. A normal non-prerelease moves `stable`/`latest` during the publish workflow.
 
 ## Prereleases
 
