@@ -2,7 +2,13 @@
 
 ## Unreleased
 
-- rename the TrueNAS portal button to **Control Center** in the published Custom App template and document the one-time YAML metadata change for existing installations that still show **Prompt UI**.
+## 0.1.2 - 2026-08-19
+
+- rename the TrueNAS portal button to **Control Center** in the published Custom App template and document the one-time YAML metadata change for existing installations that still show **Prompt UI**;
+- redesign the Control Center around an Overview and persistent sidebar while keeping the existing configuration, testing and history workflows;
+- add a visual end-to-end pipeline overview from Paperless import through OCR/classification, optional correspondent fallback and write-back to Paperless;
+- keep the existing in-UI guidance while moving section and field details into collapsible help and info controls where appropriate;
+- update the README workflow diagram and correspondent description to match the current Paperless → OCR → classification → optional fallback → write-back flow.
 
 ## 0.1.1 - 2026-08-19
 
