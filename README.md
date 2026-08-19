@@ -3,8 +3,6 @@
 
 # paperless-local-ai
 
-[![Tests](https://github.com/lucaperl/paperless-local-ai/actions/workflows/test.yml/badge.svg)](https://github.com/lucaperl/paperless-local-ai/actions/workflows/test.yml)
-
 **Improved OCR and automatic local-LLM metadata assignment for Paperless-ngx — built for modest CPU-only hardware.**
 
 `paperless-local-ai` is for users who want better OCR for scanned documents and a small local LLM to automatically set **titles, document types, dates, tags and correspondents**, without running a full AI suite. It keeps the workload focused by limiting AI to these core tasks and handling the normal metadata classification in a single LLM request — useful on weaker hardware, or simply if that is all you need.
@@ -16,36 +14,31 @@ The model output is constrained to the configured Paperless taxonomy and applied
 `paperless-local-ai` sits between normal Paperless import and review. Paperless queues documents through workflow tags, the app processes them locally, and writes the result back to the same document.
 
 ```mermaid
-flowchart TD
-    subgraph P1["Paperless-ngx"]
-        A["Import document"]
-        B["Workflow queues it via tags"]
-        A --> B
-    end
+flowchart TB
+    A["Paperless import"] --> B["Queue via Paperless workflow tags"]
+    B --> C["Selective PaddleOCR"]
+    C --> D["Primary LLM classification<br/>title · type · date · tags · correspondent"]
 
-    subgraph L["paperless-local-ai"]
-        C["Selective PaddleOCR<br/>when needed"]
-        D["Primary LLM classification<br/>title · type · date · tags · existing correspondent"]
-        E{"Correspondent returned?"}
-        F["Correspondent fallback<br/>separate sender-identification LLM call<br/>document text + current Paperless correspondents"]
-        S["Send new sender to<br/>Paperless suggestion / review"]
-        G["Write results back<br/>to the same document"]
+    D -->|Correspondent found| W["Write back to Paperless"]
+    D -->|No correspondent| E{"Fallback enabled?"}
 
-        C --> D --> E
-        E -->|Yes| G
-        E -->|No · fallback disabled| G
-        E -->|No · fallback enabled| F
-        F -->|Matches existing| G
-        F -->|New sender| S --> G
-        F -->|No reliable sender| G
-    end
+    E -->|No| W
+    E -->|Yes| F["Correspondent fallback<br/><br/>Separate sender-identification LLM call<br/>using document text + current Paperless correspondents"]
 
-    subgraph P2["Paperless-ngx"]
-        H["Normal review workflow continues"]
-    end
+    F -->|Existing correspondent| W
+    F -->|New sender| S["Paperless suggestion / review"]
+    F -->|No reliable sender| W
+    S --> W
 
-    B --> C
-    G --> H
+    W --> R["Paperless review continues"]
+
+    classDef paperless fill:#eef5ff,stroke:#4c78a8,color:#111;
+    classDef local fill:#e9f9f1,stroke:#238763,color:#111;
+    classDef fallback fill:#f5edff,stroke:#7b55a1,color:#111;
+
+    class A,B,W,R paperless;
+    class C,D local;
+    class E,F,S fallback;
 ```
 
 Paperless keeps owning the document throughout: `paperless-local-ai` processes the already imported document and writes its results back to the same Paperless record.
