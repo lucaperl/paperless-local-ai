@@ -5,9 +5,11 @@
 
 [![Tests](https://github.com/lucaperl/paperless-local-ai/actions/workflows/test.yml/badge.svg)](https://github.com/lucaperl/paperless-local-ai/actions/workflows/test.yml)
 
-Selective OCR and local AI metadata automation for Paperless-ngx — built for small CPU-only homeservers.
+**Improved OCR and automatic local-LLM metadata assignment for Paperless-ngx — built for modest CPU-only hardware.**
 
-`paperless-local-ai` uses **PaddleOCR** for scanned pages and a local **Ollama** model to classify title, document type, date, tags and correspondents. The included **Control Center** is the main web UI for configuration, testing and runtime settings.
+`paperless-local-ai` is for users who want better OCR for scanned documents and a small local LLM to automatically set **titles, document types, dates, tags and correspondents**, without running a full AI suite. It keeps the workload focused by limiting AI to these core tasks and handling the normal metadata classification in a single LLM request — useful on weaker hardware, or simply if that is all you need.
+
+The model output is constrained to the configured Paperless taxonomy and applied directly to the document instead of only being shown as suggestions. If no existing correspondent can be matched, the optional correspondent fallback can propose a new one through Paperless' native suggestion/review flow instead of creating it automatically.
 
 ## How it works
 
@@ -20,44 +22,42 @@ Local LLM classification
       ↓
 Title · Type · Date · Tags · Correspondent
       ↓
-Paperless review
+Apply metadata directly to Paperless
 ```
 
-Native PDF text is kept. Scan-like pages — even if they already contain an unreliable OCR text layer — are reprocessed with PaddleOCR.
+Native PDF text is kept, while scanned documents can be selectively reprocessed with PaddleOCR.
 
-The main classifier uses the existing Paperless taxonomy instead of inventing arbitrary values.
+The main classifier handles title, document type, date, tags and an existing correspondent together in **one structured LLM request**.
 
 ### Correspondents
 
-The main classification pass only uses existing Paperless correspondents. If none can be resolved, an optional **second, correspondent-only LLM pass** runs:
+The main classification pass first tries to match an existing Paperless correspondent.
+
+If it cannot resolve one, an optional second, correspondent-only LLM pass gets another chance to identify the sender:
 
 ```text
 existing correspondent → apply automatically
-new correspondent      → suggest for review in Paperless
+new correspondent      → send to Paperless suggestion/review
 ```
 
-New correspondents are never created automatically.
-
-## Control Center
-
-The web UI manages connections, OCR/workflow settings, both LLM stages, history and runtime behavior.
-
-It is designed around **test before production**: test Paperless/Ollama connections, preview the exact rendered prompts and run real model tests against existing Paperless documents without changing them. Dry Run can validate automatic metadata processing before metadata writes are enabled.
+New correspondents are only added after review in Paperless.
 
 ## Why this project?
 
-This project grew out of running local document AI on modest CPU-only hardware.
+This project started with running local document AI on modest CPU-only hardware.
 
 Two things became bottlenecks:
 
-- **OCR quality:** on the documents that motivated this project, Tesseract OCR was often not clean enough as input for a small local LLM. Scan-like pages are therefore selectively reprocessed with PaddleOCR.
-- **Inference time:** per-field LLM workflows such as the one used by `paperless-gpt` were too slow on the reference CPU because prompt processing was repeated several times per document.
+- **OCR quality:** Tesseract output from scanned documents was often not clean enough as input for a small local LLM, so PaddleOCR is used where additional OCR is useful.
+- **Inference time:** workflows that make a separate LLM request for every metadata field become slow on weak CPUs because the same document context has to be processed repeatedly.
 
-`paperless-local-ai` combines title, document type, date, tags and existing correspondent classification into **one structured LLM request**. Only the unresolved-correspondent case can add a second, specialized request.
+`paperless-local-ai` therefore combines title, document type, date, tags and existing-correspondent classification into **one structured LLM request**. Only an unresolved correspondent can add a second, specialized request.
 
-The scope is deliberately narrow: **better OCR and automatic metadata classification**. AI-heavy extras such as document chat, RAG or semantic search are left out because they add complexity and are a poor fit for the low-power hardware this project targets.
+The scope is deliberately narrow: **OCR and automatic metadata assignment**. Document chat, RAG, semantic search and other AI-heavy features are intentionally left out.
 
-Paperless' native AI is a general suggestion feature; this project is instead designed as an automatic, queue-driven pipeline with selective OCR, constrained taxonomy values and predictable resource use.
+## Control Center
+
+The web UI manages Paperless and Ollama connections, OCR and workflow settings, both LLM stages, history and runtime behavior.
 
 ## Reference system
 
