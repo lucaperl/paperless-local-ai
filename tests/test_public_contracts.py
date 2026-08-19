@@ -83,18 +83,40 @@ def test_true_nas_template_uses_same_upstream_images():
 
 
 def test_tested_ocr_stack_is_pinned():
-    text = (ROOT / "requirements/ocr.txt").read_text(encoding="utf-8")
-    for requirement in (
-        "paddleocr==3.7.0",
-        "paddlex==3.7.2",
-        "PyMuPDF==1.28.2",
-        "numpy==1.26.2",
-        "opencv-contrib-python==4.10.0.84",
-        "Pillow==10.1.0",
-        "shapely==2.1.2",
-        "pyclipper==1.4.0",
-    ):
-        assert requirement in text
+    lines = [
+        line.strip()
+        for line in (ROOT / "requirements/ocr.txt").read_text(
+            encoding="utf-8"
+        ).splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+    expected_packages = {
+        "paddleocr",
+        "paddlex",
+        "PyMuPDF",
+        "requests",
+        "numpy",
+        "opencv-contrib-python",
+        "Pillow",
+        "shapely",
+        "pyclipper",
+    }
+
+    pinned_packages = set()
+
+    for line in lines:
+        assert "==" in line, f"Dependency is not exactly pinned: {line}"
+
+        package, version = line.split("==", 1)
+
+        assert package, f"Missing package name: {line}"
+        assert version, f"Missing pinned version: {line}"
+        assert package not in pinned_packages, f"Duplicate dependency: {package}"
+
+        pinned_packages.add(package)
+
+    assert pinned_packages == expected_packages
 
 
 def test_third_party_license_notice_covers_pymupdf():
