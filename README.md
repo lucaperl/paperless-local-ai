@@ -57,7 +57,13 @@ The scope is deliberately narrow: **OCR and automatic metadata assignment**. Doc
 
 ## Control Center
 
-The web UI manages Paperless and Ollama connections, OCR and workflow settings, both LLM stages, history and runtime behavior.
+The included Control Center is the web interface for configuring `paperless-local-ai`: Paperless and Ollama connections, pipeline tags, OCR and runtime settings, classification, and the correspondent fallback.
+
+Prompts and model settings can be edited directly in the UI. Before using a change in production, you can preview the exact rendered prompt for an existing Paperless document or run a real Ollama test without modifying the document. The Control Center also shows the allowed Paperless values, structured model output and performance data.
+
+Saved configurations are versioned and can be restored from the UI.
+
+![paperless-local-ai Control Center](images/control-center-screenshot.png)
 
 ## Reference system
 

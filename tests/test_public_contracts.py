@@ -15,16 +15,29 @@ def test_ollama_is_not_bundled_as_service():
     assert "\n  ollama:" not in compose
 
 
-def test_prompt_ui_keeps_two_stage_structure_plus_central_app_settings():
+def test_control_center_keeps_complete_ui_contract():
     text = (ROOT / "src/core/prompt_ui.py").read_text(encoding="utf-8")
-    assert "paperless-local-ai Control Center" in text
-    assert "1 · Classification" in text
-    assert "2 · Correspondent fallback" in text
-    assert "App settings" in text
-    assert "Pipeline &amp; Tags" in text
-    assert "Test before production." in text
-    assert "Off — manual testing only" in text
-    assert "On — run when correspondent is empty" in text
+    for required in (
+        "paperless-local-ai Control Center",
+        "Overview",
+        "Classification",
+        "Correspondent fallback",
+        "App Settings",
+        "Pipeline &amp; Tags",
+        "Test before production.",
+        "What do Validate and Save do?",
+        "Available placeholders",
+        "System message sent to the model",
+        "User message sent to the model",
+        "Model response and validation",
+        "Test request details",
+        "Expected JSON output",
+        "Off — manual testing only",
+        "On — run when correspondent is empty",
+        "No correspondent · fallback disabled",
+        "No correspondent · fallback enabled",
+    ):
+        assert required in text
     assert "Prompt Studio" not in text
 
 
