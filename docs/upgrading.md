@@ -4,7 +4,7 @@ The software and the instance state are deliberately separate:
 
 ```text
 GitHub/GHCR images  = application software
-APP_DATA_DIR         = your settings, prompt history, caches and review state
+APP_DATA_DIR         = settings, prompt history, caches and review state
 ```
 
 An image update must not require copying source code into `APP_DATA_DIR`.
@@ -12,9 +12,9 @@ An image update must not require copying source code into `APP_DATA_DIR`.
 ## Before any update
 
 1. Read the GitHub release notes and `CHANGELOG.md`.
-2. Check [compatibility.md](compatibility.md), especially if Paperless itself was upgraded.
+2. Check [Compatibility](compatibility.md), especially if Paperless itself was upgraded.
 3. Back up at least `APP_DATA_DIR/config` and any open review state under `APP_DATA_DIR/core`.
-4. Do not delete the old image until the new deployment has passed a one-document smoke test.
+4. Keep the previous image available until the new deployment passes a one-document smoke test.
 
 ## Docker Compose using `stable`
 
@@ -23,40 +23,42 @@ Pull and recreate from the newest non-prerelease images:
 ```bash
 docker compose pull
 docker compose up -d
-```
-
-Then run:
-
-```bash
 docker compose --profile tools run --rm doctor
 ```
 
-and process one normal test document.
+Then process one normal test document.
 
 ## Docker Compose pinned to an exact release
 
-Change:
+Set:
 
 ```text
-APP_VERSION=0.1.0
+APP_VERSION=<exact-release>
 ```
 
-to the desired version, then:
+then run:
 
 ```bash
 docker compose pull
 docker compose up -d
+docker compose --profile tools run --rm doctor
 ```
 
-Pinning is recommended when you want every deployment to stay reproducible until you explicitly approve the next release.
+Pinning is useful when you want the deployment to stay reproducible until you explicitly approve the next release.
 
 ## TrueNAS Custom App using `stable`
 
-TrueNAS can monitor image updates for Custom Apps. With **Check for docker image updates** enabled, a new digest behind `stable` can appear as the normal TrueNAS **Update** action.
+With Docker image update checks enabled, a new digest behind `stable` can appear as the normal TrueNAS **Update** action.
 
-Apply it from the TrueNAS UI. No custom shell updater is required for an image-only release.
+Apply image-only updates from the TrueNAS UI. No custom shell updater is required.
 
-The current TrueNAS template declares the app portal as **Control Center**. Existing Custom Apps keep the `x-portals` metadata stored in their YAML, so an older installation may still show **Prompt UI** after an image update. In that case edit the stored YAML once and change only:
+A container image cannot rewrite the Compose YAML stored by TrueNAS. If release notes say the deployment contract changed — services, commands, mounts, ports, required environment or other Compose fields — update the stored YAML as part of the upgrade.
+
+### Older portal label
+
+Existing Custom Apps created from an older template may still show **Prompt UI** after an image update because `x-portals` is stored in the Custom App YAML.
+
+If needed, change only:
 
 ```yaml
 name: Prompt UI
@@ -68,22 +70,14 @@ to:
 name: Control Center
 ```
 
-## Compose-contract changes
-
-A container image cannot change the Compose YAML already stored by Docker/TrueNAS.
-
-If release notes say the deployment contract changed (services, commands, mounts, ports, required environment or other Compose fields), update the Compose definition as part of the upgrade instead of relying only on an image refresh.
-
-The project treats such changes as operator-visible upgrade work and documents them explicitly.
-
 ## Rollback
 
-If an update fails before it changes persistent data formats, redeploy the previous exact image tag, for example:
+For an image-only release that did not migrate persistent data, redeploy the previous exact image tag:
 
 ```text
-APP_VERSION=0.1.0
+APP_VERSION=<previous-release>
 ```
 
 If release notes describe a persistent-data migration, follow the release-specific rollback instructions instead of blindly downgrading.
 
-For 0.1.x, AppConfig and prompt configs are JSON files with version history; the app does not use a database of its own.
+The current 0.1.x line stores AppConfig and prompt configurations as JSON files with version history; the app does not use its own database.

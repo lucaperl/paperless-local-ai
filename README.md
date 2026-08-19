@@ -104,11 +104,14 @@ Tested with **Paperless-ngx 3.0.5**, **TrueNAS SCALE 25.10.4** and **qwen3.5:4b*
 
 ## Install
 
+Choose **one** deployment guide:
+
 - [Docker Compose](docs/installation.md)
 - [TrueNAS SCALE](docs/truenas.md)
-- [Paperless setup](docs/paperless-setup.md)
 
-More: [Control Center](docs/control-center.md) · [Configuration](docs/configuration.md) · [Troubleshooting](docs/troubleshooting.md) · [Architecture](docs/architecture.md)
+After the app is running, complete the shared [Paperless setup](docs/paperless-setup.md), then review and test your settings in [Configuration](docs/configuration.md) before processing normal documents.
+
+More: [Troubleshooting](docs/troubleshooting.md) · [Updating](docs/upgrading.md) · [Compatibility](docs/compatibility.md) · [Architecture](docs/architecture.md)
 
 ## Security
 
