@@ -36,6 +36,10 @@ def test_control_center_keeps_complete_ui_contract():
         "On — run when correspondent is empty",
         "No correspondent · fallback disabled",
         "No correspondent · fallback enabled",
+        "Load preset into draft",
+        "classPromptPreset",
+        "corrPromptPreset",
+        "ocrLanguageOptions",
     ):
         assert required in text
     assert "Prompt Studio" not in text

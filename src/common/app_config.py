@@ -23,14 +23,14 @@ DEFAULT_CONFIG = {
     },
     "workflow": {
         "ocr_queue_tag": "PaddleOCR",
-        "ocr_error_tag": "PaddleOCR Fehler",
+        "ocr_error_tag": "PaddleOCR Error",
         "llm_queue_tag": "LLM",
-        "llm_error_tag": "LLM Fehler",
+        "llm_error_tag": "LLM Error",
         "review_tag": "Inbox",
         "extra_excluded_tags": ["TODO"],
     },
     "ocr": {
-        "language": "de",
+        "language": "en",
         "version": "PP-OCRv6",
         "device": "cpu",
     },

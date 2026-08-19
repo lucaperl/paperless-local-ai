@@ -20,11 +20,11 @@ from app_config import load_config as load_app_config
 URL = ""
 TOKEN = os.environ["PAPERLESS_TOKEN"]
 QUEUE_TAG_NAME = "PaddleOCR"
-ERROR_TAG_NAME = "PaddleOCR Fehler"
+ERROR_TAG_NAME = "PaddleOCR Error"
 NEXT_TAG_NAME = "LLM"
 AI_LOCK_FILE = Path("/coordination/ai.lock")
 INTERVAL = 10
-OCR_LANGUAGE = "de"
+OCR_LANGUAGE = "en"
 OCR_VERSION = "PP-OCRv6"
 OCR_DEVICE = "cpu"
 TMP = Path("/ocr-data/tmp")
@@ -48,9 +48,9 @@ def apply_app_config(cfg):
     OCR_VERSION = ocr["version"]
     OCR_DEVICE = ocr["device"]
 
-# PDF-Seitenklassifikation. Die Werte sind konservative Toleranzen,
-# keine PDF-Standards. Entscheidungen beruhen immer auf mehreren
-# strukturellen Signalen statt nur auf Textmenge oder Bildpixeln.
+# PDF page classification. These values are conservative tolerances,
+# not PDF standards. Decisions use multiple structural signals rather than
+# relying only on text volume or image pixels.
 MIN_NATIVE_CHARS = 10
 SMALL_RASTER_PAGE = 0.08
 SMALL_RASTER_CONTENT = 0.15
@@ -88,7 +88,7 @@ def ai_resource_lock(stage, doc_id):
     with AI_LOCK_FILE.open("a+") as lock_file:
         log(
             f"[LOCK] ID {doc_id}: "
-            f"warte auf globalen AI-Lock ({stage})"
+            f"waiting for global AI lock ({stage})"
         )
 
         fcntl.flock(
@@ -98,7 +98,7 @@ def ai_resource_lock(stage, doc_id):
 
         log(
             f"[LOCK] ID {doc_id}: "
-            f"globaler AI-Lock aktiv ({stage})"
+            f"global AI lock active ({stage})"
         )
 
         try:
@@ -129,8 +129,8 @@ def api(method, path, **kwargs):
             last_error = e
 
             log(
-                f"[API] Versuch {attempt}/3 "
-                f"fehlgeschlagen: {e}"
+                f"[API] attempt {attempt}/3 "
+                f"failed: {e}"
             )
 
             if attempt < 3:
@@ -153,7 +153,7 @@ def tag_id(name):
             return tag["id"]
 
     raise RuntimeError(
-        f'Tag "{name}" nicht gefunden'
+        f'Tag "{name}" not found'
     )
 
 
@@ -617,16 +617,16 @@ def classify_page(features, tagged):
             return (
                 "OCR_PAGE",
                 [
-                    f"nur {f.chars} "
-                    "brauchbare native Zeichen"
+                    f"only {f.chars} "
+                    "usable native characters"
                 ],
             )
 
         return (
             "EMPTY",
             [
-                "kein relevanter Text- "
-                "oder Bildinhalt"
+                "no relevant text or "
+                "image content"
             ],
         )
 
@@ -641,8 +641,8 @@ def classify_page(features, tagged):
         return (
             "NATIVE",
             [
-                "native Textseite ohne "
-                "relevanten Rasteranteil"
+                "native text page without "
+                "relevant raster content"
             ],
         )
 
@@ -650,14 +650,14 @@ def classify_page(features, tagged):
 
     if f.hidden_chars >= HIDDEN_TEXT_MIN:
         hard_reasons.append(
-            f"{f.hidden_chars} versteckte "
-            "Textzeichen + Raster"
+            f"{f.hidden_chars} hidden "
+            "text characters + raster"
         )
 
     if f.ignore_text_ops > 0:
         hard_reasons.append(
             f"{f.ignore_text_ops} "
-            "ignore-text-Operation(en) + Raster"
+            "ignore-text operation(s) + raster"
         )
 
     covered_ratio = (
@@ -668,8 +668,8 @@ def classify_page(features, tagged):
 
     if covered_ratio >= COVERED_TEXT_RATIO:
         hard_reasons.append(
-            f"{covered_ratio:.0%} des Texts "
-            "wird später von Raster überdeckt"
+            f"{covered_ratio:.0%} of text "
+            "is covered by a later raster operation"
         )
 
     if hard_reasons:
@@ -698,10 +698,10 @@ def classify_page(features, tagged):
         return (
             "OCR_PAGE",
             [
-                "Raster dominiert den Inhaltsbereich",
-                "Text liegt praktisch vollständig "
-                "auf dem Raster",
-                "hochaufgelöstes 1-Bit-Raster "
+                "raster dominates the content area",
+                "text lies almost entirely "
+                "on the raster",
+                "high-resolution 1-bit raster "
                 f"({f.max_effective_dpi:.0f} dpi)",
             ],
         )
@@ -718,8 +718,8 @@ def classify_page(features, tagged):
         return (
             "NATIVE",
             [
-                "Tagged PDF ohne dominanten "
-                "Scan-Hinweis"
+                "tagged PDF without dominant "
+                "scan indicator"
             ],
         )
 
@@ -735,16 +735,16 @@ def classify_page(features, tagged):
         return (
             "VERIFY",
             [
-                "mehrdeutige Text+Raster-Seite; "
-                "OCR nur zur Verifikation"
+                "ambiguous text+raster page; "
+                "OCR used only for verification"
             ],
         )
 
     return (
         "NATIVE",
         [
-            "native Textseite mit begrenztem "
-            "Rasteranteil"
+            "native text page with limited "
+            "raster content"
         ],
     )
 
@@ -782,13 +782,13 @@ def choose_verified_text(
     if not ocr:
         return (
             "NATIVE",
-            "OCR lieferte keinen Text",
+            "OCR returned no text",
         )
 
     if not native:
         return (
             "OCR",
-            "native Extraktion leer",
+            "native extraction is empty",
         )
 
     native_tokens = {
@@ -849,9 +849,9 @@ def choose_verified_text(
     ):
         return (
             "OCR",
-            "OCR ist deutlich vollständiger "
-            f"(Länge {length_ratio:.2f}x, "
-            f"Konfidenz {confidence:.2f})",
+            "OCR is substantially more complete "
+            f"(length {length_ratio:.2f}x, "
+            f"confidence {confidence:.2f})",
         )
 
     if (
@@ -861,9 +861,9 @@ def choose_verified_text(
     ):
         return (
             "OCR",
-            "OCR erweitert den nativen Text "
-            f"(Länge {length_ratio:.2f}x, "
-            f"native Abdeckung {native_covered:.0%})",
+            "OCR extends the native text "
+            f"(length {length_ratio:.2f}x, "
+            f"native coverage {native_covered:.0%})",
         )
 
     if (
@@ -874,16 +874,16 @@ def choose_verified_text(
     ):
         return (
             "OCR",
-            "OCR enthält viele zusätzliche "
-            f"Texttokens ({ocr_extra:.0%})",
+            "OCR contains many additional "
+            f"text tokens ({ocr_extra:.0%})",
         )
 
     return (
         "NATIVE",
-        "kein ausreichender Mehrwert durch OCR "
-        f"(Länge {length_ratio:.2f}x, "
-        f"Ähnlichkeit {similarity:.2f}, "
-        f"Konfidenz {confidence:.2f})",
+        "insufficient added value from OCR "
+        f"(length {length_ratio:.2f}x, "
+        f"similarity {similarity:.2f}, "
+        f"confidence {confidence:.2f})",
     )
 
 
@@ -1082,7 +1082,7 @@ def selective_pdf_content(
 
         log(
             f"[PDF] ID {doc_id}: "
-            f"{document.page_count} Seite(n), "
+            f"{document.page_count} page(s), "
             f"Tagged={tagged}"
         )
 
@@ -1118,7 +1118,7 @@ def selective_pdf_content(
             )
 
             log(
-                f"[PDF] ID {doc_id} Seite {index}: "
+                f"[PDF] ID {doc_id} page {index}: "
                 f"{decision} | "
                 f"chars={features.chars}, "
                 f"raster_content="
@@ -1132,7 +1132,7 @@ def selective_pdf_content(
 
             for reason in reasons:
                 log(
-                    f"[PDF] ID {doc_id} Seite {index}: "
+                    f"[PDF] ID {doc_id} page {index}: "
                     f"{reason}"
                 )
 
@@ -1160,7 +1160,7 @@ def selective_pdf_content(
 
     log(
         f"[PDF] ID {doc_id}: "
-        "PaddleOCR nur für Seite(n) "
+        "PaddleOCR only for page(s) "
         + ",".join(
             str(value)
             for value in pages_for_ocr
@@ -1192,8 +1192,8 @@ def selective_pdf_content(
 
         if result is None:
             raise RuntimeError(
-                "Kein PaddleOCR-Ergebnis für "
-                f"PDF-Seite {plan.page_no}"
+                "No PaddleOCR result for "
+                f"PDF page {plan.page_no}"
             )
 
         if plan.decision == "OCR_PAGE":
@@ -1201,16 +1201,16 @@ def selective_pdf_content(
                 if plan.features.chars < MIN_NATIVE_CHARS:
                     final_pages.append("")
                     log(
-                        f"[PDF] ID {doc_id} Seite "
-                        f"{plan.page_no}: OCR ohne Text; "
-                        "als leere Scan-Seite behandelt"
+                        f"[PDF] ID {doc_id} page "
+                        f"{plan.page_no}: OCR returned no text; "
+                        "treated as an empty scanned page"
                     )
                     used_ocr = True
                     continue
 
                 raise RuntimeError(
-                    "PaddleOCR lieferte für zwingende "
-                    f"OCR-Seite {plan.page_no} keinen Text"
+                    "PaddleOCR returned no text for required "
+                    f"OCR page {plan.page_no}"
                 )
 
             final_pages.append(
@@ -1219,8 +1219,8 @@ def selective_pdf_content(
             used_ocr = True
 
             log(
-                f"[PDF] ID {doc_id} Seite "
-                f"{plan.page_no}: OCR übernommen"
+                f"[PDF] ID {doc_id} page "
+                f"{plan.page_no}: OCR selected"
             )
             continue
 
@@ -1230,7 +1230,7 @@ def selective_pdf_content(
         )
 
         log(
-            f"[VERIFY] ID {doc_id} Seite "
+            f"[VERIFY] ID {doc_id} page "
             f"{plan.page_no}: {choice} | {reason}"
         )
 
@@ -1257,7 +1257,7 @@ def selective_pdf_content(
 
     if not content:
         raise RuntimeError(
-            "Selektive PDF-OCR hat keinen Text geliefert"
+            "Selective PDF OCR returned no text"
         )
 
     return content
@@ -1325,8 +1325,8 @@ def mark_success(
 
     log(
         f"[HANDOFF] ID {doc_id}: "
-        f"'{QUEUE_TAG_NAME}' abgeschlossen, "
-        f"'{NEXT_TAG_NAME}' gesetzt"
+        f"'{QUEUE_TAG_NAME}' completed, "
+        f"'{NEXT_TAG_NAME}' set"
     )
 
 
@@ -1354,13 +1354,13 @@ def mark_error(
 
         log(
             f"[FAILED] ID {doc_id}: "
-            f"mit '{ERROR_TAG_NAME}' markiert"
+            f"marked with '{ERROR_TAG_NAME}'"
         )
 
     except Exception as tag_error:
         log(
-            "[WARN] Fehlerstatus konnte "
-            f"nicht gesetzt werden: {tag_error}"
+            "[WARN] Could not set error status: "
+            f"{tag_error}"
         )
 
 
@@ -1422,8 +1422,8 @@ def process(
     else:
         log(
             f"[SKIP] ID {doc_id}: "
-            "nicht unterstützter Dokumenttyp: "
-            f"{ctype or 'unbekannt'}"
+            "unsupported document type: "
+            f"{ctype or 'unknown'}"
         )
 
         mark_success(
@@ -1454,8 +1454,8 @@ def process(
             if content is None:
                 log(
                     f"[SKIP] ID {doc_id}: "
-                    "PDF-Seiten benötigen keine "
-                    "inhaltliche OCR-Ersetzung"
+                    "PDF pages do not require "
+                    "OCR content replacement"
                 )
 
                 mark_success(
@@ -1483,15 +1483,15 @@ def process(
                     )
                 else:
                     raise RuntimeError(
-                        "PaddleOCR-Ergebnis für Bild "
-                        "nicht eindeutig"
+                        "PaddleOCR result for image is "
+                        "ambiguous"
                     )
 
             content = result.text.strip()
 
             if not content:
                 raise RuntimeError(
-                    "PaddleOCR hat keinen Text geliefert"
+                    "PaddleOCR returned no text"
                 )
 
         tags = set(
@@ -1526,14 +1526,14 @@ def process(
 
         log(
             f"[OK] ID {doc_id}: "
-            f"{len(content)} Zeichen, "
-            f"{duration:.1f} Sekunden"
+            f"{len(content)} characters, "
+            f"{duration:.1f} seconds"
         )
 
         log(
             f"[HANDOFF] ID {doc_id}: "
-            f"'{QUEUE_TAG_NAME}' abgeschlossen, "
-            f"'{NEXT_TAG_NAME}' gesetzt"
+            f"'{QUEUE_TAG_NAME}' completed, "
+            f"'{NEXT_TAG_NAME}' set"
         )
 
     finally:
@@ -1562,12 +1562,12 @@ def main():
     )
 
     log(
-        f"[BOOT] Polling alle "
-        f"{INTERVAL} Sekunden"
+        f"[BOOT] Polling every "
+        f"{INTERVAL} seconds"
     )
 
     log(
-        f"[BOOT] Erfolgs-Handoff: "
+        f"[BOOT] Success handoff: "
         f"{NEXT_TAG_NAME}"
     )
 
@@ -1577,8 +1577,8 @@ def main():
     )
 
     log(
-        "[BOOT] PDF-Modus: "
-        "selektive Seiten-OCR mit "
+        "[BOOT] PDF mode: "
+        "selective page OCR with "
         "NATIVE/OCR_PAGE/VERIFY"
     )
 
