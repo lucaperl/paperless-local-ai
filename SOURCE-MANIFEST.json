@@ -1,15 +1,15 @@
 {
-  "version": "0.1.2",
+  "version": "0.1.3",
   "created": "2026-08-19",
   "source_files": {
-    "src/common/app_config.py": "bbb21aa20658f2e5df6aa270a36adae48167a4b206bf93df8b5ea1b2da8beb45",
-    "src/core/correspondent_runtime.py": "c3dcdb10e47d30a304fe654f2a640335a706791d15f8caea82118516ccfe9676",
-    "src/core/doctor.py": "f8b95af42666e22a11df405dc44656ecc0b59545c9486df7c634a738f0864403",
-    "src/core/prompt_runtime.py": "ee364f8b83355a51cb1c0f3adc888b0595555be0c8e84003158c92284ddd32c6",
-    "src/core/prompt_ui.py": "f1c6f089edea1b99048506554780b1082baf3de836b607c310b607c998eb3e79",
-    "src/core/review_store.py": "82a9f5d9bbe666b21be440b6bb29504b82868dae790642330e37b84a5ae1192a",
-    "src/core/suggestion_bridge.py": "2285bfad29b20dab98628fc24a698437b48fe29a373130983389fa11a43b60ff",
-    "src/core/worker.py": "b9a6dea670f6da1150ff153c174b63d2568e79de866c26fe24d21c4cb0df0914",
-    "src/ocr/worker.py": "b4bd16e598f07d19149d50d9070e56b40e04461d8b598419f40dad80a5a3274a"
+    "src\\common\\app_config.py": "93b7a224511e0d3fb445bea15ebafabbf45870d0b4e5d1f0a4de5a1f8e1c31cb",
+    "src\\core\\correspondent_runtime.py": "f63f7dca6a8cb261b9156c2d9b21dcb938921ddea1dac3f739eed830a4cb9b0f",
+    "src\\core\\doctor.py": "b85c7ff83f3e84f9ef9abfbdc95952bb4d0a4dbf9e6843530b6eee1b06c5d4a2",
+    "src\\core\\prompt_runtime.py": "f63e01d5c44aa462df1165a3c89bf407b2532fd69a248ad2f5af5654f9cda024",
+    "src\\core\\prompt_ui.py": "bf33e4ffc1284b758d06e8d9a860098fef2714f0d7c71ae62dd365698da45162",
+    "src\\core\\review_store.py": "5021b0e55ac35f22971e2e6f48fe19c2ad737e48579a25d875e19ef5561dae33",
+    "src\\core\\suggestion_bridge.py": "ba2684ab12bc5900ef37a10209f1d972680c7e87767a1c39c1e69335a497d9f1",
+    "src\\core\\worker.py": "7f7c12f375882a88e8537ad8cdc2dce146bddea5e86d6af107a157b2a36ef59c",
+    "src\\ocr\\worker.py": "5ecf46affce3cbe0aee400c9f38c43298dada51405eb8c74049480d1888fc842"
   }
 }

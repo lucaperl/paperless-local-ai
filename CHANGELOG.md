@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.3 - 2026-08-19
+
 - switch fresh-install OCR, technical error-tag and prompt defaults to English while preserving existing saved configurations;
 - add English/German prompt presets for Classification and Correspondent fallback, improve PP-OCRv6 language selection in the Control Center and make runtime logs/errors English-facing;
 - streamline first-time installation and configuration documentation, clarify container networking, workflow scope, Dry Run behavior and metadata write semantics, and remove duplicated Control Center guidance.
