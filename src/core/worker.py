@@ -66,7 +66,7 @@ def resolve_named_id(path, name):
     for obj in client.all_objects(path):
         if obj.get("name") == name:
             return obj["id"]
-    raise RuntimeError(f"Wert {name!r} in {path} nicht mehr vorhanden")
+    raise RuntimeError(f"Value {name!r} no longer exists in {path}")
 
 
 def apply_metadata_and_finish(doc_id, result, tax, queue_tag, error_tag):
@@ -117,9 +117,9 @@ def mark_error(doc_id, queue_tag, error_tag, error, error_name):
             add={error_tag},
             remove={queue_tag},
         )
-        log(f"[FAILED] ID {doc_id}: mit '{error_name}' markiert")
+        log(f"[FAILED] ID {doc_id}: marked with '{error_name}'")
     except Exception as tag_error:
-        log(f"[WARN] Fehlerstatus konnte nicht gesetzt werden: {tag_error}")
+        log(f"[WARN] Could not set error status: {tag_error}")
 
 
 def run_correspondent_fallback(fresh, tax, main_result):
@@ -207,8 +207,8 @@ def route_correspondent_candidate(candidate, tax, main_result, fallback):
         fallback["candidate_kind"] = "existing"
         fallback["matched_existing"] = canonical
         log(
-            f"[CORR] vorhandener Korrespondent exakt erkannt: "
-            f"{canonical!r} -> automatisch gesetzt"
+            f"[CORR] exact existing correspondent match: "
+            f"{canonical!r} -> applied automatically"
         )
         return ""
 
@@ -225,7 +225,7 @@ def _inbox_document_ids(tax, review_tag_name):
 
     if inbox_tag is None:
         raise RuntimeError(
-            f'Tag {review_tag_name!r} nicht gefunden'
+            f'Tag {review_tag_name!r} not found'
         )
 
     ids = set()
@@ -296,7 +296,7 @@ def prune_review_records(tax, review_tag_name):
     if removed:
         log(
             "[REVIEW-PRUNE] "
-            + f"{len(removed)} erledigte/verwaiste Record(s) entfernt: "
+            + f"{len(removed)} completed/orphaned record(s) removed: "
             + ",".join(
                 str(x)
                 for x in sorted(
@@ -321,7 +321,7 @@ def write_review_record_safe(doc_id, candidate, fallback):
                 "prompt": fallback.get("prompt", {}),
             },
         )
-        log(f"[REVIEW] ID {doc_id}: Record v{record['version']} geschrieben" + (f", Korrespondent-Vorschlag={candidate!r}" if candidate else ", kein zusätzlicher Korrespondent-Vorschlag"))
+        log(f"[REVIEW] ID {doc_id}: wrote record v{record['version']}" + (f", correspondent suggestion={candidate!r}" if candidate else ", no additional correspondent suggestion"))
     except Exception as exc:
         log(f"[REVIEW-WARN] ID {doc_id}: {type(exc).__name__}: {exc}")
 
@@ -352,15 +352,15 @@ def process(doc, tax, app_cfg):
             for name in blocking_names
             if tax["tag_by_name"].get(name) in active_blockers
         ]
-        log(f"[WAIT] ID {doc_id}: blockiert durch {', '.join(sorted(names))}")
+        log(f"[WAIT] ID {doc_id}: blocked by {', '.join(sorted(names))}")
         return
 
     config = load_config()
     rendered = render_prompts(fresh, tax, config)
 
     log(
-        f"[JOB] ID {doc_id}: {rendered['content_chars_used']} Zeichen"
-        + (" (gekürzt)" if rendered["content_truncated"] else "")
+        f"[JOB] ID {doc_id}: {rendered['content_chars_used']} characters"
+        + (" (truncated)" if rendered["content_truncated"] else "")
         + f", PromptConfig v{config['version']}"
     )
 
@@ -419,7 +419,7 @@ def process(doc, tax, app_cfg):
 
     if validation_errors:
         raise RuntimeError(
-            "LLM-Antwort nicht valide: " + "; ".join(validation_errors)
+            "LLM response is invalid: " + "; ".join(validation_errors)
         )
 
     perf = report["performance"]
@@ -428,7 +428,7 @@ def process(doc, tax, app_cfg):
         + json.dumps(result, ensure_ascii=False, separators=(",", ":"))
     )
     log(
-        f"[PERF] ID {doc_id}: {perf['wall_seconds']:.1f}s gesamt, "
+        f"[PERF] ID {doc_id}: {perf['wall_seconds']:.1f}s total, "
         f"{perf['prompt_tokens']} Prompt-Tokens, "
         f"{perf['output_tokens']} Output-Tokens"
     )
@@ -436,8 +436,8 @@ def process(doc, tax, app_cfg):
         log(f"[CORR] ID {doc_id}: " + json.dumps({"status": correspondent_fallback.get("status"), "suggestion": correspondent_fallback.get("suggestion"), "validation_errors": correspondent_fallback.get("validation_errors")}, ensure_ascii=False, separators=(",", ":")))
 
     if runtime["dry_run"]:
-        log(f"[DRY-RUN] ID {doc_id}: keine fachlichen Metadaten verändert")
-        log(f"[DRY-RUN] ID {doc_id}: kein persistenter Review-Record geschrieben")
+        log(f"[DRY-RUN] ID {doc_id}: no document metadata changed")
+        log(f"[DRY-RUN] ID {doc_id}: no persistent review record written")
         mark_success(doc_id, queue_tag, error_tag)
     else:
         apply_metadata_and_finish(
@@ -447,7 +447,7 @@ def process(doc, tax, app_cfg):
             queue_tag,
             error_tag,
         )
-        log(f"[APPLY] ID {doc_id}: Metadaten erfolgreich in Paperless gespeichert")
+        log(f"[APPLY] ID {doc_id}: metadata saved to Paperless")
         write_review_record_safe(
             doc_id,
             correspondent_candidate,
@@ -461,18 +461,18 @@ def main():
     log("[BOOT] Paperless LLM Metadata Worker")
     log(f"[BOOT] AppConfig: /config/app-config.json (v{app_cfg['version']})")
     log(f"[BOOT] PromptConfig: /config/prompt-config.json (v{config['version']})")
-    log(f"[BOOT] Modell: {config['model']}")
+    log(f"[BOOT] Model: {config['model']}")
     log(f"[BOOT] Context: {config['num_ctx']}")
-    log("[BOOT] Prompt- und App-Einstellungen werden laufend neu geladen")
+    log("[BOOT] Prompt and app settings are reloaded continuously")
     try:
         corr_cfg = load_correspondent_config()
         log(
-            "[BOOT] Korrespondent-Fallback: "
-            + ("AKTIV" if corr_cfg["enabled"] else "deaktiviert")
+            "[BOOT] Correspondent fallback: "
+            + ("ENABLED" if corr_cfg["enabled"] else "disabled")
             + f" (Config v{corr_cfg['version']})"
         )
     except Exception as exc:
-        log(f"[BOOT-WARN] Korrespondent-Config nicht lesbar: {type(exc).__name__}: {exc}")
+        log(f"[BOOT-WARN] Correspondent config is not readable: {type(exc).__name__}: {exc}")
 
     last_review_prune = 0.0
 
@@ -489,9 +489,9 @@ def main():
 
             tax = client.taxonomy()
             if queue_name not in tax["tag_by_name"]:
-                raise RuntimeError(f'Tag "{queue_name}" nicht gefunden')
+                raise RuntimeError(f'Tag "{queue_name}" not found')
             if error_name not in tax["tag_by_name"]:
-                raise RuntimeError(f'Tag "{error_name}" nicht gefunden')
+                raise RuntimeError(f'Tag "{error_name}" not found')
 
             now = time.monotonic()
             if now - last_review_prune >= runtime["review_prune_interval_seconds"]:

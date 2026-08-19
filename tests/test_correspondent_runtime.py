@@ -1,4 +1,11 @@
-from correspondent_runtime import validate_result
+from correspondent_runtime import DEFAULT_CONFIG, PROMPT_PRESETS, validate_result
+
+
+def test_correspondent_prompt_presets_include_english_default_and_german():
+    assert DEFAULT_CONFIG["system_prompt"] == PROMPT_PRESETS["en"]["system_prompt"]
+    assert DEFAULT_CONFIG["prompt_template"] == PROMPT_PRESETS["en"]["prompt_template"]
+    assert "{{DOCUMENT_TEXT}}" in PROMPT_PRESETS["en"]["prompt_template"]
+    assert "{{DOCUMENT_TEXT}}" in PROMPT_PRESETS["de"]["prompt_template"]
 
 
 def test_free_correspondent_name_is_valid():

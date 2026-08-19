@@ -120,4 +120,4 @@ def test_live_prompt_content_resolution_fails_closed_for_identical_docs(monkeypa
     )
 
     assert record is None
-    assert reason == "content+prompt mehrdeutig (2)"
+    assert reason == "content+prompt ambiguous (2)"

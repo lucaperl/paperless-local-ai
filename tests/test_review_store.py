@@ -83,7 +83,7 @@ def test_record_v4_fails_closed_for_identical_prompt_content(tmp_path, monkeypat
     )
 
     assert record is None
-    assert reason == "prompt_content_signature mehrdeutig (2)"
+    assert reason == "prompt_content_signature ambiguous (2)"
 
 
 def test_atomic_write_is_real_and_valid_json(tmp_path, monkeypatch):

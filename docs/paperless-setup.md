@@ -15,9 +15,9 @@ Fresh-install defaults are:
 | Tag | Purpose |
 |---|---|
 | `PaddleOCR` | OCR queue |
-| `PaddleOCR Fehler` | OCR errors |
+| `PaddleOCR Error` | OCR errors |
 | `LLM` | metadata queue |
-| `LLM Fehler` | metadata errors |
+| `LLM Error` | metadata errors |
 | `Inbox` | human review |
 
 `TODO` is the default additional tag excluded from normal LLM content-tag candidates.

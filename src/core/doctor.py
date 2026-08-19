@@ -35,7 +35,7 @@ def configured_models():
         except FileNotFoundError:
             continue
         except Exception as exc:
-            warn(f"Config {path} nicht lesbar: {exc}")
+            warn(f"Config {path} is not readable: {exc}")
             continue
         model = str(data.get("model", "")).strip()
         if model:
@@ -53,7 +53,7 @@ def main():
     try:
         app = load_app_config()
     except Exception as exc:
-        fail(f"App-Konfiguration nicht lesbar: {exc}")
+        fail(f"App configuration is not readable: {exc}")
         return 1
 
     paperless_url = app["connections"]["paperless_url"]
@@ -61,7 +61,7 @@ def main():
     workflow = app["workflow"]
 
     if not PAPERLESS_TOKEN:
-        fail("PAPERLESS_TOKEN fehlt in der Deployment-Umgebung")
+        fail("PAPERLESS_TOKEN is missing from the deployment environment")
         return 1
 
     def paperless_get(path):
@@ -79,9 +79,9 @@ def main():
     try:
         data = paperless_get("/api/tags/?page_size=1000")
         tags = data.get("results", data) if isinstance(data, dict) else data
-        ok(f"Paperless erreichbar: {paperless_url}")
+        ok(f"Paperless reachable: {paperless_url}")
     except Exception as exc:
-        fail(f"Paperless nicht erreichbar oder Token ungültig: {exc}")
+        fail(f"Paperless is not reachable or the token is invalid: {exc}")
         return 1
 
     tag_names = {str(x.get("name", "")) for x in tags}
@@ -94,9 +94,9 @@ def main():
     ]
     missing = [x for x in required if x not in tag_names]
     if missing:
-        good &= fail("Fehlende Paperless-Tags: " + ", ".join(missing))
+        good &= fail("Missing Paperless tags: " + ", ".join(missing))
     else:
-        ok("Alle benötigten Queue-/Review-Tags vorhanden")
+        ok("All required queue/review tags are present")
 
     try:
         r = requests.get(f"{ollama_url}/api/tags", timeout=20)
@@ -107,9 +107,9 @@ def main():
             for item in payload.get("models", [])
             if isinstance(item, dict)
         }
-        ok(f"Ollama erreichbar: {ollama_url}")
+        ok(f"Ollama reachable: {ollama_url}")
     except Exception as exc:
-        fail(f"Ollama nicht erreichbar: {exc}")
+        fail(f"Ollama is not reachable: {exc}")
         return 1
 
     wanted = configured_models()
@@ -119,15 +119,15 @@ def main():
         and not any(name.startswith(model + ":") for name in installed)
     ]
     if missing_models:
-        good &= fail("Fehlende Ollama-Modelle: " + ", ".join(missing_models))
+        good &= fail("Missing Ollama models: " + ", ".join(missing_models))
     else:
-        ok("Alle aktuell konfigurierten Ollama-Modelle vorhanden: " + ", ".join(wanted))
+        ok("All currently configured Ollama models are present: " + ", ".join(wanted))
 
     if good:
-        print("\nREADY: Grundvoraussetzungen sind erfüllt.")
+        print("\nREADY: Base requirements are satisfied.")
         return 0
 
-    print("\nNOT READY: Siehe FAIL-Zeilen oben.")
+    print("\nNOT READY: See the FAIL lines above.")
     return 1
 
 

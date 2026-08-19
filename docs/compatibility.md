@@ -10,9 +10,8 @@ Compatibility claims are intentionally narrow: an environment is listed as teste
 | Deployment | Docker Compose v2 |
 | TrueNAS SCALE | **25.10.4** Custom App |
 | Platform | **linux/amd64** |
-| OCR reference | PP-OCRv6 · German · CPU |
+| OCR reference | PP-OCRv6 · CPU |
 | Ollama reference model | **qwen3.5:4b** |
-| Documents | German end-to-end workflow |
 
 ## Paperless versions
 
@@ -24,10 +23,10 @@ Do not assume a newer Paperless release is compatible with the bridge until that
 
 Paperless 2.x is not a supported target for the native suggestion integration.
 
-## Other models and languages
+## Models and languages
 
-Other installed Ollama models can be selected independently for Classification and Correspondent fallback, but quality and performance are not assumed equivalent to the reference model.
+Classification and Correspondent fallback can use installed Ollama models selected independently in the Control Center.
 
-OCR language and prompts are configurable. Non-German end-to-end behavior is not currently claimed as tested.
+OCR language is configured separately under **App Settings → OCR**. The Control Center provides PP-OCRv6 language choices, while Classification and Correspondent fallback include English and German prompt presets and continue to support custom prompt text.
 
 ARM64 is not currently claimed as supported.

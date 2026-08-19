@@ -12,7 +12,7 @@ You need:
 - a Paperless API token;
 - an installed Ollama model (`qwen3.5:4b` is the default).
 
-The tested reference workflow uses German OCR and German default prompts. OCR language and prompts are configurable; see [Compatibility](compatibility.md) for the currently tested scope.
+Fresh installations use English OCR and English prompt defaults. OCR language and the two prompt stages can be changed independently in the Control Center.
 
 ## 1. Download
 

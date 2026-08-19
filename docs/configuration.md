@@ -113,9 +113,13 @@ The fallback can be previewed and tested while its production switch is off.
 
 ## Language
 
-The Control Center interface is English.
+The Control Center interface is English. Fresh installations start with OCR language `en` plus English Classification and Correspondent fallback prompts.
 
-The current default classification prompts are German, and the tested reference OCR language is German. Both prompts and OCR language are configurable; non-German end-to-end behavior is not currently claimed as tested.
+Classification and Correspondent fallback each include **English** and **German** prompt presets. **Load preset into draft** changes only the visible prompt fields; review or edit them and save when you want to activate the preset.
+
+OCR language is independent from prompt language. Choose the language of the scanned documents under **App Settings → OCR**. The language picker provides PP-OCRv6 language codes while still allowing a code to be entered manually.
+
+Existing saved configurations are left unchanged by software updates, so an installation can keep its current OCR language, prompt text and technical tag names until you choose to change them.
 
 ## Deployment-only settings
 
