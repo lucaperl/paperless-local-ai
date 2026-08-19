@@ -13,7 +13,7 @@ You need:
 - a persistent TrueNAS dataset;
 - a Paperless API token.
 
-The tested reference workflow uses German OCR and German default prompts. OCR language and prompts are configurable; see [Compatibility](compatibility.md).
+Fresh installations use English OCR and English prompt defaults. OCR language and the two prompt stages can be changed independently in the Control Center.
 
 ## 1. Create the Paperless token and app dataset
 

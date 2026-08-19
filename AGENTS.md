@@ -30,7 +30,7 @@ Do not scatter settings.
 
 The Paperless API token must never be written to app-config/history or returned by the Control Center API.
 
-The public Control Center UI is English. Keep internal deployment identifiers such as the `prompt-ui` service and `PROMPT_UI_*` variables stable unless a migration is explicitly planned.
+The public Control Center UI is English. Fresh-install OCR and prompt defaults are English, with English/German prompt presets available in the UI. Keep UI language, OCR language and prompt language independent; do not couple them behind one global language switch. Keep internal deployment identifiers such as the `prompt-ui` service and `PROMPT_UI_*` variables stable unless a migration is explicitly planned.
 
 ## Compatibility
 
