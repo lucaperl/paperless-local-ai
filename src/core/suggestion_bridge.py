@@ -85,7 +85,7 @@ def resolve_ambiguous_content_match(content: str):
     if len(records) <= 1:
         return (
             records[0] if records else None,
-            "content_signature" if records else "kein Review-Record",
+            "content_signature" if records else "no review record",
         )
 
     target_signature = prompt_content_signature(
@@ -105,7 +105,7 @@ def resolve_ambiguous_content_match(content: str):
             )
         except Exception as exc:
             log(
-                f"[WARN] Content-Aufloesung ID {document_id}: "
+                f"[WARN] Content resolution ID {document_id}: "
                 f"{type(exc).__name__}: {exc}"
             )
             continue
@@ -126,19 +126,19 @@ def resolve_ambiguous_content_match(content: str):
     if len(live_matches) > 1:
         return (
             None,
-            "content+prompt mehrdeutig "
+            "content+prompt ambiguous "
             f"({len(live_matches)})",
         )
 
     return (
         None,
-        f"content_signature mehrdeutig ({len(records)}); "
-        "kein eindeutiger exakter Prompt-Content-Treffer",
+        f"content_signature ambiguous ({len(records)}); "
+        "no unique exact prompt-content match",
     )
 
 def paperless_json(path: str, params=None):
     if not PAPERLESS_TOKEN:
-        raise RuntimeError("PAPERLESS_TOKEN fehlt in suggestion-bridge")
+        raise RuntimeError("PAPERLESS_TOKEN is missing from suggestion-bridge")
     paperless_url = load_app_config()["connections"]["paperless_url"]
     url = f"{paperless_url}{path}"
     if params:
@@ -151,7 +151,7 @@ def paperless_json(path: str, params=None):
         body = exc.read().decode("utf-8", errors="replace")[:500]
         raise RuntimeError(f"Paperless API {path} -> HTTP {exc.code}: {body}") from exc
     except URLError as exc:
-        raise RuntimeError(f"Paperless API {path} nicht erreichbar: {exc}") from exc
+        raise RuntimeError(f"Paperless API {path} is not reachable: {exc}") from exc
 
 
 def _all_objects(path):
@@ -160,7 +160,7 @@ def _all_objects(path):
         return data["results"]
     if isinstance(data, list):
         return data
-    raise RuntimeError(f"Unerwartete Paperless-Listenantwort für {path}")
+    raise RuntimeError(f"Unexpected Paperless list response for {path}")
 
 
 def taxonomy_maps(force=False):
@@ -222,13 +222,13 @@ def classic_classification(document_id: int):
 
 def classification_for_prompt(prompt: str):
     if LOCALIZATION_MARKER in prompt:
-        return empty_classification(), {"kind": "localization", "matched_document_id": None, "match": "nicht erforderlich"}
+        return empty_classification(), {"kind": "localization", "matched_document_id": None, "match": "not required"}
     identity = extract_document_identity(prompt)
     if identity is None:
-        return empty_classification(), {"kind": "unsupported", "matched_document_id": None, "match": "kein Paperless-Klassifikationsprompt"}
+        return empty_classification(), {"kind": "unsupported", "matched_document_id": None, "match": "not a Paperless classification prompt"}
     filename, content = identity
     record, reason = match_review_record(filename, content)
-    if record is None and reason.startswith("content_signature mehrdeutig"):
+    if record is None and reason.startswith("content_signature ambiguous"):
         record, reason = resolve_ambiguous_content_match(
             content,
         )
@@ -266,15 +266,15 @@ class Handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError as exc:
-            raise ValueError("Ungültiger Content-Length Header") from exc
+            raise ValueError("Invalid Content-Length header") from exc
         if length < 0 or length > MAX_BODY_BYTES:
-            raise ValueError("Request-Body zu groß")
+            raise ValueError("Request body is too large")
         body = self.rfile.read(length)
         if not body:
             return {}
         payload = json.loads(body.decode("utf-8"))
         if not isinstance(payload, dict):
-            raise ValueError("JSON-Body muss ein Objekt sein")
+            raise ValueError("JSON body must be an object")
         return payload
     def do_GET(self):
         if self.path == "/health":
@@ -301,11 +301,11 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != "/api/chat":
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"}); return
         if payload.get("stream") is True:
-            self._json(HTTPStatus.BAD_REQUEST, {"error": "Bridge unterstützt nur stream=false"}); return
+            self._json(HTTPStatus.BAD_REQUEST, {"error": "Bridge supports only stream=false"}); return
         try:
             result, meta = classification_for_prompt(extract_user_prompt(payload))
         except Exception as exc:
-            log(f"[ERROR] Klassifikation: {type(exc).__name__}: {exc}")
+            log(f"[ERROR] Classification: {type(exc).__name__}: {exc}")
             self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"suggestion bridge failed: {type(exc).__name__}"}); return
         model = str(payload.get("model") or MODEL_NAME)
         content = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
@@ -315,10 +315,10 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     if not PAPERLESS_TOKEN:
-        raise RuntimeError("PAPERLESS_TOKEN fehlt; paperless.env muss eingebunden sein")
+        raise RuntimeError("PAPERLESS_TOKEN is missing; paperless.env must be loaded")
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     paperless_url = load_app_config()["connections"]["paperless_url"]
-    log(f"[BOOT] Paperless Suggestion Bridge v2 auf {HOST}:{PORT}, reviews={REVIEW_DIR}, paperless={paperless_url}")
+    log(f"[BOOT] Paperless Suggestion Bridge v2 at {HOST}:{PORT}, reviews={REVIEW_DIR}, paperless={paperless_url}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

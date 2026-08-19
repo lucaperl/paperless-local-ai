@@ -18,6 +18,7 @@ from app_config import (
 
 from prompt_runtime import (
     PLACEHOLDERS,
+    PROMPT_PRESETS,
     PaperlessClient,
     ai_resource_lock,
     call_ollama,
@@ -35,6 +36,7 @@ from prompt_runtime import (
 )
 from correspondent_runtime import (
     PLACEHOLDERS as CORRESPONDENT_PLACEHOLDERS,
+    PROMPT_PRESETS as CORRESPONDENT_PROMPT_PRESETS,
     call_ollama as call_correspondent_ollama,
     ensure_config as ensure_correspondent_config,
     list_history as list_correspondent_history,
@@ -583,6 +585,10 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
 
         <div class="tab-page active" id="class-prompt">
           <details class="section-help"><summary>What is edited here?</summary><div class="help-body">The system prompt contains the general rules for stage 1. The classification prompt contains the task for one document. Placeholders such as <code>{{DOCUMENT_TEXT}}</code> are replaced with data from the selected Paperless document immediately before the model call.</div></details>
+          <div class="card panel" style="margin-bottom:14px"><div class="form-grid" style="align-items:end">
+            <div class="field"><label>Prompt preset <button type="button" class="info-btn" data-tip="Built-in starting points for the prompt text. Loading a preset changes only the visible draft; it does not save or activate anything automatically.">i</button></label><select id="classPromptPreset"></select></div>
+            <div><button id="classLoadPresetBtn" class="btn">Load preset into draft</button><div class="field-help">Replaces the two visible prompt fields only. Review or edit them, then save to activate.</div></div>
+          </div></div>
           <div class="split">
             <div class="card panel">
               <div class="field"><label>System prompt <button type="button" class="info-btn" data-tip="Applied to every classification run and defines role, safety rules and general output requirements. Document-specific content belongs in the classification prompt; {{DOCUMENT_TEXT}} must remain there.">i</button></label>
@@ -665,6 +671,10 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
 
         <div class="tab-page active" id="corr-prompt">
           <details class="section-help"><summary>What is edited here?</summary><div class="help-body">These prompts belong only to stage 2. They do not affect the title, document type, tags or date from stage 1. Unlike stage 1, this pass may suggest a new correspondent name, but it does not create one.</div></details>
+          <div class="card panel" style="margin-bottom:14px"><div class="form-grid" style="align-items:end">
+            <div class="field"><label>Prompt preset <button type="button" class="info-btn" data-tip="Built-in starting points for sender-identification prompt text. Loading a preset changes only the visible draft; it does not save or enable production use automatically.">i</button></label><select id="corrPromptPreset"></select></div>
+            <div><button id="corrLoadPresetBtn" class="btn">Load preset into draft</button><div class="field-help">Replaces the two visible prompt fields only. Review or edit them, then save to activate.</div></div>
+          </div></div>
           <div class="split">
             <div class="card panel"><div class="field"><label>System prompt <button type="button" class="info-btn" data-tip="General role and safety rules for sender identification. The document text belongs in the correspondent prompt.">i</button></label><textarea id="corrSystemPrompt"></textarea></div></div>
             <div class="card panel"><div class="field"><label>Correspondent prompt <button type="button" class="info-btn" data-tip="Task for one document. The model response contains only correspondent: either a suitable existing/new sender name or an empty string when the sender cannot be determined reliably.">i</button></label><textarea id="corrPromptTemplate"></textarea></div></div>
@@ -765,7 +775,9 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
         <div class="tab-page" id="app-ocr">
           <details class="section-help"><summary>OCR behavior</summary><div class="help-body">These values control selective PaddleOCR processing. They are reloaded before every poll, so no container restart is required. The original PDF is never modified.</div></details>
           <div class="card panel"><div class="form-grid three">
-            <div class="field"><label>OCR language <button type="button" class="info-btn" data-tip="PaddleOCR language code, for example de. The language determines the recognition models used.">i</button></label><input id="appOcrLanguage"></div>
+            <div class="field"><label>OCR language <button type="button" class="info-btn" data-tip="Language of the scanned document for PaddleOCR. Start typing a language name or code. This setting is independent of the Control Center and prompt language.">i</button></label><input id="appOcrLanguage" list="ocrLanguageOptions" autocomplete="off"><datalist id="ocrLanguageOptions">
+              <option value="af">Afrikaans</option><option value="az">Azerbaijani</option><option value="bs">Bosnian</option><option value="ca">Catalan</option><option value="ch">Chinese (Simplified)</option><option value="chinese_cht">Chinese (Traditional)</option><option value="cs">Czech</option><option value="cy">Welsh</option><option value="da">Danish</option><option value="de">German</option><option value="en">English</option><option value="es">Spanish</option><option value="et">Estonian</option><option value="eu">Basque</option><option value="fi">Finnish</option><option value="fr">French</option><option value="ga">Irish</option><option value="gl">Galician</option><option value="hr">Croatian</option><option value="hu">Hungarian</option><option value="id">Indonesian</option><option value="is">Icelandic</option><option value="it">Italian</option><option value="japan">Japanese</option><option value="ku">Kurdish</option><option value="la">Latin</option><option value="lb">Luxembourgish</option><option value="lt">Lithuanian</option><option value="lv">Latvian</option><option value="mi">Maori</option><option value="ms">Malay</option><option value="mt">Maltese</option><option value="nl">Dutch</option><option value="no">Norwegian</option><option value="oc">Occitan</option><option value="pl">Polish</option><option value="pt">Portuguese</option><option value="qu">Quechua</option><option value="rm">Romansh</option><option value="ro">Romanian</option><option value="rs_latin">Serbian (Latin)</option><option value="sk">Slovak</option><option value="sl">Slovenian</option><option value="sq">Albanian</option><option value="sv">Swedish</option><option value="sw">Swahili</option><option value="tl">Tagalog</option><option value="tr">Turkish</option><option value="uz">Uzbek</option><option value="vi">Vietnamese</option>
+            </datalist></div>
             <div class="field"><label>OCR version <button type="button" class="info-btn" data-tip="PaddleOCR model generation. Tested default: PP-OCRv6.">i</button></label><input id="appOcrVersion"></div>
             <div class="field"><label>Device <button type="button" class="info-btn" data-tip="PaddleOCR device. The tested low-power setup uses cpu.">i</button></label><input id="appOcrDevice"></div>
           </div></div>
@@ -796,7 +808,24 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
 let currentConfig=null;
 let currentAppConfig=null;
 let currentCorrConfig=null;
+let classPromptPresets={};
+let corrPromptPresets={};
 const $=id=>document.getElementById(id);
+
+function renderPromptPresetOptions(selectId,presets){
+  const select=$(selectId);const entries=Object.entries(presets||{});
+  select.innerHTML='<option value="">Select a preset…</option>'+entries.map(([key,p])=>`<option value="${key}">${p.label||key}</option>`).join('');
+}
+function loadClassPromptPreset(){
+  const preset=classPromptPresets[$('classPromptPreset').value];if(!preset)return;
+  $('systemPrompt').value=preset.system_prompt;$('classificationTemplate').value=preset.classification_template;
+  setStatus('saveStatus',`${preset.label||'Prompt'} preset loaded into draft · not saved yet.`);
+}
+function loadCorrPromptPreset(){
+  const preset=corrPromptPresets[$('corrPromptPreset').value];if(!preset)return;
+  $('corrSystemPrompt').value=preset.system_prompt;$('corrPromptTemplate').value=preset.prompt_template;
+  setStatus('corrSaveStatus',`${preset.label||'Prompt'} preset loaded into draft · not saved yet.`);
+}
 
 const pageMeta={
   overview:["Overview","System overview and current configuration"],
@@ -905,7 +934,7 @@ function renderAppHistory(items){renderHistory(items,'appHistoryList','restoreAp
 function renderCorrHistory(items){renderHistory(items,'corrHistoryList','restoreCorrHistory')}
 
 async function init(){
-  try{const s=await api('/api/state');fill(s.config);$('placeholders').innerHTML=Object.entries(s.placeholders).map(([k,v])=>`<div class="placeholder-item"><code>{{${k}}}</code><span>${v}</span></div>`).join('');await loadHistory();$('topStatus').textContent='Control Center ready';$('topStatus').className='pill good'}
+  try{const s=await api('/api/state');classPromptPresets=s.presets||{};renderPromptPresetOptions('classPromptPreset',classPromptPresets);fill(s.config);$('placeholders').innerHTML=Object.entries(s.placeholders).map(([k,v])=>`<div class="placeholder-item"><code>{{${k}}}</code><span>${v}</span></div>`).join('');await loadHistory();$('topStatus').textContent='Control Center ready';$('topStatus').className='pill good'}
   catch(e){$('topStatus').textContent=e.message;$('topStatus').className='pill bad'}
 }
 async function loadApp(){
@@ -913,9 +942,12 @@ async function loadApp(){
   catch(e){$('appConfigStatus').textContent='Error';$('appConfigStatus').style.color='var(--red)';setStatus('appSaveStatus',e.message,false)}
 }
 async function loadCorrespondent(){
-  try{const s=await api('/api/correspondent/state');corrFill(s.config);$('corrPlaceholders').innerHTML=Object.entries(s.placeholders).map(([k,v])=>`<div class="placeholder-item"><code>{{${k}}}</code><span>${v}</span></div>`).join('');renderCorrHistory(s.history||[])}
+  try{const s=await api('/api/correspondent/state');corrPromptPresets=s.presets||{};renderPromptPresetOptions('corrPromptPreset',corrPromptPresets);corrFill(s.config);$('corrPlaceholders').innerHTML=Object.entries(s.placeholders).map(([k,v])=>`<div class="placeholder-item"><code>{{${k}}}</code><span>${v}</span></div>`).join('');renderCorrHistory(s.history||[])}
   catch(e){$('corrConfigStatus').textContent='Error';$('corrConfigStatus').style.color='var(--red)';setStatus('corrSaveStatus',e.message,false)}
 }
+
+$('classLoadPresetBtn').onclick=loadClassPromptPreset;
+$('corrLoadPresetBtn').onclick=loadCorrPromptPreset;
 
 $('validateBtn').onclick=async()=>{try{const r=await api('/api/config/validate',{method:'POST',body:JSON.stringify({config:draft()})});setStatus('saveStatus',`Configuration valid · not saved yet · SHA ${r.config_sha256.slice(0,12)}`)}catch(e){setStatus('saveStatus',e.message,false)}};
 $('saveBtn').onclick=async()=>{try{const r=await api('/api/config/save',{method:'POST',body:JSON.stringify({config:draft()})});fill(r.config);setStatus('saveStatus',`Saved and active from the next classification job · v${r.config.version}`);await loadHistory()}catch(e){setStatus('saveStatus',e.message,false)}};
@@ -1105,6 +1137,7 @@ class Handler(BaseHTTPRequestHandler):
             return response(self, HTTPStatus.OK, {
                 "config": cfg,
                 "placeholders": PLACEHOLDERS,
+                "presets": PROMPT_PRESETS,
                 "hashes": prompt_hashes(cfg),
                 "connections": ensure_app_config()["connections"],
             })
@@ -1194,6 +1227,7 @@ class Handler(BaseHTTPRequestHandler):
             return response(self, HTTPStatus.OK, {
                 "config": cfg,
                 "placeholders": CORRESPONDENT_PLACEHOLDERS,
+                "presets": CORRESPONDENT_PROMPT_PRESETS,
                 "hashes": correspondent_prompt_hashes(cfg),
                 "history": list_correspondent_history(),
             })

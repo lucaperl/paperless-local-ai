@@ -130,7 +130,7 @@ def build_review_record(
 
     if len(candidate) > 255:
         raise ValueError(
-            "Korrespondenten-Vorschlag ist länger als 255 Zeichen"
+            "Correspondent suggestion is longer than 255 characters"
         )
 
     return {
@@ -325,7 +325,7 @@ def match_review_record(
     if len(strong_matches) > 1:
         return (
             None,
-            "prompt_content_signature mehrdeutig "
+            "prompt_content_signature ambiguous "
             f"({len(strong_matches)})",
         )
 
@@ -343,11 +343,11 @@ def match_review_record(
     if len(content_matches) > 1:
         return (
             None,
-            "content_signature mehrdeutig "
+            "content_signature ambiguous "
             f"({len(content_matches)})",
         )
 
     return (
         None,
-        "kein Review-Record",
+        "no review record",
     )

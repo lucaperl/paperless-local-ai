@@ -1,4 +1,4 @@
-from prompt_runtime import normalize_result, validate_result
+from prompt_runtime import DEFAULT_SYSTEM_PROMPT, PROMPT_PRESETS, normalize_result, validate_result
 
 
 TAX = {
@@ -6,6 +6,13 @@ TAX = {
     "correspondents": ["Example GmbH"],
     "content_tags": ["Finanzen"],
 }
+
+
+def test_prompt_presets_include_english_default_and_german():
+    assert DEFAULT_SYSTEM_PROMPT == PROMPT_PRESETS["en"]["system_prompt"]
+    assert "primary language of the document" in PROMPT_PRESETS["en"]["classification_template"]
+    assert "{{DOCUMENT_TEXT}}" in PROMPT_PRESETS["en"]["classification_template"]
+    assert "{{DOCUMENT_TEXT}}" in PROMPT_PRESETS["de"]["classification_template"]
 
 
 def test_month_normalizes_to_last_day():
