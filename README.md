@@ -9,36 +9,60 @@
 
 `paperless-local-ai` is for users who want better OCR for scanned documents and a small local LLM to automatically set **titles, document types, dates, tags and correspondents**, without running a full AI suite. It keeps the workload focused by limiting AI to these core tasks and handling the normal metadata classification in a single LLM request — useful on weaker hardware, or simply if that is all you need.
 
-The model output is constrained to the configured Paperless taxonomy and applied directly to the document instead of only being shown as suggestions. If no existing correspondent can be matched, the optional correspondent fallback can propose a new one through Paperless' native suggestion/review flow instead of creating it automatically.
+The model output is constrained to the configured Paperless taxonomy and applied directly to the document instead of only being shown as suggestions. If the main classification cannot match an existing correspondent, an optional separate sender-identification stage can either match one of the existing Paperless correspondents or propose a genuinely new one through Paperless' native suggestion/review flow.
 
-## How it works
+## How it fits into Paperless
 
-```text
-Paperless import
-      ↓
-PaddleOCR when needed
-      ↓
-Local LLM classification
-      ↓
-Title · Type · Date · Tags · Correspondent
-      ↓
-Apply metadata directly to Paperless
+`paperless-local-ai` sits between normal Paperless import and review. Paperless queues documents through workflow tags, the app processes them locally, and writes the result back to the same document.
+
+```mermaid
+flowchart TD
+    subgraph P1["Paperless-ngx"]
+        A["Import document"]
+        B["Workflow queues it via tags"]
+        A --> B
+    end
+
+    subgraph L["paperless-local-ai"]
+        C["Selective PaddleOCR<br/>when needed"]
+        D["Primary LLM classification<br/>title · type · date · tags · existing correspondent"]
+        E{"Correspondent returned?"}
+        F["Correspondent fallback<br/>separate sender-identification LLM call<br/>document text + current Paperless correspondents"]
+        S["Send new sender to<br/>Paperless suggestion / review"]
+        G["Write results back<br/>to the same document"]
+
+        C --> D --> E
+        E -->|Yes| G
+        E -->|No · fallback disabled| G
+        E -->|No · fallback enabled| F
+        F -->|Matches existing| G
+        F -->|New sender| S --> G
+        F -->|No reliable sender| G
+    end
+
+    subgraph P2["Paperless-ngx"]
+        H["Normal review workflow continues"]
+    end
+
+    B --> C
+    G --> H
 ```
+
+Paperless keeps owning the document throughout: `paperless-local-ai` processes the already imported document and writes its results back to the same Paperless record.
 
 Native PDF text is kept, while scanned documents can be selectively reprocessed with PaddleOCR.
 
-The main classifier handles title, document type, date, tags and an existing correspondent together in **one structured LLM request**.
+The primary classifier handles title, document type, date, tags and an existing correspondent together in **one structured LLM request**.
 
 ### Correspondents
 
-The main classification pass first tries to match an existing Paperless correspondent.
+The primary classification first tries to match one of the correspondents already present in Paperless.
 
-If it cannot resolve one, an optional second, correspondent-only LLM pass gets another chance to identify the sender:
+If it returns no correspondent and the optional fallback is enabled, a **separate sender-identification LLM stage** runs with its own prompt and model settings. It receives the document text together with the current Paperless correspondent list.
 
-```text
-existing correspondent → apply automatically
-new correspondent      → send to Paperless suggestion/review
-```
+- If the sender matches an existing Paperless correspondent, it is applied automatically.
+- If the sender is identified but does not exist in Paperless yet, the proposed name is sent to Paperless' native suggestion/review flow.
+- If no sender can be identified reliably, the correspondent remains empty.
 
 New correspondents are only added after review in Paperless.
 
