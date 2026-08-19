@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- streamline first-time installation and configuration documentation, clarify container networking, workflow scope, Dry Run behavior and metadata write semantics, and remove duplicated Control Center guidance.
+
 ## 0.1.2 - 2026-08-19
 
 - rename the TrueNAS portal button to **Control Center** in the published Custom App template and document the one-time YAML metadata change for existing installations that still show **Prompt UI**;
