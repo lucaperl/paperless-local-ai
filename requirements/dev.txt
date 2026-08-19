@@ -1,2 +1,2 @@
 -r core.txt
-pytest==9.0.2
+pytest==9.1.1
