@@ -7,6 +7,6 @@ PyMuPDF==1.28.2
 requests==2.34.2
 numpy==1.26.2
 opencv-contrib-python==4.10.0.84
-Pillow==10.1.0
+Pillow==12.3.0
 shapely==2.1.2
 pyclipper==1.4.0
