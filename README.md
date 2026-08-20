@@ -13,7 +13,9 @@ The model output is constrained to the configured Paperless taxonomy and applied
 
 `paperless-local-ai` sits between normal Paperless import and review. Paperless queues documents through workflow tags, the app processes them locally, and writes the result back to the same document.
 
-![paperless-local-ai workflow](images/paperless-flow.svg)
+<p align="center">
+  <img src="images/paperless-flow.svg" alt="paperless-local-ai workflow" width="65%">
+</p>
 
 Paperless keeps owning the document throughout: `paperless-local-ai` processes the already imported document and writes its results back to the same Paperless record.
 
