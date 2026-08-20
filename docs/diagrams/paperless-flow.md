@@ -1,0 +1,25 @@
+flowchart TB
+    A["Paperless import"] --> B["Queue via Paperless workflow tags"]
+    B --> C["Selective PaddleOCR"]
+    C --> D["Primary LLM classification<br/>title · type · date · tags · correspondent"]
+
+    D -->|Correspondent found| W["Write back to Paperless"]
+    D -->|No correspondent| E{"Fallback enabled?"}
+
+    E -->|No| W
+    E -->|Yes| F["Correspondent fallback<br/><br/>Separate sender-identification LLM call<br/>using document text + current Paperless correspondents"]
+
+    F -->|Existing correspondent| W
+    F -->|New sender| S["Paperless suggestion / review"]
+    F -->|No reliable sender| W
+    S --> W
+
+    W --> R["Paperless review continues"]
+
+    classDef paperless fill:#eef5ff,stroke:#4c78a8,color:#111;
+    classDef local fill:#e9f9f1,stroke:#238763,color:#111;
+    classDef fallback fill:#f5edff,stroke:#7b55a1,color:#111;
+
+    class A,B,W,R paperless;
+    class C,D local;
+    class E,F,S fallback;
