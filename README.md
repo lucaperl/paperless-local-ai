@@ -13,33 +13,7 @@ The model output is constrained to the configured Paperless taxonomy and applied
 
 `paperless-local-ai` sits between normal Paperless import and review. Paperless queues documents through workflow tags, the app processes them locally, and writes the result back to the same document.
 
-```mermaid
-flowchart TB
-    A["Paperless import"] --> B["Queue via Paperless workflow tags"]
-    B --> C["Selective PaddleOCR"]
-    C --> D["Primary LLM classification<br/>title · type · date · tags · correspondent"]
-
-    D -->|Correspondent found| W["Write back to Paperless"]
-    D -->|No correspondent| E{"Fallback enabled?"}
-
-    E -->|No| W
-    E -->|Yes| F["Correspondent fallback<br/><br/>Separate sender-identification LLM call<br/>using document text + current Paperless correspondents"]
-
-    F -->|Existing correspondent| W
-    F -->|New sender| S["Paperless suggestion / review"]
-    F -->|No reliable sender| W
-    S --> W
-
-    W --> R["Paperless review continues"]
-
-    classDef paperless fill:#eef5ff,stroke:#4c78a8,color:#111;
-    classDef local fill:#e9f9f1,stroke:#238763,color:#111;
-    classDef fallback fill:#f5edff,stroke:#7b55a1,color:#111;
-
-    class A,B,W,R paperless;
-    class C,D local;
-    class E,F,S fallback;
-```
+![paperless-local-ai workflow](images/paperless-flow.svg)
 
 Paperless keeps owning the document throughout: `paperless-local-ai` processes the already imported document and writes its results back to the same Paperless record.
 
