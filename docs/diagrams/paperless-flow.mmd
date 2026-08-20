@@ -10,7 +10,7 @@ flowchart TB
     E -->|Yes| F["Correspondent fallback<br/><br/>Separate sender-identification LLM call<br/>using document text + current Paperless correspondents"]
 
     F -->|Existing correspondent| W
-    F -->|New sender| S["Paperless suggestion / review"]
+    F -->|New sender| S["Paperless suggestion / user review"]
     F -->|No reliable sender| W
     S --> W
 
