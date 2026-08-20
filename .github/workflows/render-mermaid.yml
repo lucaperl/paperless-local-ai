@@ -19,16 +19,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-
-      - name: Install Mermaid CLI
-        run: npm install --global @mermaid-js/mermaid-cli
-
       - name: Render workflow diagram
         run: |
-          mmdc \
+          docker run --rm \
+            -u "$:contentReference[oaicite:0]{index=0}data" \
+            ghcr.io/mermaid-js/mermaid-cli/mermaid-cli:11.16.1 \
             -i docs/diagrams/paperless-flow.mmd \
             -o images/paperless-flow.svg \
             -b transparent
