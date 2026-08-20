@@ -2,43 +2,31 @@ name: render-mermaid
 
 on:
   push:
-    branches:
-      - main
     paths:
       - "docs/diagrams/**/*.mmd"
-      - ".github/workflows/render-mermaid.yml"
-  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   render:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v7
+      - name: Check out current branch
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
+          persist-credentials: true
 
-      - name: Render workflow diagram
-        run: |
-          docker run --rm \
-            --user 0:0 \
-            -v "$PWD:/data" \
-            ghcr.io/mermaid-js/mermaid-cli/mermaid-cli:11.16.1 \
-            -i docs/diagrams/paperless-flow.mmd \
-            -o images/paperless-flow.svg \
-            -b transparent
+      - name: Render SVG from Mermaid
+        uses: docker://ghcr.io/mermaid-js/mermaid-cli/mermaid-cli:11.16.1
+        with:
+          args: -i docs/diagrams/paperless-flow.mmd -o images/paperless-flow.svg -b transparent
 
-      - name: Commit updated SVG
-        run: |
-          if [ -z "$(git status --porcelain -- images/paperless-flow.svg)" ]; then
-            echo "SVG is already up to date."
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add -- images/paperless-flow.svg
-          git commit -m "docs: render Mermaid workflow"
-          git push
+      - name: Commit generated SVG
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          commit_message: "docs: render Mermaid workflow"
+          file_pattern: images/paperless-flow.svg
