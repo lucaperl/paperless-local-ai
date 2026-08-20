@@ -31,7 +31,7 @@ jobs:
 
       - name: Commit updated SVG
         run: |
-          if git diff --quiet -- images/paperless-flow.svg; then
+          if [ -z "$(git status --porcelain -- images/paperless-flow.svg)" ]; then
             echo "SVG is already up to date."
             exit 0
           fi
