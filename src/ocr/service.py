@@ -443,12 +443,13 @@ class PaddleSession:
         self._conn = None
         self._config = None
         try:
-            if process is not None and process.is_alive():
-                try:
-                    if conn is not None:
-                        conn.send({"cmd": "shutdown"})
-                except Exception:
-                    pass
+            if process is not None:
+                if process.is_alive():
+                    try:
+                        if conn is not None:
+                            conn.send({"cmd": "shutdown"})
+                    except Exception:
+                        pass
                 process.join(timeout=8)
                 if process.is_alive():
                     process.terminate()
@@ -460,13 +461,31 @@ class PaddleSession:
                 except Exception:
                     pass
             self._release_global_lock()
+            self._started_at = 0.0
+            self._last_used = 0.0
         LOG.info("PaddleOCR session stopped (%s)", reason)
+
+    def _raise_worker_ipc_failure(self, action: str, exc: BaseException) -> None:
+        process = self._process
+        exitcode = process.exitcode if process is not None else None
+        reason = (
+            f"Paddle worker IPC {action} failed "
+            f"({type(exc).__name__}, exitcode={exitcode})"
+        )
+        self._stop(reason)
+        raise RuntimeError(reason) from exc
 
     def ocr(self, image_path: Path) -> dict[str, Any]:
         with self._mutex:
             config = self._current_ocr_config()
             lock_wait = 0.0
             started_new_session = False
+
+            # A worker may have been killed outside Python (for example by the
+            # kernel OOM killer). Never carry a dead process together with the
+            # global AI lock into the next request.
+            if self.session_active and not self.active:
+                self._stop("stale Paddle worker session")
             if self.active and config != self._config:
                 self._stop("OCR configuration changed")
             if not self.active:
@@ -476,13 +495,17 @@ class PaddleSession:
             assert self._conn is not None
             assert self._process is not None
             request_id = uuid.uuid4().hex
-            self._conn.send(
-                {
-                    "cmd": "ocr",
-                    "request_id": request_id,
-                    "image_path": str(image_path),
-                }
-            )
+            try:
+                self._conn.send(
+                    {
+                        "cmd": "ocr",
+                        "request_id": request_id,
+                        "image_path": str(image_path),
+                    }
+                )
+            except (EOFError, OSError, ValueError) as exc:
+                self._raise_worker_ipc_failure("send", exc)
+
             deadline = time.monotonic() + PAGE_TIMEOUT_SECONDS
             while True:
                 remaining = deadline - time.monotonic()
@@ -491,15 +514,26 @@ class PaddleSession:
                     raise TimeoutError(
                         f"Paddle OCR page exceeded {PAGE_TIMEOUT_SECONDS:.0f}s"
                     )
-                if self._conn.poll(min(1.0, remaining)):
-                    response = self._conn.recv()
+
+                try:
+                    has_response = self._conn.poll(min(1.0, remaining))
+                except (EOFError, OSError, ValueError) as exc:
+                    self._raise_worker_ipc_failure("poll", exc)
+
+                if has_response:
+                    try:
+                        response = self._conn.recv()
+                    except (EOFError, OSError, ValueError) as exc:
+                        self._raise_worker_ipc_failure("receive", exc)
                     break
+
                 if not self._process.is_alive():
                     exitcode = self._process.exitcode
                     self._stop(f"Paddle worker exited unexpectedly ({exitcode})")
                     raise RuntimeError(
                         f"Paddle worker exited unexpectedly with code {exitcode}"
                     )
+
             self._last_used = time.monotonic()
             if response.get("request_id") != request_id:
                 self._stop("IPC protocol error")
@@ -517,13 +551,19 @@ class PaddleSession:
     def _housekeeping_loop(self) -> None:
         while not self._stop_event.wait(1.0):
             with self._mutex:
-                if self.active and time.monotonic() - self._last_used >= SESSION_IDLE_SECONDS:
+                if self.session_active and not self.active:
+                    self._stop("Paddle worker no longer alive")
+                elif self.active and time.monotonic() - self._last_used >= SESSION_IDLE_SECONDS:
                     self._stop(f"idle for {SESSION_IDLE_SECONDS:.0f}s")
 
     def close(self) -> None:
         self._stop_event.set()
         with self._mutex:
-            if self.active:
+            if (
+                self._process is not None
+                or self._conn is not None
+                or self._lock_file is not None
+            ):
                 self._stop("service shutdown")
 
 
