@@ -124,6 +124,12 @@ textarea{min-height:250px;resize:vertical;line-height:1.45}.split{display:grid;g
 }
 .pipeline-group-label.paperless{background:#122033;color:#9fc7ff;border-color:#2d4b6c}
 .pipeline-group-label.local{background:#113127;color:#77e6bd;border-color:#25614c}
+.pipeline-legend{display:flex;gap:14px;flex-wrap:wrap;margin:10px 0 14px;color:var(--muted);font-size:11px}
+.pipeline-legend span{display:inline-flex;align-items:center;gap:6px}
+.pipeline-legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.pipeline-legend .paperless{background:#355b80}
+.pipeline-legend .local{background:#2d7b67}
+.pipeline-legend .fallback{background:#7f62a8}
 .pipeline-main{display:grid;gap:0}
 .pipeline-step{display:grid;grid-template-columns:34px 1fr;gap:10px;position:relative}
 .pipeline-step:not(:last-child)::before{
@@ -426,7 +432,12 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
         <div class="section-grid">
           <div class="card section">
             <h2>Pipeline</h2>
-            <p><strong>paperless-local-ai extends Paperless import and review:</strong> OCRmyPDF delegates scanned-page recognition to the local PaddleOCR service, then a normal Paperless workflow queues completed documents for local metadata classification.</p>
+            <p><strong>paperless-local-ai extends Paperless import and review:</strong> Paperless/OCRmyPDF keeps usable native text, delegates only pages that need OCR to local PaddleOCR, then queues completed documents for local metadata classification.</p>
+            <div class="pipeline-legend">
+              <span><i class="paperless"></i>Paperless-ngx / OCRmyPDF</span>
+              <span><i class="local"></i>paperless-local-ai</span>
+              <span><i class="fallback"></i>optional Correspondent fallback</span>
+            </div>
 
             <div class="pipeline-shell">
               <div class="pipeline-group">
@@ -442,8 +453,8 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
                   <div class="pipeline-step paperless">
                     <div class="pipeline-num">2</div>
                     <div class="pipeline-copy">
-                      <div class="pipeline-title">OCRmyPDF → PaddleOCR</div>
-                      <div class="pipeline-desc">When OCR is needed, OCRmyPDF calls the authenticated local OCR service and writes a searchable archive text layer plus extracted content.</div>
+                      <div class="pipeline-title">OCR decision in Paperless / OCRmyPDF</div>
+                      <div class="pipeline-desc">Native-text pages stay on the normal Paperless path. Only pages that need OCR are delegated to paperless-local-ai.</div>
                     </div>
                   </div>
                 </div>
@@ -455,16 +466,16 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
                   <div class="pipeline-step local">
                     <div class="pipeline-num">3</div>
                     <div class="pipeline-copy">
-                      <div class="pipeline-title">Queue metadata classification</div>
-                      <div class="pipeline-desc">After the Paperless document is added, a Document Added workflow assigns the LLM queue tag. No OCR queue tag is involved.</div>
+                      <div class="pipeline-title">PaddleOCR for scanned pages</div>
+                      <div class="pipeline-desc">Pages that need OCR use the selected PP-OCRv6 profile with HPI/OpenVINO, then return searchable text to Paperless/OCRmyPDF.</div>
                     </div>
                   </div>
 
                   <div class="pipeline-step local">
                     <div class="pipeline-num">4</div>
                     <div class="pipeline-copy">
-                      <div class="pipeline-title">Primary LLM classification</div>
-                      <div class="pipeline-desc">One structured request determines title, document type, date, tags and tries to match one of the existing Paperless correspondents.</div>
+                      <div class="pipeline-title">Automatic metadata classification</div>
+                      <div class="pipeline-desc">After Paperless adds the document and assigns the LLM queue tag, one structured request determines title, document type, date, tags and an existing correspondent.</div>
                     </div>
                   </div>
                 </div>
@@ -503,21 +514,17 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
                         <div class="branch-badge">run correspondent fallback</div>
                       </div>
                       <div class="branch-copy">
-                        A separate sender-identification LLM call runs with its own prompt and settings. It receives the document text plus the current Paperless correspondent list.
+                        A separate correspondent-only LLM call runs with its own prompt and settings. It receives the document text plus the current Paperless correspondent list.
                       </div>
 
                       <div class="branch-outcomes">
                         <div class="branch-outcome">
-                          <strong>Sender matches a correspondent already in Paperless</strong>
-                          <span class="ok">apply automatically</span>
+                          <strong>Existing or no reliable correspondent</strong>
+                          <span class="ok">write back</span>
                         </div>
                         <div class="branch-outcome">
-                          <strong>Sender is identified but does not exist in Paperless yet</strong>
-                          <span class="review">Paperless suggestion/review</span>
-                        </div>
-                        <div class="branch-outcome">
-                          <strong>No reliable sender can be identified</strong>
-                          <span class="empty">leave empty</span>
+                          <strong>New correspondent</strong>
+                          <span class="review">Paperless Suggestions</span>
                         </div>
                       </div>
                     </div>
@@ -547,7 +554,7 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
                       <div class="pipeline-num">6</div>
                       <div class="pipeline-copy">
                         <div class="pipeline-title">Paperless review</div>
-                        <div class="pipeline-desc">The normal Paperless workflow continues. Any proposed new correspondent is shown through Paperless' native suggestion/review flow.</div>
+                        <div class="pipeline-desc">The normal Paperless workflow continues. Any proposed new correspondent is shown through Paperless Suggestions for human review.</div>
                       </div>
                     </div>
                   </div>
@@ -661,7 +668,7 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
 
       <section class="page" id="page-correspondent">
         <div class="page-head">
-          <div><h1>Correspondent fallback</h1><p>Stage 2 is optional and runs only when stage 1 found no correspondent and <strong>Enable in production</strong> is on. It identifies only the sender or issuer. An unambiguous existing Paperless correspondent is applied automatically. A genuinely new name is never created automatically; it appears as a native Paperless suggestion for confirmation. If no reliable name is found, nothing changes.</p></div>
+          <div><h1>Correspondent fallback</h1><p>Stage 2 is optional and runs only when stage 1 found no correspondent and <strong>Enable in production</strong> is on. It identifies only the correspondent. An unambiguous existing Paperless correspondent is applied automatically. A genuinely new name is never created automatically; it appears as a native Paperless suggestion for confirmation. If no reliable name is found, nothing changes.</p></div>
           <div id="corrConfigStatus" class="config-badge">Loading…</div>
         </div>
         <div class="toolbar"><button id="corrValidateBtn" class="btn">Validate configuration</button><button id="corrSaveBtn" class="btn primary">Save changes</button><span id="corrSaveStatus" class="toolbar-status">Nothing validated or saved yet.</span></div>
@@ -715,8 +722,8 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
             <div class="field"><label>Ollama model <span class="mini">(model)</span> <button type="button" class="info-btn" data-tip="Exact name of a model already installed in Ollama. The Control Center does not download or install models.">i</button></label><input id="corrModel"></div>
             <div class="field"><label>Context window in tokens <span class="mini">(num_ctx)</span> <button type="button" class="info-btn" data-tip="Maximum context for the prompt and response of this second model call. Larger values use more memory and may be slower.">i</button></label><input id="corrNumCtx" type="number"></div>
             <div class="field"><label>Maximum response length in tokens <span class="mini">(num_predict)</span> <button type="button" class="info-btn" data-tip="Upper limit for the short JSON response. Because only a name or empty string is expected, this can usually be much smaller than in stage 1.">i</button></label><input id="corrNumPredict" type="number"></div>
-            <div class="field"><label>Output randomness <span class="mini">(temperature)</span> <button type="button" class="info-btn" data-tip="0 is recommended for reproducible sender names. Higher values make suggestions more variable and increase unnecessary name variations.">i</button></label><input id="corrTemperature" type="number" min="0" max="2" step="0.05"></div>
-            <div class="field"><label>Additional model reasoning <span class="mini">(think)</span> <button type="button" class="info-btn" data-tip="Off is intended for short sender identification. On enables the model's thinking mode and uses additional time/tokens.">i</button></label><select id="corrThink"><option value="false">Off</option><option value="true">On</option></select></div>
+            <div class="field"><label>Output randomness <span class="mini">(temperature)</span> <button type="button" class="info-btn" data-tip="0 is recommended for reproducible correspondent names. Higher values make suggestions more variable and increase unnecessary name variations.">i</button></label><input id="corrTemperature" type="number" min="0" max="2" step="0.05"></div>
+            <div class="field"><label>Additional model reasoning <span class="mini">(think)</span> <button type="button" class="info-btn" data-tip="Off is intended for short correspondent identification. On enables the model's thinking mode and uses additional time/tokens.">i</button></label><select id="corrThink"><option value="false">Off</option><option value="true">On</option></select></div>
             <div class="field"><label>Keep model loaded after the job <span class="mini">(keep_alive)</span> <button type="button" class="info-btn" data-tip="Passed directly to Ollama. 0 unloads the model after the request; for example 5m keeps it loaded for five minutes.">i</button></label><input id="corrKeepAlive"></div>
             <div class="field"><label>Maximum document text in characters <span class="mini">(content_char_limit)</span> <button type="button" class="info-btn" data-tip="Maximum number of characters from Paperless content included in the correspondent prompt. Shorter documents are used in full.">i</button></label><input id="corrContentLimit" type="number"></div>
             <div class="field"><label>Share kept from document start when truncated <span class="mini">(content_head_ratio)</span> <button type="button" class="info-btn" data-tip="Applies only to truncated documents. 0.75 means 75% of the retained text comes from the start and 25% from the end.">i</button></label><input id="corrHeadRatio" type="number" min="0.5" max="0.95" step="0.05"></div>
@@ -771,12 +778,13 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
         </div>
 
         <div class="tab-page" id="app-ocr">
-          <details class="section-help"><summary>OCR behavior</summary><div class="help-body">These values control selective PaddleOCR processing. They are reloaded before every poll, so no container restart is required. The original PDF is never modified.</div></details>
+          <details class="section-help"><summary>OCR behavior</summary><div class="help-body">These values control selective PaddleOCR processing. Medium is the default PP-OCRv6 profile; Small and Tiny trade some recognition quality for lower inference cost. Changes are picked up for the next OCR session, so no container restart is required. The original PDF is never modified.</div></details>
           <div class="card panel"><div class="form-grid three">
             <div class="field"><label>OCR language <button type="button" class="info-btn" data-tip="Language of the scanned document for PaddleOCR. Start typing a language name or code. This setting is independent of the Control Center and prompt language.">i</button></label><input id="appOcrLanguage" list="ocrLanguageOptions" autocomplete="off"><datalist id="ocrLanguageOptions">
               <option value="af">Afrikaans</option><option value="az">Azerbaijani</option><option value="bs">Bosnian</option><option value="ca">Catalan</option><option value="ch">Chinese (Simplified)</option><option value="chinese_cht">Chinese (Traditional)</option><option value="cs">Czech</option><option value="cy">Welsh</option><option value="da">Danish</option><option value="de">German</option><option value="en">English</option><option value="es">Spanish</option><option value="et">Estonian</option><option value="eu">Basque</option><option value="fi">Finnish</option><option value="fr">French</option><option value="ga">Irish</option><option value="gl">Galician</option><option value="hr">Croatian</option><option value="hu">Hungarian</option><option value="id">Indonesian</option><option value="is">Icelandic</option><option value="it">Italian</option><option value="japan">Japanese</option><option value="ku">Kurdish</option><option value="la">Latin</option><option value="lb">Luxembourgish</option><option value="lt">Lithuanian</option><option value="lv">Latvian</option><option value="mi">Maori</option><option value="ms">Malay</option><option value="mt">Maltese</option><option value="nl">Dutch</option><option value="no">Norwegian</option><option value="oc">Occitan</option><option value="pl">Polish</option><option value="pt">Portuguese</option><option value="qu">Quechua</option><option value="rm">Romansh</option><option value="ro">Romanian</option><option value="rs_latin">Serbian (Latin)</option><option value="sk">Slovak</option><option value="sl">Slovenian</option><option value="sq">Albanian</option><option value="sv">Swedish</option><option value="sw">Swahili</option><option value="tl">Tagalog</option><option value="tr">Turkish</option><option value="uz">Uzbek</option><option value="vi">Vietnamese</option>
             </datalist></div>
             <div class="field"><label>OCR version <button type="button" class="info-btn" data-tip="PaddleOCR model generation. Tested default: PP-OCRv6.">i</button></label><input id="appOcrVersion"></div>
+            <div class="field"><label>OCR model profile <span class="mini">(model_profile)</span> <button type="button" class="info-btn" data-tip="PP-OCRv6 quality/performance tier. Medium is the default and highest-quality profile; Small balances quality and speed; Tiny is fastest but has lower recognition accuracy and does not support Japanese.">i</button></label><select id="appOcrModelProfile"><option value="medium">PP-OCRv6 Medium — Best quality · Recommended</option><option value="small">PP-OCRv6 Small — Balanced</option><option value="tiny">PP-OCRv6 Tiny — Fastest · Lower accuracy</option></select></div>
             <div class="field"><label>Device <button type="button" class="info-btn" data-tip="PaddleOCR device. The tested low-power setup uses cpu.">i</button></label><input id="appOcrDevice"></div>
           </div></div>
         </div>
@@ -828,7 +836,7 @@ function loadCorrPromptPreset(){
 const pageMeta={
   overview:["Overview","System overview and current configuration"],
   classification:["Classification","Primary local LLM metadata assignment"],
-  correspondent:["Correspondent fallback","Optional sender-identification stage"],
+  correspondent:["Correspondent fallback","Optional correspondent-identification stage"],
   "app-settings":["App Settings","Shared connections, workflow, OCR and runtime settings"]
 };
 
@@ -851,7 +859,7 @@ function setStatus(id,msg,ok=true){
 }
 
 function draft(){return {version:currentConfig?.version||1,updated_at:currentConfig?.updated_at||null,system_prompt:$('systemPrompt').value,classification_template:$('classificationTemplate').value,model:$('model').value.trim(),num_ctx:Number($('numCtx').value),num_predict:Number($('numPredict').value),temperature:Number($('temperature').value),think:$('think').value==='true',keep_alive:/^-?\d+(\.\d+)?$/.test($('keepAlive').value.trim())?Number($('keepAlive').value):$('keepAlive').value,content_char_limit:Number($('contentLimit').value),content_head_ratio:Number($('headRatio').value),max_tags:Number($('maxTags').value),ollama_timeout_seconds:Number($('ollamaTimeout').value)}}
-function appDraft(){return {version:currentAppConfig?.version||1,updated_at:currentAppConfig?.updated_at||null,connections:{paperless_url:$('appPaperlessUrl').value.trim(),ollama_url:$('appOllamaUrl').value.trim()},workflow:{llm_queue_tag:$('appLlmQueueTag').value.trim(),llm_error_tag:$('appLlmErrorTag').value.trim(),review_tag:$('appReviewTag').value.trim(),extra_excluded_tags:$('appExtraExcludedTags').value.split(',').map(x=>x.trim()).filter(Boolean)},ocr:{language:$('appOcrLanguage').value.trim(),version:$('appOcrVersion').value.trim(),device:$('appOcrDevice').value.trim()},runtime:{poll_interval_seconds:Number($('appPollInterval').value),review_prune_interval_seconds:Number($('appReviewPruneInterval').value),dry_run:$('appDryRun').value==='true'}}}
+function appDraft(){return {version:currentAppConfig?.version||1,updated_at:currentAppConfig?.updated_at||null,connections:{paperless_url:$('appPaperlessUrl').value.trim(),ollama_url:$('appOllamaUrl').value.trim()},workflow:{llm_queue_tag:$('appLlmQueueTag').value.trim(),llm_error_tag:$('appLlmErrorTag').value.trim(),review_tag:$('appReviewTag').value.trim(),extra_excluded_tags:$('appExtraExcludedTags').value.split(',').map(x=>x.trim()).filter(Boolean)},ocr:{language:$('appOcrLanguage').value.trim(),version:$('appOcrVersion').value.trim(),model_profile:$('appOcrModelProfile').value,device:$('appOcrDevice').value.trim()},runtime:{poll_interval_seconds:Number($('appPollInterval').value),review_prune_interval_seconds:Number($('appReviewPruneInterval').value),dry_run:$('appDryRun').value==='true'}}}
 function corrDraft(){return {version:currentCorrConfig?.version||1,updated_at:currentCorrConfig?.updated_at||null,enabled:$('corrEnabled').value==='true',system_prompt:$('corrSystemPrompt').value,prompt_template:$('corrPromptTemplate').value,model:$('corrModel').value.trim(),num_ctx:Number($('corrNumCtx').value),num_predict:Number($('corrNumPredict').value),temperature:Number($('corrTemperature').value),think:$('corrThink').value==='true',keep_alive:/^-?\d+(\.\d+)?$/.test($('corrKeepAlive').value.trim())?Number($('corrKeepAlive').value):$('corrKeepAlive').value,content_char_limit:Number($('corrContentLimit').value),content_head_ratio:Number($('corrHeadRatio').value),ollama_timeout_seconds:Number($('corrTimeout').value)}}
 
 function updateOverview(){
@@ -869,7 +877,8 @@ function updateOverview(){
     $('overviewOcrStatus').textContent='Ready';
     $('overviewOcrStatus').className='metric-value good-text';
     $('overviewOcrCard').classList.add('good');
-    $('overviewOcrDetail').textContent=`${currentAppConfig.ocr.version} · ${currentAppConfig.ocr.language} · ${currentAppConfig.ocr.device.toUpperCase()}`;
+    const ocrProfile=currentAppConfig.ocr.model_profile||'medium';const ocrProfileLabel=ocrProfile.charAt(0).toUpperCase()+ocrProfile.slice(1);
+    $('overviewOcrDetail').textContent=`${currentAppConfig.ocr.version} ${ocrProfileLabel} · ${currentAppConfig.ocr.language} · ${currentAppConfig.ocr.device.toUpperCase()}`;
     $('overviewPoll').textContent=`${currentAppConfig.runtime.poll_interval_seconds} seconds`;
     $('overviewCleanup').textContent=`${currentAppConfig.runtime.review_prune_interval_seconds} seconds`;
   }
@@ -914,7 +923,7 @@ function fill(c){
 }
 function appFill(c,tokenConfigured){
   currentAppConfig=c;
-  $('appPaperlessUrl').value=c.connections.paperless_url;$('appOllamaUrl').value=c.connections.ollama_url;$('appLlmQueueTag').value=c.workflow.llm_queue_tag;$('appLlmErrorTag').value=c.workflow.llm_error_tag;$('appReviewTag').value=c.workflow.review_tag;$('appExtraExcludedTags').value=(c.workflow.extra_excluded_tags||[]).join(', ');$('appOcrLanguage').value=c.ocr.language;$('appOcrVersion').value=c.ocr.version;$('appOcrDevice').value=c.ocr.device;$('appPollInterval').value=c.runtime.poll_interval_seconds;$('appReviewPruneInterval').value=c.runtime.review_prune_interval_seconds;$('appDryRun').value=String(c.runtime.dry_run);
+  $('appPaperlessUrl').value=c.connections.paperless_url;$('appOllamaUrl').value=c.connections.ollama_url;$('appLlmQueueTag').value=c.workflow.llm_queue_tag;$('appLlmErrorTag').value=c.workflow.llm_error_tag;$('appReviewTag').value=c.workflow.review_tag;$('appExtraExcludedTags').value=(c.workflow.extra_excluded_tags||[]).join(', ');$('appOcrLanguage').value=c.ocr.language;$('appOcrVersion').value=c.ocr.version;$('appOcrModelProfile').value=c.ocr.model_profile||'medium';$('appOcrDevice').value=c.ocr.device;$('appPollInterval').value=c.runtime.poll_interval_seconds;$('appReviewPruneInterval').value=c.runtime.review_prune_interval_seconds;$('appDryRun').value=String(c.runtime.dry_run);
   $('appConfigStatus').textContent=`v${c.version} · ${c.runtime.dry_run?'DRY RUN':'PRODUCTION'}`;$('appConfigStatus').style.color=c.runtime.dry_run?'var(--orange)':'var(--green)';
   $('appTokenStatus').textContent=tokenConfigured?'API token is configured in the deployment environment.':'API token is missing from the deployment environment.';$('appTokenStatus').className='status-box '+(tokenConfigured?'good':'bad');updateOverview();
 }

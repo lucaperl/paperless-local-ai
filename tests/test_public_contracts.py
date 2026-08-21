@@ -40,6 +40,10 @@ def test_control_center_keeps_complete_ui_contract():
         "classPromptPreset",
         "corrPromptPreset",
         "ocrLanguageOptions",
+        "appOcrModelProfile",
+        "PP-OCRv6 Medium — Best quality · Recommended",
+        "PP-OCRv6 Small — Balanced",
+        "PP-OCRv6 Tiny — Fastest · Lower accuracy",
     ):
         assert required in text
     assert "Prompt Studio" not in text

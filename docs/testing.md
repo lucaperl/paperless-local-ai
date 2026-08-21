@@ -25,12 +25,14 @@ docker compose -f compose.yaml -f compose.dev.yaml config
 
 For the OCR service, verify:
 
-- the image uses the intended PP-OCRv6 Medium detection/recognition models;
+- Medium is the default PP-OCRv6 profile and Medium/Small/Tiny map to matching detection/recognition models;
 - HPI/OpenVINO uses the intended CPU thread count;
 - repeated pages can reuse one short-lived Paddle session;
 - after idle teardown, `/health.session_active=false` only when the shared `ai.lock` is actually free;
 - a new cold session can start after teardown;
 - OCR text/geometry stays stable across lifecycle tests;
+- changing `ocr.model_profile` starts the next OCR session with the newly selected model pair;
+- PP-OCRv6 Tiny is rejected with Japanese;
 - no unexpected model download occurs after a populated persistent cache.
 
 ## Paperless end-to-end checklist

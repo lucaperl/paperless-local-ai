@@ -14,6 +14,9 @@ CONFIG_FILE = Path(os.getenv("APP_CONFIG_FILE", "/config/app-config.json"))
 HISTORY_DIR = Path(os.getenv("APP_CONFIG_HISTORY_DIR", "/config/app-history"))
 LOCK_FILE = Path(os.getenv("APP_CONFIG_LOCK_FILE", "/config/app-config.lock"))
 
+OCR_MODEL_PROFILES = ("medium", "small", "tiny")
+
+
 DEFAULT_CONFIG = {
     "version": 1,
     "updated_at": None,
@@ -30,6 +33,7 @@ DEFAULT_CONFIG = {
     "ocr": {
         "language": "en",
         "version": "PP-OCRv6",
+        "model_profile": "medium",
         "device": "cpu",
     },
     "runtime": {
@@ -148,8 +152,21 @@ def validate_config(raw):
     workflow["extra_excluded_tags"] = dedup
 
     ocr = cfg["ocr"]
-    for key in ("language", "version", "device"):
+    for key in ("language", "version", "model_profile", "device"):
         ocr[key] = _require_nonempty_string(ocr[key], f"ocr.{key}")
+
+    ocr["model_profile"] = ocr["model_profile"].lower()
+    if ocr["model_profile"] not in OCR_MODEL_PROFILES:
+        raise ConfigError(
+            "ocr.model_profile must be one of: " + ", ".join(OCR_MODEL_PROFILES)
+        )
+
+    if (
+        ocr["version"] == "PP-OCRv6"
+        and ocr["model_profile"] == "tiny"
+        and ocr["language"].casefold() in {"japan", "ja", "japanese"}
+    ):
+        raise ConfigError("PP-OCRv6 Tiny does not support Japanese")
 
     runtime = cfg["runtime"]
     runtime["poll_interval_seconds"] = _positive_int(

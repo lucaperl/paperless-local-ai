@@ -2,15 +2,15 @@
   "version": "0.2.1",
   "created": "2026-08-21",
   "source_files": {
-    "src/common/app_config.py": "88c9211c286ec4b01601a21359c6e500b7f50ffe9cf91d4b714007b395d67e04",
+    "src/common/app_config.py": "cd82469b930b324a3191293710c517c841e036a56a4ad3146793fde5dc052e1c",
     "src/core/correspondent_runtime.py": "43e36b66d4895a0a80712b812b94184c7e1fa168a5c99b665fef884c9dfff2df",
     "src/core/doctor.py": "76bad19e439890559f605e337cb839cfa27c72a1f23fc7bde6fea61f6a07a3c8",
     "src/core/prompt_runtime.py": "91ac411dc24847f760080fca3f642e21d60f3069f4b86287faf377d5f608e46a",
-    "src/core/prompt_ui.py": "cb91a77768ae6c2d7d46886636e4a0acd20e84daa21450b777a187c972c5830b",
+    "src/core/prompt_ui.py": "260566612a21647275b79aee3f8522b8222d59e69be835851096abf8cd7db728",
     "src/core/review_store.py": "208c4ba12d25f4a53a4353d1c84ff086cf30752ee2007b4dc4b764527ae51e95",
     "src/core/suggestion_bridge.py": "09461923ab9c72c662e16643d0e0f015cc817f4997aeb2c8bed686f93d9cc577",
     "src/core/worker.py": "82a5c6395e3fab7f9c82d272d59f4da1ea0129e5f699864d04bb6e3a90ed55f2",
     "src/ocr/ocrmypdf_plai.py": "431719353c20b160b96a379f6118c4cc8e0e70cfd9847f07d216fa9ac53ced28",
-    "src/ocr/service.py": "40a4bdb017065c7fadeda35dbf16573628259afe24783f05c0626c8d5cbcafb5"
+    "src/ocr/service.py": "33a542005b8eeabb849bd32ea45b3e946ee2b920c57513bcab5f66fb4d2b7c01"
   }
 }
