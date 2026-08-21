@@ -1,0 +1,12 @@
+paperless-local-ai 0.2.1 overlay
+Base: current main after PR #37 docs update (runtime source unchanged from v0.2.0)
+
+87d12d2d2348a81e19bc9140d04e03ff415f4ba9108f07ffb16f6089d7803d3c  CHANGELOG.md
+620bab2e1a4a794a94279648eefd700145ec092b5af2c51be17f1dcaaf2ce231  SOURCE-MANIFEST.json
+71015c979ccb0fc8a0be7ca0ae83046ab045cdc2c8faa09fb2f0f7e440f9b4a6  VERSION
+e296b87bf3f592ebff70ae7179c6848e4ef7bb1736d546d500553aa2d673555e  docs/troubleshooting.md
+bf94bf92f190f129547e76c9f1212fa023704b9921f5330583502d3e3ba3a09b  requirements/dev.txt
+431719353c20b160b96a379f6118c4cc8e0e70cfd9847f07d216fa9ac53ced28  src/ocr/ocrmypdf_plai.py
+40a4bdb017065c7fadeda35dbf16573628259afe24783f05c0626c8d5cbcafb5  src/ocr/service.py
+6d8988c2563eac436067c6f7e462336b32f78266daa3181392e4c596b6d74bdd  tests/test_ocr_plugin.py
+d49d37e71f8deaf40155cdaba3425681366ce6fa6391bc5d2ff84232f6a871e9  tests/test_ocr_session_state.py
