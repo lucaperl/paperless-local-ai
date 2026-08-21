@@ -1,23 +1,21 @@
 # TrueNAS SCALE
 
-`paperless-local-ai` runs as a TrueNAS **Custom App installed from Docker Compose YAML**. It uses the same public GHCR images as a normal Docker deployment.
+`paperless-local-ai` runs as a TrueNAS **Custom App installed from Docker Compose YAML** and uses the same public GHCR images as a normal Docker deployment.
 
-Tested reference: **TrueNAS SCALE 25.10.4**.
+Tested reference: **TrueNAS SCALE 25.10.6**.
 
 ## Before you start
 
 You need:
 
 - working Paperless-ngx and Ollama services;
-- an Ollama model installed (`qwen3.5:4b` is the default);
+- an installed Ollama model (`qwen3.5:4b` is the default);
 - a persistent TrueNAS dataset;
-- a Paperless API token.
+- a Paperless API token;
+- a random OCR service token;
+- the ability to add the OCRmyPDF plugin mount/environment to the Paperless app.
 
-Fresh installations use English OCR and English prompt defaults. OCR language and the two prompt stages can be changed independently in the Control Center.
-
-## 1. Create the Paperless token and app dataset
-
-In Paperless, create an API token under **My Profile**. The token's user must be allowed to read and update the documents and taxonomy the app should manage.
+## 1. Create the app dataset and secrets
 
 Create a persistent dataset, for example:
 
@@ -25,7 +23,7 @@ Create a persistent dataset, for example:
 /mnt/POOL/paperless-local-ai
 ```
 
-Inside it, create:
+Create:
 
 ```text
 /mnt/POOL/paperless-local-ai/paperless.env
@@ -34,12 +32,19 @@ Inside it, create:
 with:
 
 ```text
-PAPERLESS_TOKEN=your-token-here
+PAPERLESS_TOKEN=your-paperless-api-token
+OCR_SERVICE_TOKEN=your-random-ocr-service-token
+```
+
+Generate the OCR token with a cryptographically random value, for example:
+
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
 Restrict the file to root where practical, for example mode `600`.
 
-## 2. Prepare the YAML
+## 2. Prepare the Custom App YAML
 
 Copy [`deploy/truenas/compose.example.yaml`](../deploy/truenas/compose.example.yaml) and replace every occurrence of:
 
@@ -47,72 +52,133 @@ Copy [`deploy/truenas/compose.example.yaml`](../deploy/truenas/compose.example.y
 /mnt/YOUR_POOL/paperless-local-ai
 ```
 
-with your dataset path.
+with your real dataset path.
 
-The template uses the public `stable` images, exposes the Control Center on port `30148` and the suggestion bridge on `30149`, and declares a TrueNAS portal named **Control Center**.
+The template uses the public `stable` images and exposes:
 
-The included CPU/RAM values are conservative container limits, not measured minimum requirements.
+```text
+30148  Control Center
+30149  Suggestion bridge
+30150  OCR service
+```
+
+Keep all three endpoints on a trusted LAN. The OCR service is token-authenticated but is not intended to be Internet-facing.
 
 ## 3. Install the Custom App
 
 In TrueNAS:
 
 1. open **Apps**;
-2. choose the Custom App / **Install via YAML** option;
+2. choose the Custom App / install-from-YAML flow;
 3. name the app `paperless-local-ai`;
 4. paste the edited YAML;
 5. install it.
 
-All four long-running services start together. Until the required Paperless tags exist, the workers may log missing-tag errors; no document is queued until the queue tag is present.
+The four long-running services are:
+
+```text
+ocr-service
+metadata-worker
+prompt-ui
+suggestion-bridge
+```
 
 ## 4. Configure the Control Center
 
-Open the **Control Center** portal from the TrueNAS app details page, or browse to:
+Open the **Control Center** portal or:
 
 ```text
 http://<truenas-ip>:30148/
 ```
 
-The Control Center has no built-in authentication. Keep it on a trusted network.
+The Control Center has no built-in authentication.
 
-### Choose reachable Paperless and Ollama URLs
+For Paperless and Ollama URLs, use addresses reachable from inside the app containers, normally the TrueNAS LAN address plus the published app ports.
 
-Do not use `localhost` for Paperless or Ollama. Inside the app container, `localhost` means that container itself.
+Run **Test connections with current draft** before saving.
 
-Typical TrueNAS setups use the TrueNAS host's LAN address plus each app's published port, for example:
+## 5. Integrate the OCRmyPDF plugin into Paperless
+
+This step is required for 0.2.0.
+
+The OCR service writes:
 
 ```text
-http://<truenas-ip>:<paperless-port>
-http://<truenas-ip>:<ollama-port>
+/mnt/POOL/paperless-local-ai/integration/ocrmypdf_plai.py
 ```
 
-If Paperless or Ollama runs on another host, use that host's LAN address instead.
+Mount the integration directory into the Paperless container read-only:
 
-Under **App Settings → Connections**, enter both URLs and run **Test connections with current draft** before saving. Then review pipeline tags, OCR settings, runtime settings, Classification and Correspondent fallback.
+```text
+Host path:
+  /mnt/POOL/paperless-local-ai/integration
 
-## 5. Configure Paperless
+Container path:
+  /opt/paperless-local-ai
 
-Follow [Paperless setup](paperless-setup.md) to create the required tags and import workflow.
+Read-only:
+  yes
+```
 
-The tag names in Paperless must exactly match the names saved in the Control Center.
+Then add these environment values to Paperless:
 
-## 6. Test one document
+```text
+PLAI_OCR_URL=http://<truenas-ip>:30150
+PLAI_OCR_TOKEN=<same value as OCR_SERVICE_TOKEN>
+PLAI_OCR_TIMEOUT_SECONDS=1800
+PAPERLESS_OCR_USER_ARGS={"plugins":["/opt/paperless-local-ai/ocrmypdf_plai.py"],"pdf_renderer":"fpdf2","optimize":0}
+```
 
-First use the Control Center's Classification and Correspondent fallback Preview/Test actions. Those interactive tests do not modify the selected document.
+Redeploy/restart Paperless after changing its mounts/environment.
 
-For the first automatic pipeline test, use one document you can verify:
+The OCR language configured in Paperless must correspond to **App Settings → OCR** in the Control Center.
 
-- add the configured OCR queue tag manually to an existing document; or
-- import a new document after the Paperless workflow is enabled.
+See [Paperless setup](paperless-setup.md) for details and the tested OCR contract.
 
-If you enable **Dry Run**, read the exact behavior in [Configuration](configuration.md): metadata writes are suppressed, but workflow tags still move and OCR may still update Paperless' extracted content.
+## 6. Configure the Paperless metadata workflow
+
+Create the required metadata/review tags and a **Document Added** workflow that assigns the `LLM` queue tag.
+
+0.2.0 does **not** use a PaddleOCR queue tag. OCR happens inside Paperless import before the metadata workflow.
+
+## 7. Test one document
+
+Use a scanned PDF you can verify.
+
+Expected:
+
+```text
+Paperless import
+→ OCRmyPDF calls local PP-OCRv6
+→ searchable archive / extracted content
+→ Document Added workflow adds LLM
+→ metadata classification
+→ Inbox
+```
+
+Verify the original, archive/searchable text and metadata before processing normal documents.
+
+## Resources
+
+The published OCR reference limits are:
+
+```text
+CPU:           4
+RAM:           7 GiB
+shared memory: 2 GiB
+idle timeout:  5 s
+HPI/OpenVINO:  enabled
+CPU threads:   4
+```
+
+These are the tested reference settings, not minimum requirements.
 
 ## Updates
 
-The supplied YAML follows the floating `stable` GHCR tag. With Docker image update checks enabled, TrueNAS can present its normal **Update** action when a new image digest is published.
+The supplied YAML follows the floating `stable` GHCR tag. TrueNAS can present its normal image update when that digest changes.
 
-Image-only updates keep the stored Custom App YAML unchanged. If release notes mention a Compose-contract change, update that YAML as part of the release.
+A container image cannot rewrite stored Custom App YAML or Paperless' app configuration. If release notes mention a deployment-contract change, update the stored YAML/mounts/environment as part of that release.
 
-For pinned deployments, replace `stable` in both image names with the exact release you want to run.
+For pinned deployments, replace `stable` in both image names with the exact release.
 
-See [Updating paperless-local-ai](upgrading.md) for update and rollback details.
+See [Updating](upgrading.md).

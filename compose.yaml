@@ -10,20 +10,38 @@ x-core-volumes: &core-volumes
   - ${APP_DATA_DIR:-./data}/coordination:/coordination
 
 services:
-  ocr-worker:
+  ocr-service:
     image: ${IMAGE_PREFIX:-ghcr.io/lucaperl/paperless-local-ai}-ocr:${APP_VERSION:-stable}
     restart: unless-stopped
     environment:
-      PAPERLESS_TOKEN: ${PAPERLESS_TOKEN:?set PAPERLESS_TOKEN in .env}
       HOME: /ocr-data
+      PADDLE_PDX_CACHE_HOME: /ocr-data/.paddlex
+      PADDLE_PDX_CPU_NUM_THREADS: "${PADDLE_PDX_CPU_NUM_THREADS:-4}"
       PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True"
+      OCR_SESSION_IDLE_SECONDS: "${OCR_SESSION_IDLE_SECONDS:-5}"
+      OCR_ENABLE_HPI: "${OCR_ENABLE_HPI:-true}"
+      OCR_SERVICE_TOKEN: ${OCR_SERVICE_TOKEN:?set OCR_SERVICE_TOKEN in .env}
+      OCR_SERVICE_HOST: 0.0.0.0
+      OCR_SERVICE_PORT: "8082"
+      OCR_PAGE_TIMEOUT_SECONDS: ${OCR_PAGE_TIMEOUT_SECONDS:-1800}
+      OCR_MAX_REQUEST_BYTES: ${OCR_MAX_REQUEST_BYTES:-104857600}
+      OCR_TMP_DIR: ${OCR_TMP_DIR:-/dev/shm/paperless-local-ai-ocr}
+    ports:
+      - ${OCR_SERVICE_BIND:-127.0.0.1}:${OCR_SERVICE_PORT:-30150}:8082
     volumes:
       - ${APP_DATA_DIR:-./data}/config:/config:ro
       - ${APP_DATA_DIR:-./data}/ocr:/ocr-data
       - ${APP_DATA_DIR:-./data}/coordination:/coordination
-    mem_limit: ${OCR_MEMORY_LIMIT:-6g}
-    cpus: ${OCR_CPU_LIMIT:-2.0}
+      - ${APP_DATA_DIR:-./data}/integration:/integration
+    mem_limit: ${OCR_MEMORY_LIMIT:-7g}
+    cpus: ${OCR_CPU_LIMIT:-4.0}
     shm_size: ${OCR_SHM_SIZE:-2gb}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8082/health', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   metadata-worker:
     <<: *core-image
