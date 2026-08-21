@@ -91,7 +91,7 @@ Open **App Settings → Connections** and use **Test connections with current dr
 
 ## 4. Configure Paperless OCRmyPDF
 
-This step is required in 0.2.0.
+Paperless must load the included OCRmyPDF plugin so scanned pages are processed by PaddleOCR.
 
 The OCR service publishes the plugin below:
 
@@ -138,7 +138,7 @@ The default model is `qwen3.5:4b`. Any selected model must already exist in Olla
 
 Follow [Paperless setup](paperless-setup.md).
 
-0.2.0 requires only the metadata/review workflow tags from this app. OCR is no longer queued by a `PaddleOCR` tag.
+Only the metadata/review workflow tags are required by the app. OCR runs directly during Paperless import through OCRmyPDF.
 
 ## 7. Verify
 
@@ -154,7 +154,7 @@ Expected sequence:
 
 ```text
 Paperless import
-→ OCRmyPDF / PP-OCRv6 when OCR is needed
+→ OCRmyPDF / PaddleOCR / PP-OCRv6 when OCR is needed
 → Document Added workflow adds LLM tag
 → metadata worker
 → Inbox
@@ -173,3 +173,20 @@ OCR is part of Paperless import and is therefore independent from metadata Dry R
 ## First OCR run
 
 PaddleOCR models and HPI/OpenVINO artifacts are cached below `APP_DATA_DIR/ocr/`. The first run on a fresh cache can take substantially longer while models and optimized inference artifacts are prepared.
+
+## Updates
+
+The default `APP_VERSION=stable` follows the newest non-prerelease image.
+
+For a normal image-only update:
+
+```bash
+docker compose pull
+docker compose up -d
+docker compose --profile tools run --rm doctor
+```
+
+If the release notes describe a deployment-contract change, update the Compose configuration and any required Paperless mounts/environment before redeploying. A container image cannot add new stored mounts, ports or environment variables to an existing deployment by itself.
+
+For a pinned deployment, set `APP_VERSION` to the exact release tag you want to run.
+

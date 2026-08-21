@@ -1,6 +1,6 @@
 # Paperless-ngx setup
 
-0.2.0 integrates OCR directly into Paperless' OCRmyPDF path. The only tag queue owned by `paperless-local-ai` is the metadata queue.
+OCR integrates directly into Paperless' OCRmyPDF import path. The only tag queue owned by `paperless-local-ai` is the metadata queue.
 
 ## 1. API token
 
@@ -24,7 +24,7 @@ You may rename these values in the Control Center. Paperless and Control Center 
 
 Set automatic matching to **None** for technical queue/error tags so Paperless does not assign them independently.
 
-There is **no PaddleOCR queue or PaddleOCR error tag in 0.2.0**.
+OCR does not require PaddleOCR queue or error tags.
 
 ## 3. Metadata import workflow
 
@@ -52,7 +52,7 @@ On metadata-processing errors, the LLM queue tag is removed and the configured L
 
 Adding the `LLM` tag to an existing Paperless document queues **metadata classification only**. It does not rerun OCR.
 
-Re-OCR of existing documents is a Paperless/OCRmyPDF operation and should be treated separately from the normal 0.2.0 import workflow.
+Re-OCR of existing documents is a Paperless/OCRmyPDF operation and should be treated separately from the normal import workflow.
 
 ## 4. OCRmyPDF plugin integration
 
@@ -78,6 +78,8 @@ The URL must be reachable from **inside the Paperless container**.
 
 The plugin is verified against OCRmyPDF **17.4.2** in Paperless-ngx **3.0.5**.
 
+For pages that OCRmyPDF sends to the plugin, PaddleOCR handles OCR inference instead of Tesseract. Native-text pages can stay on Paperless/OCRmyPDF's normal text path without unnecessary OCR.
+
 ### OCR language
 
 Paperless passes its requested OCR language to the plugin. `ocr-service` checks that it matches the OCR language saved in the Control Center.
@@ -96,9 +98,9 @@ nld / dut → nl
 
 If the two configurations disagree, the OCR request fails closed with `ocr_language_mismatch`.
 
-### Tested Paperless OCR behavior
+### OCRmyPDF behavior
 
-The validated setup keeps Paperless in its normal automatic OCR flow and uses OCRmyPDF for archive generation. Native-text pages are not sent through Paddle unnecessarily; scan/raster pages that OCRmyPDF sends to the OCR engine are handled by PP-OCRv6.
+The tested setup keeps Paperless in its normal automatic OCR flow and uses OCRmyPDF for archive generation. Scan/raster pages that OCRmyPDF sends to the OCR engine are handled by PaddleOCR with PP-OCRv6 Medium.
 
 The validated OCRmyPDF renderer contract is:
 
@@ -107,7 +109,7 @@ pdf_renderer=fpdf2
 optimize=0
 ```
 
-The resulting Paperless archive was validated as searchable PDF/A-2b while the uploaded original remained byte-identical.
+The resulting Paperless archive is searchable PDF/A-2b while the uploaded original remains unchanged.
 
 ## 5. What metadata is written
 

@@ -35,7 +35,7 @@ Configure:
 - human-review tag;
 - extra tags excluded from normal LLM content-tag candidates.
 
-0.2.0 has no OCR queue/error tags. OCR is invoked by Paperless/OCRmyPDF during import.
+OCR does not use queue or error tags. It runs as part of Paperless/OCRmyPDF document import.
 
 Paperless tag names must match these values exactly.
 
@@ -47,7 +47,7 @@ Configure:
 - PaddleOCR generation;
 - device.
 
-The current validated OCR generation is **PP-OCRv6** and the 0.2.0 OCR image explicitly selects the **Medium** detection and recognition models.
+The current validated OCR generation is **PP-OCRv6** and the OCR image explicitly selects the **Medium** detection and recognition models.
 
 The configured language is also checked against the language requested by Paperless through the OCRmyPDF plugin. A mismatch is rejected rather than silently running a different model language.
 
@@ -87,6 +87,8 @@ One request covers:
 - date;
 - content tags;
 - an existing correspondent.
+
+The full document context is processed once for normal classification rather than separately for every metadata field.
 
 The structured response is constrained to the current eligible Paperless taxonomy.
 
@@ -129,7 +131,7 @@ Classification and Correspondent fallback each include English and German prompt
 
 OCR language is independent from prompt language. Choose the language of the scanned documents under **App Settings → OCR**.
 
-Existing saved configurations are validated against the current schema. Removed pre-0.2 OCR queue/error settings are ignored rather than retained.
+Saved configurations are validated against the current schema; unsupported keys are not carried into the active configuration.
 
 ## Deployment-only settings
 
