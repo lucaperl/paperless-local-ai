@@ -173,7 +173,7 @@ CPU threads:   4
 
 These are the tested reference settings, not minimum requirements.
 
-On the reference Intel Core i3-8100, HPI/OpenVINO reduced warm PP-OCRv6 inference for a 300-DPI page from approximately **15.8 seconds to 10.7 seconds**. Complete live OCR of a cached page is typically around **15–25 seconds** depending on surrounding OCRmyPDF/PDF processing.
+On the reference Intel Core i3-8100 (4 cores / 4 threads, 16 GB RAM, no GPU), the current PP-OCRv6 Medium / HPI / OpenVINO setup measured **23.6 seconds** for the first scanned page after OCR idle and **17.6 seconds per additional page** in the same warm OCR session. With `qwen3.5:4b` Q4_K_M, metadata classification measured **80.1 seconds per document** and the optional Correspondent fallback **53.4 seconds** when needed. These are reference measurements, not minimum-performance requirements.
 
 ## Updates
 

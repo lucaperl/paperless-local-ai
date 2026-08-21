@@ -5,21 +5,47 @@
 
 **Improved OCR with PaddleOCR and efficient local-LLM metadata automation for Paperless-ngx — designed for modest CPU-only hardware.**
 
-`paperless-local-ai` uses **PaddleOCR instead of Tesseract** for scanned pages that need OCR and automatically assigns title, document type, date, tags and correspondent with a local Ollama model. It integrates into Paperless' existing OCRmyPDF import path, so Paperless remains the document system of record.
+`paperless-local-ai` uses **PaddleOCR instead of Tesseract** for scanned pages that need OCR and automatically writes Paperless metadata — **title, document type, date, tags and correspondent** — with a local Ollama model. It integrates into Paperless' existing OCRmyPDF import path, so Paperless remains the document system of record.
 
-Normal metadata classification is handled in **one structured LLM request per document**. An optional second, narrowly scoped correspondent request runs only when the main classification cannot resolve an existing sender.
+Normal metadata classification is handled in **one structured LLM request per document** and the result is written back automatically. If no existing correspondent can be matched, an optional second, narrowly scoped correspondent request can place a new correspondent candidate into **Paperless Suggestions** instead of creating it automatically.
 
-Reference system: **Intel Core i3-8100 · 4 cores / 4 threads · 16 GB RAM · no GPU · qwen3.5:4b**
 
 ## Highlights
 
 - **Improved scan OCR with PaddleOCR** — PP-OCRv6 Medium handles OCR inference for scanned pages instead of Tesseract.
-- **One LLM request for normal metadata** — title, document type, date, tags and an existing correspondent are returned together instead of processing the full document separately for every field.
-- **CPU-optimized OCR** — PaddleX HPI and OpenVINO accelerate PP-OCRv6 on CPU, with a persistent inference cache and bounded thread usage.
-- **Resource-aware execution** — PaddleOCR and Ollama inference are serialized so they do not compete for the same CPU and RAM budget.
-- **Paperless-native integration** — OCR runs inside the normal OCRmyPDF import path, searchable archive/PDF-A generation stays with Paperless, and the uploaded original is preserved.
-- **Focused correspondent fallback** — a second LLM request is used only when the main request cannot match an existing correspondent; genuinely new senders stay behind human review.
+- **Automatic metadata assignment in one LLM request** — title, document type, date, tags and an existing correspondent are classified together and written back to Paperless automatically.
+- **Designed for CPU-only systems** — the OCR and LLM paths are deliberately structured to avoid repeated model work and simultaneous heavy inference.
+- **Paperless-native correspondent Suggestions** — the common path stays at one LLM request; only an unresolved correspondent can trigger a second, focused request. Genuinely new correspondents are surfaced through Paperless Suggestions and are never auto-created.
 - **Control Center** — configure connections, workflow tags, OCR settings, prompts, model parameters, Dry Run and configuration history from one UI.
+
+## Why this architecture
+
+`paperless-local-ai` is designed around three priorities: **OCR quality, practical local inference on modest CPU-only hardware, and reliable automation inside Paperless.**
+
+**Better OCR before the LLM.** Metadata classification can only be as reliable as the text it receives. For the document set this project was built around, Tesseract output was often not clean enough for reliable classification with a small local model. Vision-language models can avoid a separate OCR step, but are much more demanding on older CPU-only hardware. `paperless-local-ai` therefore uses **PaddleOCR with PP-OCRv6 Medium** as a middle ground: stronger OCR while remaining practical on CPU. HPI/OpenVINO accelerates the same Medium models rather than reducing the OCR model tier for speed.
+
+**One LLM request per document.** Field-by-field classification repeats much of the same prompt processing for title, document type, date, tags and correspondent. `paperless-local-ai` returns all normal metadata together in **one structured LLM request per document**. The reference setup uses the small `qwen3.5:4b` model, keeping local classification practical even when a single CPU inference already takes around a minute.
+
+**Automatic, but constrained.** Normal classification results are written back to Paperless automatically, while document types, tags and existing correspondents are constrained to values that already exist in Paperless. If no existing correspondent can be resolved, the optional fallback can identify a new name, but new correspondents are exposed through **Paperless Suggestions** for human review instead of being created automatically.
+
+**Resource-aware execution.** PaddleOCR/OpenVINO and Ollama inference are serialized through a shared resource lock so both heavy workloads do not consume the same CPU and RAM at the same time.
+
+Additional runtime optimizations include skipping PaddleOCR for native-text pages, reusing the OCR process across consecutive pages, keeping inference artifacts cached and unloading heavy model processes again when they are no longer needed.
+
+## Reference performance
+
+**Intel Core i3-8100 · 4 cores / 4 threads · 16 GB RAM · no GPU · qwen3.5:4b Q4_K_M · PP-OCRv6 Medium / HPI / OpenVINO**
+
+| Component | Measured time |
+|---|---:|
+| First scanned page after OCR idle | **23.6 s** |
+| Additional page in the same warm OCR session | **17.6 s/page** |
+| Metadata classification | **80.1 s/document** |
+| Optional correspondent fallback | **+53.4 s** when needed |
+
+OCR time scales per scanned page, while normal metadata classification runs once per document. The correspondent fallback is an additional LLM request only when the main classification cannot resolve an existing correspondent.
+
+These measurements are a reference point for this specific CPU-only system, not a performance guarantee.
 
 ## How it fits into Paperless
 
@@ -27,7 +53,9 @@ During import, Paperless/OCRmyPDF decides whether a page needs OCR. Native-text 
 
 Tesseract is not used for OCR inference on pages handled by the plugin.
 
-After the document has been added, a normal Paperless **Document Added** workflow assigns the `LLM` queue tag. The metadata worker then classifies the completed Paperless document.
+After the document has been added, a normal Paperless **Document Added** workflow assigns the `LLM` queue tag. The metadata worker then classifies the completed document and automatically writes the resulting title, document type, date, tags and resolved existing correspondent back to Paperless.
+
+**Diagram colors:** blue = Paperless-ngx / OCRmyPDF · green = paperless-local-ai · purple = optional Correspondent fallback
 
 <p align="center">
   <img src="images/paperless-flow.svg" alt="paperless-local-ai workflow" width="65%">
@@ -42,32 +70,6 @@ Paperless remains the document system of record throughout:
 
 OCR runs during Paperless import; no separate OCR queue tag is required.
 
-## PaddleOCR and CPU performance
-
-The OCR service uses:
-
-- PaddlePaddle `3.2.2`;
-- PaddleOCR `3.7.0`;
-- PaddleX `3.7.2`;
-- **PP-OCRv6 Medium** detection and recognition models;
-- PaddleX HPI with an OpenVINO CPU backend;
-- a persistent PaddleX/OpenVINO cache;
-- a short warm session so multi-page documents do not initialize Paddle for every page;
-- the same exclusive AI resource lock used by the metadata worker.
-
-The default deployment is tuned for **4 CPU threads, 7 GiB RAM and a 5-second OCR idle timeout**. These are reference settings, not universal minimums.
-
-On the reference i3-8100 system, warm PP-OCRv6 inference for a 300-DPI page measured:
-
-| Runtime | Approx. inference time |
-|---|---:|
-| Standard Paddle runtime | **15.8 s** |
-| HPI / OpenVINO | **10.7 s** |
-
-That is roughly a **32% reduction in warm OCR inference time**. Complete live OCR for a cached page is typically around **15–25 seconds**, depending on surrounding OCRmyPDF/PDF processing.
-
-The first run on a fresh HPI/OpenVINO cache can take substantially longer while optimized inference artifacts are prepared. After the configured idle window, the Paddle subprocess is torn down so its memory is returned to the system.
-
 ## Metadata automation
 
 The main classifier processes the document once and returns a structured result containing:
@@ -80,7 +82,7 @@ The main classifier processes the document once and returns a structured result 
 
 This avoids sending the full document through the LLM again for each metadata field.
 
-If the main request cannot match an existing correspondent and the optional fallback is enabled, a **separate correspondent-only request** runs with its own prompt and model settings. The configured model stays loaded across the main request and fallback when both are needed, then is explicitly unloaded.
+If the main request cannot match an existing correspondent and the optional fallback is enabled, a **separate correspondent-only request** runs with its own prompt and model settings. An exact existing match can still be applied automatically; a genuinely new correspondent is exposed through **Paperless Suggestions** for review instead of being auto-created. The configured model stays loaded across the main request and fallback when both are needed, then is explicitly unloaded.
 
 ### Correspondents
 
@@ -89,8 +91,8 @@ The primary classification is constrained to correspondents already present in P
 The optional fallback can then:
 
 - apply an exact existing correspondent automatically;
-- propose a genuinely new sender through Paperless' native suggestion/review flow;
-- leave the correspondent empty when no reliable sender can be determined.
+- expose a genuinely new correspondent through **Paperless Suggestions**;
+- leave the correspondent empty when no reliable correspondent can be determined.
 
 New correspondents are never auto-created.
 
@@ -109,17 +111,11 @@ Prompts and model settings can be previewed and tested against an existing Paper
 
 ![paperless-local-ai Control Center](images/control-center-screenshot.png)
 
-## Reference system and compatibility
-
-**Intel Core i3-8100 · 16 GB RAM · no GPU · qwen3.5:4b**
-
-The integration path has been validated end-to-end with a two-page scanned PDF: Paperless API upload → OCRmyPDF → PaddleOCR / PP-OCRv6 / OpenVINO → searchable PDF/A-2b → LLM metadata write-back → Inbox, while preserving the original byte-for-byte and preventing Paddle/Ollama overlap.
-
-Tested reference: **Paperless-ngx 3.0.5**, **OCRmyPDF 17.4.2**, **TrueNAS SCALE 25.10.6** and **qwen3.5:4b**. See [Compatibility](docs/compatibility.md) for the exact scope.
-
 ## Requirements
 
 Paperless-ngx · Ollama · Docker Compose or TrueNAS SCALE · linux/amd64
+
+Tested reference: **Paperless-ngx 3.0.5 · OCRmyPDF 17.4.2 · TrueNAS SCALE 25.10.6 · Ollama 0.32.11**. See [Compatibility](docs/compatibility.md) for the exact tested scope.
 
 ## Install
 

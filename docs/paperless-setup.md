@@ -126,11 +126,11 @@ On successful normal metadata write-back:
 
 Because content-tag assignment is replacement-based, use Dry Run and one test document before enabling metadata automation on an existing archive.
 
-If the optional correspondent fallback finds an exact existing correspondent, it can be applied automatically. A genuinely new name is never auto-created.
+If the optional correspondent fallback finds an exact existing correspondent, it can be applied automatically. A genuinely new correspondent is exposed through **Paperless Suggestions** and is never auto-created.
 
 ## 6. Optional native new-correspondent review
 
-Skip this section if you only want OCR, normal metadata assignment and matching of existing correspondents.
+Skip this section if you only want OCR, automatic metadata assignment and matching of existing correspondents.
 
 Paperless must be able to reach the suggestion bridge. For the default host port:
 
