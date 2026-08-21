@@ -52,13 +52,27 @@ def test_env_example_contains_only_deployment_and_secret_settings():
         "OLLAMA_URL=",
         "OCR_LANGUAGE=",
         "OCR_QUEUE_TAG=",
+        "OCR_ERROR_TAG=",
         "POLL_INTERVAL=",
         "DRY_RUN=",
         "CORRESPONDENT_SIGNATURE_WORDS=",
     ):
         assert forbidden not in text
     assert "PAPERLESS_TOKEN=" in text
+    assert "OCR_SERVICE_TOKEN=" in text
     assert "APP_DATA_DIR=" in text
+
+
+def test_ocr_is_service_not_queue_worker():
+    compose = (ROOT / "compose.yaml").read_text(encoding="utf-8")
+    assert "\n  ocr-service:" in compose
+    assert "\n  ocr-worker:" not in compose
+    assert "OCR_SERVICE_TOKEN" in compose
+    assert "/integration" in compose
+
+    app_config = (ROOT / "src/common/app_config.py").read_text(encoding="utf-8")
+    assert '"ocr_queue_tag"' not in app_config
+    assert '"ocr_error_tag"' not in app_config
 
 
 def test_single_app_data_directory_in_compose():
@@ -94,7 +108,6 @@ def test_tested_ocr_stack_is_pinned():
     expected_packages = {
         "paddleocr",
         "paddlex",
-        "PyMuPDF",
         "requests",
         "numpy",
         "opencv-contrib-python",
@@ -119,11 +132,42 @@ def test_tested_ocr_stack_is_pinned():
     assert pinned_packages == expected_packages
 
 
-def test_third_party_license_notice_covers_pymupdf():
+def test_ocr_requirements_do_not_keep_legacy_worker_dependencies():
+    text = (ROOT / "requirements/ocr.txt").read_text(encoding="utf-8")
+    assert "PyMuPDF" not in text
+    assert "requests==2.34.2" in text
+
+
+def test_third_party_license_notice_matches_current_ocr_runtime():
     notice = (ROOT / "THIRD_PARTY_LICENSES.md").read_text(encoding="utf-8")
-    assert "PyMuPDF" in notice
-    assert "AGPL" in notice
+    assert "PaddlePaddle" in notice
+    assert "PaddleOCR" in notice
+    assert "PaddleX" in notice
+    assert "OpenVINO" in notice
+    assert "PyMuPDF" not in notice
 
     for path in (ROOT / "docker").glob("*.Dockerfile"):
         text = path.read_text(encoding="utf-8")
         assert "org.opencontainers.image.licenses=\"MIT\"" not in text
+
+
+def test_public_docs_use_02_ocr_service_contract():
+    docs = [
+        ROOT / "README.md",
+        ROOT / "docs/architecture.md",
+        ROOT / "docs/installation.md",
+        ROOT / "docs/paperless-setup.md",
+        ROOT / "docs/configuration.md",
+        ROOT / "docs/truenas.md",
+        ROOT / "docs/troubleshooting.md",
+        ROOT / "docs/testing.md",
+    ]
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in docs)
+
+    assert "ocr-service" in combined
+    assert "PAPERLESS_OCR_USER_ARGS" in combined
+    assert "PLAI_OCR_URL" in combined
+    assert "Document Added" in combined
+    assert "ocr-worker" not in combined
+    assert "PaddleOCR Error" not in combined
+    assert "Name:    PaddleOCR Queue" not in combined

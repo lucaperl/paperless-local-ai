@@ -5,7 +5,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 COMMON = ROOT / "src" / "common"
 CORE = ROOT / "src" / "core"
-for path in (COMMON, CORE):
+OCR = ROOT / "src" / "ocr"
+for path in (COMMON, CORE, OCR):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 

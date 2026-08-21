@@ -508,7 +508,7 @@ def render_prompts(document, tax, config):
     }
 
 
-def build_ollama_payload(rendered, config):
+def build_ollama_payload(rendered, config, keep_alive_override=None):
     return {
         "model": config["model"],
         "messages": [
@@ -518,7 +518,7 @@ def build_ollama_payload(rendered, config):
         "format": rendered["schema"],
         "stream": False,
         "think": config["think"],
-        "keep_alive": config["keep_alive"],
+        "keep_alive": config["keep_alive"] if keep_alive_override is None else keep_alive_override,
         "options": {
             "num_ctx": config["num_ctx"],
             "temperature": config["temperature"],
@@ -605,8 +605,8 @@ def ai_resource_lock(stage, doc_id):
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
-def call_ollama(rendered, config):
-    payload = build_ollama_payload(rendered, config)
+def call_ollama(rendered, config, keep_alive_override=None):
+    payload = build_ollama_payload(rendered, config, keep_alive_override=keep_alive_override)
     started = time.monotonic()
     ollama_url = load_app_config()["connections"]["ollama_url"]
     r = requests.post(
@@ -624,6 +624,18 @@ def call_ollama(rendered, config):
 
     result = normalize_result(json.loads(response))
     return result, raw, wall_duration, payload
+
+
+def unload_ollama_model(model, timeout=30):
+    """Immediately unload one Ollama model after the document transaction."""
+    ollama_url = load_app_config()["connections"]["ollama_url"]
+    response = requests.post(
+        f"{ollama_url}/api/generate",
+        json={"model": model, "keep_alive": 0, "stream": False},
+        timeout=timeout,
+    )
+    response.raise_for_status()
+
 
 
 def performance_from_raw(raw, wall_duration):

@@ -65,12 +65,13 @@ The Dockerfiles/workflow include the OCI source label so each package is linked 
 5. Regenerate/check `SOURCE-MANIFEST.json` if runtime source changed.
 6. Search the repository for secrets, private document contents, private IPs and host-specific paths.
 7. Review `THIRD_PARTY_LICENSES.md` whenever runtime dependencies or base images change.
-8. Push the release commit.
-9. Publish GitHub Release `v<VERSION>`.
-10. Wait for both publish jobs to succeed.
-11. Confirm both GHCR packages are public and anonymously pullable.
-12. Deploy the exact release images to a test/production-like instance.
-13. Run `doctor` and one real document end-to-end.
+8. If a Mermaid source file changed, push the release commit and wait for the `render-mermaid` workflow to commit the matching SVG; pull that generated commit before creating the release.
+9. Confirm the final branch contains the intended release commit(s).
+10. Publish GitHub Release `v<VERSION>`.
+11. Wait for both publish jobs to succeed.
+12. Confirm both GHCR packages are public and anonymously pullable.
+13. Deploy the exact release images to a test/production-like instance.
+14. Run `doctor` and one real document end-to-end.
 
 If validation must happen **before** `stable` moves, publish a prerelease first. A normal non-prerelease moves `stable`/`latest` during the publish workflow.
 

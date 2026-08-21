@@ -426,7 +426,7 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
         <div class="section-grid">
           <div class="card section">
             <h2>Pipeline</h2>
-            <p><strong>paperless-local-ai sits between Paperless import and review:</strong> Paperless queues documents through workflow tags, the app processes them locally, and writes the result back to the same document.</p>
+            <p><strong>paperless-local-ai extends Paperless import and review:</strong> OCRmyPDF delegates scanned-page recognition to the local PaddleOCR service, then a normal Paperless workflow queues completed documents for local metadata classification.</p>
 
             <div class="pipeline-shell">
               <div class="pipeline-group">
@@ -436,14 +436,14 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
                     <div class="pipeline-num">1</div>
                     <div class="pipeline-copy">
                       <div class="pipeline-title">Paperless import</div>
-                      <div class="pipeline-desc">Your normal Paperless consume/import workflow stays unchanged.</div>
+                      <div class="pipeline-desc">Paperless consumes the original document and runs its normal parser/OCRmyPDF path.</div>
                     </div>
                   </div>
                   <div class="pipeline-step paperless">
                     <div class="pipeline-num">2</div>
                     <div class="pipeline-copy">
-                      <div class="pipeline-title">Queue via Paperless workflow</div>
-                      <div class="pipeline-desc">A Paperless workflow hands the document to paperless-local-ai through configurable queue tags.</div>
+                      <div class="pipeline-title">OCRmyPDF → PaddleOCR</div>
+                      <div class="pipeline-desc">When OCR is needed, OCRmyPDF calls the authenticated local OCR service and writes a searchable archive text layer plus extracted content.</div>
                     </div>
                   </div>
                 </div>
@@ -455,8 +455,8 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
                   <div class="pipeline-step local">
                     <div class="pipeline-num">3</div>
                     <div class="pipeline-copy">
-                      <div class="pipeline-title">Selective PaddleOCR</div>
-                      <div class="pipeline-desc">Document text is improved where needed; the original PDF is not modified.</div>
+                      <div class="pipeline-title">Queue metadata classification</div>
+                      <div class="pipeline-desc">After the Paperless document is added, a Document Added workflow assigns the LLM queue tag. No OCR queue tag is involved.</div>
                     </div>
                   </div>
 
@@ -761,14 +761,12 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
         </div>
 
         <div class="tab-page" id="app-workflow">
-          <details class="section-help"><summary>Pipeline &amp; tags</summary><div class="help-body">These five tags control the transition between OCR, LLM processing and human review. If you change a name, the corresponding tag must already exist in Paperless. OCR queue/error tags automatically block the LLM stage, so no duplicate setting is needed.</div></details>
+          <details class="section-help"><summary>Pipeline &amp; tags</summary><div class="help-body">OCR is now part of the Paperless import path through OCRmyPDF and does not use queue tags. These three tags control metadata processing and human review. If you change a name, the corresponding tag must already exist in Paperless.</div></details>
           <div class="card panel"><div class="form-grid three">
-            <div class="field"><label>OCR queue tag <button type="button" class="info-btn" data-tip="Documents with this tag are processed by the PaddleOCR worker.">i</button></label><input id="appOcrQueueTag"></div>
-            <div class="field"><label>OCR error tag <button type="button" class="info-btn" data-tip="Set when OCR processing fails.">i</button></label><input id="appOcrErrorTag"></div>
-            <div class="field"><label>LLM queue tag <button type="button" class="info-btn" data-tip="Set after successful OCR; the metadata worker processes documents with this tag.">i</button></label><input id="appLlmQueueTag"></div>
+            <div class="field"><label>LLM queue tag <button type="button" class="info-btn" data-tip="Assign this tag from a Paperless Document Added workflow after import/OCR completes; the metadata worker then classifies the document.">i</button></label><input id="appLlmQueueTag"></div>
             <div class="field"><label>LLM error tag <button type="button" class="info-btn" data-tip="Set when LLM classification fails.">i</button></label><input id="appLlmErrorTag"></div>
             <div class="field"><label>Review tag <button type="button" class="info-btn" data-tip="Documents remain under this tag for human review. Persistent correspondent suggestions are removed once the document leaves review.">i</button></label><input id="appReviewTag"></div>
-            <div class="field"><label>Additional taxonomy-excluded tags <button type="button" class="info-btn" data-tip="Comma-separated additional tags that are never offered to the LLM as classification tags, for example TODO. The five technical tags above are excluded automatically.">i</button></label><input id="appExtraExcludedTags"></div>
+            <div class="field"><label>Additional taxonomy-excluded tags <button type="button" class="info-btn" data-tip="Comma-separated additional tags that are never offered to the LLM as classification tags, for example TODO. The three technical tags above are excluded automatically.">i</button></label><input id="appExtraExcludedTags"></div>
           </div></div>
         </div>
 
@@ -853,7 +851,7 @@ function setStatus(id,msg,ok=true){
 }
 
 function draft(){return {version:currentConfig?.version||1,updated_at:currentConfig?.updated_at||null,system_prompt:$('systemPrompt').value,classification_template:$('classificationTemplate').value,model:$('model').value.trim(),num_ctx:Number($('numCtx').value),num_predict:Number($('numPredict').value),temperature:Number($('temperature').value),think:$('think').value==='true',keep_alive:/^-?\d+(\.\d+)?$/.test($('keepAlive').value.trim())?Number($('keepAlive').value):$('keepAlive').value,content_char_limit:Number($('contentLimit').value),content_head_ratio:Number($('headRatio').value),max_tags:Number($('maxTags').value),ollama_timeout_seconds:Number($('ollamaTimeout').value)}}
-function appDraft(){return {version:currentAppConfig?.version||1,updated_at:currentAppConfig?.updated_at||null,connections:{paperless_url:$('appPaperlessUrl').value.trim(),ollama_url:$('appOllamaUrl').value.trim()},workflow:{ocr_queue_tag:$('appOcrQueueTag').value.trim(),ocr_error_tag:$('appOcrErrorTag').value.trim(),llm_queue_tag:$('appLlmQueueTag').value.trim(),llm_error_tag:$('appLlmErrorTag').value.trim(),review_tag:$('appReviewTag').value.trim(),extra_excluded_tags:$('appExtraExcludedTags').value.split(',').map(x=>x.trim()).filter(Boolean)},ocr:{language:$('appOcrLanguage').value.trim(),version:$('appOcrVersion').value.trim(),device:$('appOcrDevice').value.trim()},runtime:{poll_interval_seconds:Number($('appPollInterval').value),review_prune_interval_seconds:Number($('appReviewPruneInterval').value),dry_run:$('appDryRun').value==='true'}}}
+function appDraft(){return {version:currentAppConfig?.version||1,updated_at:currentAppConfig?.updated_at||null,connections:{paperless_url:$('appPaperlessUrl').value.trim(),ollama_url:$('appOllamaUrl').value.trim()},workflow:{llm_queue_tag:$('appLlmQueueTag').value.trim(),llm_error_tag:$('appLlmErrorTag').value.trim(),review_tag:$('appReviewTag').value.trim(),extra_excluded_tags:$('appExtraExcludedTags').value.split(',').map(x=>x.trim()).filter(Boolean)},ocr:{language:$('appOcrLanguage').value.trim(),version:$('appOcrVersion').value.trim(),device:$('appOcrDevice').value.trim()},runtime:{poll_interval_seconds:Number($('appPollInterval').value),review_prune_interval_seconds:Number($('appReviewPruneInterval').value),dry_run:$('appDryRun').value==='true'}}}
 function corrDraft(){return {version:currentCorrConfig?.version||1,updated_at:currentCorrConfig?.updated_at||null,enabled:$('corrEnabled').value==='true',system_prompt:$('corrSystemPrompt').value,prompt_template:$('corrPromptTemplate').value,model:$('corrModel').value.trim(),num_ctx:Number($('corrNumCtx').value),num_predict:Number($('corrNumPredict').value),temperature:Number($('corrTemperature').value),think:$('corrThink').value==='true',keep_alive:/^-?\d+(\.\d+)?$/.test($('corrKeepAlive').value.trim())?Number($('corrKeepAlive').value):$('corrKeepAlive').value,content_char_limit:Number($('corrContentLimit').value),content_head_ratio:Number($('corrHeadRatio').value),ollama_timeout_seconds:Number($('corrTimeout').value)}}
 
 function updateOverview(){
@@ -916,7 +914,7 @@ function fill(c){
 }
 function appFill(c,tokenConfigured){
   currentAppConfig=c;
-  $('appPaperlessUrl').value=c.connections.paperless_url;$('appOllamaUrl').value=c.connections.ollama_url;$('appOcrQueueTag').value=c.workflow.ocr_queue_tag;$('appOcrErrorTag').value=c.workflow.ocr_error_tag;$('appLlmQueueTag').value=c.workflow.llm_queue_tag;$('appLlmErrorTag').value=c.workflow.llm_error_tag;$('appReviewTag').value=c.workflow.review_tag;$('appExtraExcludedTags').value=(c.workflow.extra_excluded_tags||[]).join(', ');$('appOcrLanguage').value=c.ocr.language;$('appOcrVersion').value=c.ocr.version;$('appOcrDevice').value=c.ocr.device;$('appPollInterval').value=c.runtime.poll_interval_seconds;$('appReviewPruneInterval').value=c.runtime.review_prune_interval_seconds;$('appDryRun').value=String(c.runtime.dry_run);
+  $('appPaperlessUrl').value=c.connections.paperless_url;$('appOllamaUrl').value=c.connections.ollama_url;$('appLlmQueueTag').value=c.workflow.llm_queue_tag;$('appLlmErrorTag').value=c.workflow.llm_error_tag;$('appReviewTag').value=c.workflow.review_tag;$('appExtraExcludedTags').value=(c.workflow.extra_excluded_tags||[]).join(', ');$('appOcrLanguage').value=c.ocr.language;$('appOcrVersion').value=c.ocr.version;$('appOcrDevice').value=c.ocr.device;$('appPollInterval').value=c.runtime.poll_interval_seconds;$('appReviewPruneInterval').value=c.runtime.review_prune_interval_seconds;$('appDryRun').value=String(c.runtime.dry_run);
   $('appConfigStatus').textContent=`v${c.version} · ${c.runtime.dry_run?'DRY RUN':'PRODUCTION'}`;$('appConfigStatus').style.color=c.runtime.dry_run?'var(--orange)':'var(--green)';
   $('appTokenStatus').textContent=tokenConfigured?'API token is configured in the deployment environment.':'API token is missing from the deployment environment.';$('appTokenStatus').className='status-box '+(tokenConfigured?'good':'bad');updateOverview();
 }

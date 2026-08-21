@@ -1,79 +1,134 @@
 # Paperless-ngx setup
 
-`paperless-local-ai` uses Paperless workflow tags as its processing queue. The default setup needs five queue/error/review tags and one import workflow.
+0.2.0 integrates OCR directly into Paperless' OCRmyPDF path. The only tag queue owned by `paperless-local-ai` is the metadata queue.
 
-## API token
+## 1. API token
 
-Create a Paperless API token under **My Profile** and provide it to the deployment as `PAPERLESS_TOKEN`.
+Create a Paperless API token under **My Profile** and provide it to the app as `PAPERLESS_TOKEN`.
 
-The token's Paperless user must be allowed to read and update the documents and taxonomy the app should manage.
+The token's Paperless user must be allowed to read/update the documents and taxonomy the app should manage.
 
-## Tags
+## 2. Metadata/review tags
 
 Fresh-install defaults are:
 
 | Tag | Purpose |
 |---|---|
-| `PaddleOCR` | OCR queue |
-| `PaddleOCR Error` | OCR errors |
 | `LLM` | metadata queue |
-| `LLM Error` | metadata errors |
+| `LLM Error` | metadata-processing errors |
 | `Inbox` | human review |
 
 `TODO` is the default additional tag excluded from normal LLM content-tag candidates.
 
 You may rename these values in the Control Center. Paperless and Control Center names must match exactly.
 
-Set automatic matching to **None** for the four queue/error tags so Paperless does not assign them independently.
+Set automatic matching to **None** for technical queue/error tags so Paperless does not assign them independently.
 
-## Import workflow
+There is **no PaddleOCR queue or PaddleOCR error tag in 0.2.0**.
 
-A simple default workflow is:
+## 3. Metadata import workflow
+
+The tested default workflow is:
 
 ```text
-Name:    PaddleOCR Queue
+Name:    LLM Queue
 Trigger: Document added
-Action:  add tag PaddleOCR
+Action:  add tag LLM
 ```
 
-This example queues **every newly added document**. If you only want selected documents processed, add the appropriate Paperless workflow conditions instead of using an unconditional trigger.
+This queues every newly added document for metadata classification after Paperless has completed import/OCR.
 
-The app then owns the handoff:
+If only selected documents should be classified, add Paperless workflow conditions instead of using an unconditional trigger.
+
+The metadata handoff is:
 
 ```text
-PaddleOCR → ocr-worker → LLM → metadata-worker → Inbox/review
+Document Added → LLM → metadata-worker → Inbox/review
 ```
 
-On processing errors, the active queue tag is removed and the configured error tag is applied.
+On metadata-processing errors, the LLM queue tag is removed and the configured LLM error tag is applied.
 
 ### Existing documents
 
-To test or process a document that is already in Paperless, manually add the configured OCR queue tag (`PaddleOCR` by default). The normal handoff continues from there.
+Adding the `LLM` tag to an existing Paperless document queues **metadata classification only**. It does not rerun OCR.
 
-You can use Paperless' normal bulk actions if you intentionally want to queue multiple existing documents, but test one document first.
+Re-OCR of existing documents is a Paperless/OCRmyPDF operation and should be treated separately from the normal 0.2.0 import workflow.
 
-## What metadata is written
+## 4. OCRmyPDF plugin integration
+
+The `ocr-service` writes the current plugin to its persistent `/integration` mount.
+
+Paperless must mount the same host directory read-only, for example:
+
+```yaml
+volumes:
+  - /path/to/paperless-local-ai/data/integration:/opt/paperless-local-ai:ro
+```
+
+Add these environment values to Paperless:
+
+```text
+PLAI_OCR_URL=http://<ocr-service-address>:30150
+PLAI_OCR_TOKEN=<same secret as OCR_SERVICE_TOKEN>
+PLAI_OCR_TIMEOUT_SECONDS=1800
+PAPERLESS_OCR_USER_ARGS={"plugins":["/opt/paperless-local-ai/ocrmypdf_plai.py"],"pdf_renderer":"fpdf2","optimize":0}
+```
+
+The URL must be reachable from **inside the Paperless container**.
+
+The plugin is verified against OCRmyPDF **17.4.2** in Paperless-ngx **3.0.5**.
+
+### OCR language
+
+Paperless passes its requested OCR language to the plugin. `ocr-service` checks that it matches the OCR language saved in the Control Center.
+
+Common aliases are normalized, including:
+
+```text
+deu / ger → de
+eng       → en
+ita       → it
+fra / fre → fr
+spa       → es
+por       → pt
+nld / dut → nl
+```
+
+If the two configurations disagree, the OCR request fails closed with `ocr_language_mismatch`.
+
+### Tested Paperless OCR behavior
+
+The validated setup keeps Paperless in its normal automatic OCR flow and uses OCRmyPDF for archive generation. Native-text pages are not sent through Paddle unnecessarily; scan/raster pages that OCRmyPDF sends to the OCR engine are handled by PP-OCRv6.
+
+The validated OCRmyPDF renderer contract is:
+
+```text
+pdf_renderer=fpdf2
+optimize=0
+```
+
+The resulting Paperless archive was validated as searchable PDF/A-2b while the uploaded original remained byte-identical.
+
+## 5. What metadata is written
 
 The primary classifier is constrained to the current Paperless document types, existing correspondents and eligible content tags.
 
-On a successful normal metadata write:
+On successful normal metadata write-back:
 
 - `title` is replaced by the model result;
 - `document_type` is set to the selected existing value, or cleared if the model returns no value;
 - `correspondent` is set to the selected existing value, or cleared if no correspondent is resolved;
-- `created` is changed only when the model returns a date;
+- `created` changes only when the model returns a date;
 - eligible content tags are replaced by the model's returned content tags;
 - technical workflow/review tags and tags configured as additionally excluded are preserved.
 
-Because content-tag assignment is replacement-based, use **Dry Run** and a test document before enabling the pipeline on an existing archive.
+Because content-tag assignment is replacement-based, use Dry Run and one test document before enabling metadata automation on an existing archive.
 
 If the optional correspondent fallback finds an exact existing correspondent, it can be applied automatically. A genuinely new name is never auto-created.
 
-## Optional: native new-correspondent review
+## 6. Optional native new-correspondent review
 
-Skip this entire section if you only want OCR, normal metadata assignment and matching of existing correspondents.
-
-This integration is only needed when genuinely new correspondent candidates should appear in Paperless' native **Suggestions** UI.
+Skip this section if you only want OCR, normal metadata assignment and matching of existing correspondents.
 
 Paperless must be able to reach the suggestion bridge. For the default host port:
 
@@ -100,6 +155,6 @@ LLM API key:               empty
 
 The bridge does not run another LLM. For supported Paperless classification-suggestion requests, it preserves Paperless' classic suggestions and adds only a uniquely matched, still-open correspondent candidate.
 
-This setting points Paperless' configured AI backend at the bridge. The bridge is intentionally narrow and is **not** a replacement backend for Paperless chat/RAG or other general AI use.
+The bridge is intentionally narrow and is not a replacement backend for Paperless chat/RAG or other general AI use.
 
-The bridge is version-sensitive. Check [Compatibility](compatibility.md) before upgrading Paperless.
+Check [Compatibility](compatibility.md) before upgrading Paperless because this integration is version-sensitive.
