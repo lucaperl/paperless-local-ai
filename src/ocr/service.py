@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from app_config import load_config as load_app_config
+from app_config import OCR_MAX_SIDE_PIXELS_DEFAULT, load_config as load_app_config
 
 
 LOG = logging.getLogger("plai.ocr_service")
@@ -221,15 +221,26 @@ def _effective_cpu_threads() -> int:
     return max(1, min(candidates)) if candidates else 1
 
 
-def _run_paddle(image_path: Path, model: Any) -> dict[str, Any]:
+def _run_paddle(image_path: Path, model: Any, max_side_pixels: int) -> dict[str, Any]:
     from PIL import Image
 
     with Image.open(image_path) as image:
         width, height = image.size
         dpi = image.info.get("dpi", (300, 300))
 
+    LOG.info(
+        "Paddle input raster: %dx%d (%.2f MP), max_side_pixels=%d",
+        width, height, width * height / 1_000_000, max_side_pixels,
+    )
     started = time.monotonic()
-    result = list(model.predict(str(image_path), return_word_box=True))
+    result = list(
+        model.predict(
+            str(image_path),
+            return_word_box=True,
+            text_det_limit_type="max",
+            text_det_limit_side_len=max_side_pixels,
+        )
+    )
     inference_seconds = time.monotonic() - started
 
     if not result:
@@ -280,7 +291,7 @@ def _run_paddle(image_path: Path, model: Any) -> dict[str, Any]:
     }
 
 
-def _engine_process(conn: Any, ocr_config: dict[str, str]) -> None:
+def _engine_process(conn: Any, ocr_config: dict[str, Any]) -> None:
     # Import Paddle only in the short-lived inference process. When this process
     # exits after the warm-session timeout, all Paddle allocations are returned
     # to the OS before Ollama is allowed to acquire the shared AI lock.
@@ -289,6 +300,7 @@ def _engine_process(conn: Any, ocr_config: dict[str, str]) -> None:
     language = ocr_config["language"]
     version = ocr_config["version"]
     model_profile = ocr_config.get("model_profile", "medium")
+    max_side_pixels = int(ocr_config.get("max_side_pixels", OCR_MAX_SIDE_PIXELS_DEFAULT))
     device = ocr_config["device"]
     started = time.monotonic()
     cpu_threads = _effective_cpu_threads()
@@ -324,6 +336,7 @@ def _engine_process(conn: Any, ocr_config: dict[str, str]) -> None:
             "language": language,
             "ocr_version": version,
             "model_profile": effective_model_profile,
+            "max_side_pixels": max_side_pixels,
             "device": device,
             "cpu_threads": cpu_threads,
             "enable_mkldnn": True,
@@ -340,7 +353,7 @@ def _engine_process(conn: Any, ocr_config: dict[str, str]) -> None:
         request_id = request["request_id"]
         image_path = Path(request["image_path"])
         try:
-            payload = _run_paddle(image_path, model)
+            payload = _run_paddle(image_path, model, max_side_pixels)
             payload.update(
                 {
                     "language": language,
@@ -369,7 +382,7 @@ class PaddleSession:
         self._lock_file: Any | None = None
         self._last_used = 0.0
         self._started_at = 0.0
-        self._config: dict[str, str] | None = None
+        self._config: dict[str, Any] | None = None
         self._stop_event = threading.Event()
         self._housekeeper = threading.Thread(target=self._housekeeping_loop, daemon=True)
         self._housekeeper.start()
@@ -413,12 +426,13 @@ class PaddleSession:
             self._lock_file = None
         LOG.info("Global AI lock released")
 
-    def _current_ocr_config(self) -> dict[str, str]:
+    def _current_ocr_config(self) -> dict[str, Any]:
         ocr = load_app_config()["ocr"]
         return {
             "language": str(ocr["language"]),
             "version": str(ocr["version"]),
             "model_profile": str(ocr.get("model_profile", "medium")),
+            "max_side_pixels": int(ocr.get("max_side_pixels", OCR_MAX_SIDE_PIXELS_DEFAULT)),
             "device": str(ocr["device"]),
         }
 
@@ -448,11 +462,12 @@ class PaddleSession:
         self._started_at = time.monotonic()
         self._last_used = self._started_at
         LOG.info(
-            "PaddleOCR session ready in %.2fs: language=%s version=%s profile=%s device=%s cpu_threads=%s",
+            "PaddleOCR session ready in %.2fs: language=%s version=%s profile=%s max_side_pixels=%s device=%s cpu_threads=%s",
             float(ready.get("load_seconds", 0.0)),
             config["language"],
             config["version"],
             ready.get("model_profile"),
+            ready.get("max_side_pixels"),
             config["device"],
             ready.get("cpu_threads"),
         )
@@ -652,6 +667,7 @@ class Handler(BaseHTTPRequestHandler):
                 "language": cfg["language"],
                 "ocr_version": cfg["version"],
                 "model_profile": model_profile,
+                "max_side_pixels": int(cfg.get("max_side_pixels", OCR_MAX_SIDE_PIXELS_DEFAULT)),
                 "device": cfg["device"],
                 "session_active": _session().session_active,
                 "session_age_seconds": _session().age_seconds,

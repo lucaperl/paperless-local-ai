@@ -124,6 +124,18 @@ Check:
 
 The configured finite keep-alive is only a fail-safe if normal explicit unload cannot run.
 
+## OCR process is killed or the host runs out of memory
+
+High-resolution scan rasters can make PaddleOCR memory use rise sharply even when the source PDF itself is small.
+
+Under **App Settings → OCR**, lower **Maximum OCR image side** before increasing the OCR container memory limit. The default is **3000 px**. Reference PP-OCRv6 Medium tests observed roughly **4.4–4.7 GiB** OCR-service peak at 3000 px, **4.9–5.1 GiB** at 3200 px and **6.5 GiB** at 4000 px. Actual memory use varies.
+
+The limit affects only the temporary OCR raster. The Paperless original remains untouched and OCRmyPDF keeps the visible page geometry unchanged.
+
+If the kernel reports a **global host OOM**, raising only the OCR container limit can make the host-wide pressure worse. Leave enough RAM for Paperless, the container host and other services.
+
+Check `/health` for the active `max_side_pixels` value and OCR logs for the actual raster dimensions sent to PaddleOCR.
+
 ## App settings seem ignored
 
 Runtime settings are loaded from `APP_DATA_DIR/config/app-config.json`.

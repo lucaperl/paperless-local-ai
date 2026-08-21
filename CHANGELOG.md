@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 0.2.2 - 2026-08-21
+
+### OCR memory safety
+
+- lower the default temporary OCR raster limit from 4000 to **3000 pixels** on the longest side after full-pipeline RAM and OCR-quality testing on high-resolution scans;
+- expose `ocr.max_side_pixels` in **Control Center → App Settings → OCR** with a supported 2000–4000 px range and reference memory guidance;
+- keep existing app configurations migration-free by defaulting a missing `ocr.max_side_pixels` to 3000;
+- have the OCRmyPDF bridge read the current limit from `ocr-service` before OCR-only downsampling while preserving aspect ratio and proportional DPI;
+- pass the same limit to PaddleOCR text detection with `text_det_limit_type=max` as a second safety boundary;
+- log the OCR raster dimensions and active limit for future memory diagnostics;
+- keep the original Paperless document, visible archive geometry, deployment topology, ports, mounts and 7 GiB OCR container limit unchanged.
+
+### Validation
+
+- full OCRmyPDF/Paperless pipeline tests on a two-page ~138 MP scan completed without OOM at 3000 px with an OCR-service peak around 4.4 GiB;
+- a dense small-print contract page produced 99.38% character and 99.11% word similarity between 3200 and 3000 px while reducing the observed OCR-service peak from about 5.1 GiB to 4.65 GiB.
+
 ## 0.2.1 - 2026-08-21
 
 ### OCR model profiles

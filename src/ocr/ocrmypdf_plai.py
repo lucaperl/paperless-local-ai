@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -20,28 +21,41 @@ from ocrmypdf.imageops import calculate_downsample, downsample_image
 from ocrmypdf.pluginspec import OcrEngine, OrientationConfidence
 
 
-# PaddleX 3.7's general OCR pipeline limits the detection input to 4000 pixels
-# on the longest side. Preconditioning the OCR-only raster here avoids loading
-# very large scan rasters into Paddle just for PaddleX to downsample them later.
+LOG = logging.getLogger(__name__)
+PADDLE_DEFAULT_MAX_SIDE_PIXELS = 3000
+PADDLE_MIN_SIDE_PIXELS = 2000
 PADDLE_MAX_SIDE_PIXELS = 4000
+CONFIG_LOOKUP_TIMEOUT_SECONDS = 1.5
 
 
 def _downsample_for_paddle(
     image: Image.Image,
     *,
-    max_side_pixels: int = PADDLE_MAX_SIDE_PIXELS,
+    max_side_pixels: int = PADDLE_DEFAULT_MAX_SIDE_PIXELS,
 ) -> Image.Image:
     """Fit the OCR-only raster to PaddleX while preserving page geometry."""
     if max_side_pixels < 1:
         raise ValueError("max_side_pixels must be >= 1")
+    original_size = image.size
     size = calculate_downsample(
         image,
         max_size=(max_side_pixels, max_side_pixels),
     )
-    return downsample_image(image, size)
+    filtered = downsample_image(image, size)
+    if size != original_size:
+        LOG.info(
+            "OCR raster downsampled: %dx%d -> %dx%d (max_side_pixels=%d)",
+            original_size[0], original_size[1], size[0], size[1], max_side_pixels,
+        )
+    else:
+        LOG.debug(
+            "OCR raster kept at %dx%d (max_side_pixels=%d)",
+            original_size[0], original_size[1], max_side_pixels,
+        )
+    return filtered
 
 
-def _endpoint_parts() -> tuple[str, str, int, str]:
+def _endpoint_parts(endpoint: str = "/v1/ocr") -> tuple[str, str, int, str]:
     value = os.environ.get("PLAI_OCR_URL", "").rstrip("/")
     if not value:
         raise RuntimeError("PLAI_OCR_URL is required for paperless-local-ai OCR")
@@ -49,8 +63,44 @@ def _endpoint_parts() -> tuple[str, str, int, str]:
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise RuntimeError("PLAI_OCR_URL must be a complete http(s) URL")
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    if not endpoint.startswith("/"):
+        raise ValueError("endpoint must start with /")
     base = parsed.path.rstrip("/")
-    return parsed.scheme, parsed.hostname, port, f"{base}/v1/ocr"
+    return parsed.scheme, parsed.hostname, port, f"{base}{endpoint}"
+
+
+def _validated_max_side_pixels(value: Any) -> int:
+    if isinstance(value, bool):
+        return PADDLE_DEFAULT_MAX_SIDE_PIXELS
+    try:
+        pixels = int(value)
+    except (TypeError, ValueError):
+        return PADDLE_DEFAULT_MAX_SIDE_PIXELS
+    if not PADDLE_MIN_SIDE_PIXELS <= pixels <= PADDLE_MAX_SIDE_PIXELS:
+        return PADDLE_DEFAULT_MAX_SIDE_PIXELS
+    return pixels
+
+
+def _configured_max_side_pixels() -> int:
+    conn = None
+    try:
+        scheme, host, port, path = _endpoint_parts("/health")
+        connection_cls = http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
+        conn = connection_cls(host, port, timeout=CONFIG_LOOKUP_TIMEOUT_SECONDS)
+        conn.request("GET", path)
+        response = conn.getresponse()
+        body = response.read()
+        if 200 <= response.status < 300:
+            payload = json.loads(body.decode("utf-8"))
+            if isinstance(payload, dict):
+                return _validated_max_side_pixels(payload.get("max_side_pixels"))
+        LOG.warning("OCR service config lookup returned HTTP %s; using %d px fallback", response.status, PADDLE_DEFAULT_MAX_SIDE_PIXELS)
+    except Exception as exc:
+        LOG.warning("OCR service config lookup failed (%s: %s); using %d px fallback", type(exc).__name__, exc, PADDLE_DEFAULT_MAX_SIDE_PIXELS)
+    finally:
+        if conn is not None:
+            conn.close()
+    return PADDLE_DEFAULT_MAX_SIDE_PIXELS
 
 
 def _token() -> str:
@@ -314,7 +364,7 @@ def filter_ocr_image(page, image: Image.Image) -> Image.Image:
     # image when aspect ratio and DPI are preserved. downsample_image() adjusts
     # DPI proportionally, so the returned OcrElement geometry remains aligned
     # with the unchanged visible PDF page.
-    return _downsample_for_paddle(image)
+    return _downsample_for_paddle(image, max_side_pixels=_configured_max_side_pixels())
 
 
 @hookimpl(tryfirst=True)

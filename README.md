@@ -102,7 +102,7 @@ The Control Center configures normal app behavior:
 
 - Paperless and Ollama connections;
 - LLM queue/error/review tags;
-- OCR language/version/model profile/device;
+- OCR language/version/model profile, temporary OCR raster limit and device;
 - polling and Dry Run;
 - Classification prompt/model settings;
 - optional Correspondent fallback.
