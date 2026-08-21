@@ -1,6 +1,16 @@
 # Architecture
 
-`paperless-local-ai` is intentionally narrow: replace Tesseract OCR inference with PaddleOCR inside Paperless' normal OCR pipeline, classify metadata with a small local model, and keep uncertain new correspondents behind human review.
+`paperless-local-ai` is intentionally narrow: replace Tesseract OCR inference with PaddleOCR inside Paperless' normal OCR pipeline, automatically write classified metadata back to Paperless with a small local model, and expose genuinely new correspondents through Paperless Suggestions instead of creating them automatically.
+
+
+## Why this architecture
+
+The architecture is built around OCR quality, practical local inference on modest CPU-only hardware, and reliable automation inside Paperless:
+
+- **OCR quality before classification:** OCR text is the input to the metadata model. The current pipeline therefore uses PP-OCRv6 Medium for stronger scan OCR while HPI/OpenVINO keeps that quality tier practical on CPU. A vision-language pipeline would remove the separate OCR stage but requires substantially more inference capacity.
+- **One normal LLM request per document:** title, document type, date, tags and an existing correspondent are returned together so the document context is not reprocessed independently for every metadata field. The reference deployment uses `qwen3.5:4b`.
+- **Automatic but bounded metadata:** normal results are written back automatically, while document types, tags and existing correspondents remain constrained to the current Paperless taxonomy. New correspondent candidates go through Paperless Suggestions.
+- **Bounded resource usage:** PaddleOCR/OpenVINO and Ollama inference are serialized, OCR sessions are reused briefly across pages, and heavy model processes are released again after processing.
 
 ## Pipeline
 
@@ -37,7 +47,7 @@ metadata-worker
       ↓
 optional correspondent-only request
   existing → apply
-  new      → review candidate
+  new      → Paperless Suggestions
       ↓
 Paperless metadata + Inbox/review
 ```
@@ -53,7 +63,7 @@ One Compose project runs four long-lived services from two images:
 | `ocr-service` | authenticated PaddleOCR service used by the OCRmyPDF plugin |
 | `metadata-worker` | metadata classification and optional correspondent fallback |
 | `prompt-ui` | Control Center: configuration, testing and history |
-| `suggestion-bridge` | Paperless native review adapter for new correspondent candidates |
+| `suggestion-bridge` | exposes new correspondent candidates through Paperless Suggestions |
 
 The optional `doctor` profile uses the core image as a one-shot deployment check.
 
@@ -94,7 +104,7 @@ The default deployment uses PP-OCRv6 Medium, PaddleX HPI/OpenVINO, four CPU thre
 
 ## CPU-focused OCR runtime
 
-The OCR path is tuned to make PP-OCRv6 practical on CPU-only systems without reducing the configured model to a lower quality tier.
+The OCR path is tuned to keep PP-OCRv6 Medium practical on CPU-only systems without reducing the configured model tier for speed. OCR quality matters here because the recognized text becomes the input to metadata classification.
 
 The main runtime choices are:
 
@@ -105,9 +115,7 @@ The main runtime choices are:
 - brief session reuse across pages of the same document;
 - full Paddle subprocess teardown after the idle window.
 
-On the reference Intel Core i3-8100, warm PP-OCRv6 inference for a 300-DPI page measured approximately **15.8 seconds with the standard Paddle runtime** and **10.7 seconds with HPI/OpenVINO**, a reduction of roughly **32%**.
-
-Complete live OCR of a cached page is typically around **15–25 seconds** depending on surrounding OCRmyPDF and PDF-processing overhead. First-time model download or HPI/OpenVINO artifact preparation can be substantially slower.
+Reference measurements on an Intel Core i3-8100 (4 cores / 4 threads, 16 GB RAM, no GPU) with the current PP-OCRv6 Medium / HPI / OpenVINO setup are **23.6 seconds** for the first scanned page after OCR idle and **17.6 seconds per additional page** in the same warm OCR session. With `qwen3.5:4b` Q4_K_M, metadata classification measured **80.1 seconds per document**; the optional Correspondent fallback measured **53.4 seconds** when needed. These values are reference measurements for that system, not performance guarantees.
 
 ## Shared OCR/LLM resource lock
 
@@ -125,13 +133,13 @@ The primary metadata stage returns all normal metadata in one structured request
 - date;
 - an existing correspondent.
 
-The document context is therefore processed once for normal classification rather than once per metadata field.
+The document context is therefore processed once for normal classification rather than once per metadata field, avoiding repeated prompt evaluation on CPU-bound local inference.
 
 ## Separate correspondent fallback
 
-The main request stays constrained to existing values. Only when it cannot resolve a correspondent does the optional second narrow prompt get permission to return a free-text sender name.
+The main request stays constrained to existing values. Only when it cannot resolve a correspondent does the optional second narrow prompt get permission to return a free-text correspondent name.
 
-An exact existing match can be applied. A genuinely new name becomes a review candidate and is never auto-created.
+An exact existing match can be applied automatically. A genuinely new correspondent is exposed through Paperless Suggestions and is never auto-created.
 
 When the fallback is needed, the configured model stays loaded across the primary and fallback requests and is explicitly unloaded afterward.
 

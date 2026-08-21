@@ -9,7 +9,7 @@ The **Control Center** is the main interface for normal `paperless-local-ai` con
 3. **App Settings → OCR** — choose OCR language/version/device.
 4. **App Settings → Runtime** — review polling, cleanup and Dry Run.
 5. **Classification** — review the primary prompt/model settings and run a test.
-6. **Correspondent fallback** — optionally configure/test sender identification.
+6. **Correspondent fallback** — optionally configure/test correspondent identification.
 7. Complete the matching [Paperless setup](paperless-setup.md).
 
 Saved runtime and prompt configurations are versioned and can be restored from the UI.
@@ -78,7 +78,7 @@ OCR remains part of Paperless' own import path and is unaffected by metadata Dry
 
 ## Classification
 
-Classification controls the main structured metadata request: prompt, model/request parameters, output limits, testing and version history.
+Classification controls the main structured metadata request and automatic Paperless write-back: prompt, model/request parameters, output limits, testing and version history.
 
 One request covers:
 
@@ -88,7 +88,7 @@ One request covers:
 - content tags;
 - an existing correspondent.
 
-The full document context is processed once for normal classification rather than separately for every metadata field.
+The full document context is processed once for normal classification rather than separately for every metadata field. On a normal successful production run, the resulting title, document type, date, eligible content tags and resolved existing correspondent are written back to the Paperless document automatically.
 
 The structured response is constrained to the current eligible Paperless taxonomy.
 
@@ -112,8 +112,8 @@ It receives the document text plus the current Paperless correspondent list and 
 Possible outcomes:
 
 - exact match to existing correspondent → apply automatically;
-- genuinely new sender → keep as a human-review candidate;
-- no reliable sender → leave correspondent unresolved.
+- genuinely new correspondent → expose through **Paperless Suggestions**;
+- no reliable correspondent → leave correspondent unresolved.
 
 New correspondents are never auto-created.
 
