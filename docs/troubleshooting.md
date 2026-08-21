@@ -73,6 +73,16 @@ APP_DATA_DIR/ocr/
 
 Subsequent cold-session starts should reuse those artifacts.
 
+## Very large scan pages
+
+The OCRmyPDF bridge limits only the temporary image sent to PaddleOCR to a maximum of 4000 pixels on either side. This matches the PaddleX 3.7 OCR pipeline's detection input limit. OCRmyPDF adjusts DPI proportionally, so the OCR geometry remains aligned with the unchanged visible PDF page.
+
+This does **not** downsample the uploaded Paperless original or the visible archive page.
+
+If the Paddle worker exits unexpectedly, the OCR service tears down the failed session and releases the shared `ai.lock` before returning the OCR error to Paperless. A worker failure therefore must not leave later OCR or LLM work permanently blocked.
+
+If very large scans still trigger host memory pressure, check the OCR-service logs and the host/container memory events and review the source scan resolution.
+
 ## OCR reports idle but metadata does not start
 
 `/health.session_active=false` means the OCR service has released the global AI slot.

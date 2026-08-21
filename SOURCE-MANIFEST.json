@@ -1,5 +1,5 @@
 {
-  "version": "0.2.0",
+  "version": "0.2.1",
   "created": "2026-08-21",
   "source_files": {
     "src/common/app_config.py": "88c9211c286ec4b01601a21359c6e500b7f50ffe9cf91d4b714007b395d67e04",
@@ -10,7 +10,7 @@
     "src/core/review_store.py": "208c4ba12d25f4a53a4353d1c84ff086cf30752ee2007b4dc4b764527ae51e95",
     "src/core/suggestion_bridge.py": "09461923ab9c72c662e16643d0e0f015cc817f4997aeb2c8bed686f93d9cc577",
     "src/core/worker.py": "82a5c6395e3fab7f9c82d272d59f4da1ea0129e5f699864d04bb6e3a90ed55f2",
-    "src/ocr/ocrmypdf_plai.py": "1b53a11defb9ddbb778efe3f099db7d562ec17ff104ffc3873b407ee2da36bcb",
-    "src/ocr/service.py": "6a9321af9501fd34894e13a067e2bc81dd654c73b51045af25e78be3faf1e56f"
+    "src/ocr/ocrmypdf_plai.py": "431719353c20b160b96a379f6118c4cc8e0e70cfd9847f07d216fa9ac53ced28",
+    "src/ocr/service.py": "40a4bdb017065c7fadeda35dbf16573628259afe24783f05c0626c8d5cbcafb5"
   }
 }
