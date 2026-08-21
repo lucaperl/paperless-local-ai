@@ -97,6 +97,8 @@ For Paperless and Ollama URLs, use addresses reachable from inside the app conta
 
 Run **Test connections with current draft** before saving.
 
+Under **App Settings → OCR**, PP-OCRv6 Medium is the default quality profile. Small and Tiny are available when lower inference cost is preferred; Tiny does not support Japanese.
+
 ## 5. Integrate PaddleOCR into Paperless/OCRmyPDF
 
 The OCR service writes:

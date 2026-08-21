@@ -15,7 +15,7 @@ flowchart TB
     A["Paperless import"] --> B{"OCR needed?"}
 
     B -->|No| N["Use existing PDF text"]
-    B -->|Yes| O["PaddleOCR · PP-OCRv6 Medium<br/>CPU · HPI / OpenVINO"]
+    B -->|Yes| O["PaddleOCR · PP-OCRv6<br/>Medium / Small / Tiny · HPI / OpenVINO"]
 
     N --> P["Searchable document in Paperless"]
     O --> P
