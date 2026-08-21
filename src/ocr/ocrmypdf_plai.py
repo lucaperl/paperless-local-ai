@@ -1,8 +1,9 @@
 """OCRmyPDF engine plugin for paperless-local-ai.
 
 Verified against OCRmyPDF 17.4.2 as bundled by Paperless-ngx 3.0.5.
-OCRmyPDF rasterizes a page, this bridge streams it to paperless-local-ai and
-returns OCRmyPDF's native OcrElement tree. No hOCR/XML roundtrip is used.
+OCRmyPDF rasterizes a page, this bridge preconditions oversized OCR-only
+rasters to PaddleX's input limit, streams them to paperless-local-ai and returns
+OCRmyPDF's native OcrElement tree. No hOCR/XML roundtrip is used.
 """
 from __future__ import annotations
 
@@ -13,8 +14,31 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from PIL import Image
 from ocrmypdf import BoundingBox, OcrElement, hookimpl
+from ocrmypdf.imageops import calculate_downsample, downsample_image
 from ocrmypdf.pluginspec import OcrEngine, OrientationConfidence
+
+
+# PaddleX 3.7's general OCR pipeline limits the detection input to 4000 pixels
+# on the longest side. Preconditioning the OCR-only raster here avoids loading
+# very large scan rasters into Paddle just for PaddleX to downsample them later.
+PADDLE_MAX_SIDE_PIXELS = 4000
+
+
+def _downsample_for_paddle(
+    image: Image.Image,
+    *,
+    max_side_pixels: int = PADDLE_MAX_SIDE_PIXELS,
+) -> Image.Image:
+    """Fit the OCR-only raster to PaddleX while preserving page geometry."""
+    if max_side_pixels < 1:
+        raise ValueError("max_side_pixels must be >= 1")
+    size = calculate_downsample(
+        image,
+        max_size=(max_side_pixels, max_side_pixels),
+    )
+    return downsample_image(image, size)
 
 
 def _endpoint_parts() -> tuple[str, str, int, str]:
@@ -282,6 +306,15 @@ class RemotePaddleEngine(OcrEngine):
         raise NotImplementedError(
             "paperless-local-ai requires OCRmyPDF pdf_renderer=fpdf2"
         )
+
+
+@hookimpl(tryfirst=True)
+def filter_ocr_image(page, image: Image.Image) -> Image.Image:
+    # OCRmyPDF explicitly allows OCR-engine plugins to resize this OCR-only
+    # image when aspect ratio and DPI are preserved. downsample_image() adjusts
+    # DPI proportionally, so the returned OcrElement geometry remains aligned
+    # with the unchanged visible PDF page.
+    return _downsample_for_paddle(image)
 
 
 @hookimpl(tryfirst=True)

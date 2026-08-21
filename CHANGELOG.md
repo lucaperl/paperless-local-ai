@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.2.1 - 2026-08-21
+
+### OCR robustness
+
+- downsample only the temporary OCR raster when either side exceeds 4000 pixels, matching PaddleX 3.7's OCR detection `max_side_limit` while preserving aspect ratio and DPI so the visible Paperless page/original remains unchanged;
+- tear down and reap a failed Paddle worker when its multiprocessing IPC channel closes unexpectedly, ensuring the shared `ai.lock` is released after worker crashes or OOM kills instead of blocking later OCR/LLM work;
+- harden stale-session housekeeping and service shutdown so a dead worker cannot leave an externally active OCR session behind;
+- add regression coverage for OCR-only large-image downsampling and the observed worker-EOF/lock-release failure mode;
+- keep the 0.2.0 deployment contract unchanged: existing Compose/TrueNAS YAML, mounts, ports and required variables remain valid.
+
 ## 0.2.0 - 2026-08-21
 
 ### OCR architecture
@@ -50,7 +60,7 @@
 
 ## 0.1.2 - 2026-08-19
 
-- rename the TrueNAS portal button to **Control Center** in the published Custom App template and document the one-time YAML metadata change for existing installations that still show **Prompt UI**;
+- rename the TrueNAS portal button to **Control Center** in the published TrueNAS Custom App template and document the one-time YAML metadata change for existing installations that still show **Prompt UI**;
 - redesign the Control Center around an Overview and persistent sidebar while keeping the existing configuration, testing and history workflows;
 - add a visual end-to-end pipeline overview from Paperless import through OCR/classification, optional correspondent fallback and write-back to Paperless;
 - keep the existing in-UI guidance while moving section and field details into collapsible help and info controls where appropriate;
