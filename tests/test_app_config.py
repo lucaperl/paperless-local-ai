@@ -1,5 +1,8 @@
 from app_config import (
     DEFAULT_CONFIG,
+    OCR_MAX_SIDE_PIXELS_DEFAULT,
+    OCR_MAX_SIDE_PIXELS_MAX,
+    OCR_MAX_SIDE_PIXELS_MIN,
     OCR_MODEL_PROFILES,
     technical_tag_names,
     validate_config,
@@ -12,6 +15,10 @@ def test_default_config_is_valid():
     assert cfg["connections"]["ollama_url"] == "http://ollama:11434"
     assert cfg["ocr"]["language"] == "en"
     assert cfg["ocr"]["model_profile"] == "medium"
+    assert cfg["ocr"]["max_side_pixels"] == 3000
+    assert OCR_MAX_SIDE_PIXELS_DEFAULT == 3000
+    assert OCR_MAX_SIDE_PIXELS_MIN == 2000
+    assert OCR_MAX_SIDE_PIXELS_MAX == 4000
     assert OCR_MODEL_PROFILES == ("medium", "small", "tiny")
     assert cfg["runtime"]["poll_interval_seconds"] == 10
 
@@ -100,3 +107,28 @@ def test_tiny_profile_rejects_japanese():
         assert "does not support Japanese" in str(exc)
     else:
         raise AssertionError("PP-OCRv6 Tiny must reject Japanese")
+
+
+def test_existing_config_without_max_side_pixels_defaults_to_3000():
+    raw = {
+        **DEFAULT_CONFIG,
+        "ocr": {
+            "language": "de",
+            "version": "PP-OCRv6",
+            "model_profile": "medium",
+            "device": "cpu",
+        },
+    }
+    validated = validate_config(raw)
+    assert validated["ocr"]["max_side_pixels"] == 3000
+
+
+def test_ocr_max_side_pixels_bounds_are_enforced():
+    for value in (1999, 4001):
+        raw = {**DEFAULT_CONFIG, "ocr": {**DEFAULT_CONFIG["ocr"], "max_side_pixels": value}}
+        try:
+            validate_config(raw)
+        except ValueError as exc:
+            assert "max_side_pixels" in str(exc)
+        else:
+            raise AssertionError(f"max_side_pixels={value} must be rejected")

@@ -58,3 +58,26 @@ def test_language_aliases_match_current_german_contract():
     assert _language_header_matches("deu", "de")
     assert _language_header_matches("eng,deu", "de")
     assert not _language_header_matches("eng", "de")
+
+
+def test_run_paddle_enforces_configured_detection_limit(tmp_path):
+    from PIL import Image
+    from service import _run_paddle
+
+    class FakeModel:
+        def __init__(self):
+            self.calls = []
+        def predict(self, path, **kwargs):
+            self.calls.append((path, kwargs))
+            return []
+
+    image_path = tmp_path / "page.png"
+    Image.new("L", (1200, 800), color=255).save(image_path, dpi=(300, 300))
+    model = FakeModel()
+    payload = _run_paddle(image_path, model, 3000)
+    assert payload["width"] == 1200
+    assert payload["height"] == 800
+    _, kwargs = model.calls[0]
+    assert kwargs["return_word_box"] is True
+    assert kwargs["text_det_limit_type"] == "max"
+    assert kwargs["text_det_limit_side_len"] == 3000
