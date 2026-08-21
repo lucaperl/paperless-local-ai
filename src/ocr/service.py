@@ -35,8 +35,19 @@ INTEGRATION_TARGET = Path("/integration/ocrmypdf_plai.py")
 SESSION_IDLE_SECONDS = float(os.getenv("OCR_SESSION_IDLE_SECONDS", "5"))
 PAGE_TIMEOUT_SECONDS = float(os.getenv("OCR_PAGE_TIMEOUT_SECONDS", "1800"))
 TMP_DIR = Path(os.getenv("OCR_TMP_DIR", "/dev/shm/paperless-local-ai-ocr"))
-PP_OCRV6_MEDIUM_DET = "PP-OCRv6_medium_det"
-PP_OCRV6_MEDIUM_REC = "PP-OCRv6_medium_rec"
+PP_OCRV6_MODEL_PROFILES = {
+    "medium": ("PP-OCRv6_medium_det", "PP-OCRv6_medium_rec"),
+    "small": ("PP-OCRv6_small_det", "PP-OCRv6_small_rec"),
+    "tiny": ("PP-OCRv6_tiny_det", "PP-OCRv6_tiny_rec"),
+}
+PP_OCRV6_MEDIUM_DET, PP_OCRV6_MEDIUM_REC = PP_OCRV6_MODEL_PROFILES["medium"]
+
+
+def _ppocrv6_model_names(profile: str) -> tuple[str, str]:
+    try:
+        return PP_OCRV6_MODEL_PROFILES[profile]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported PP-OCRv6 model profile: {profile}") from exc
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -277,6 +288,7 @@ def _engine_process(conn: Any, ocr_config: dict[str, str]) -> None:
 
     language = ocr_config["language"]
     version = ocr_config["version"]
+    model_profile = ocr_config.get("model_profile", "medium")
     device = ocr_config["device"]
     started = time.monotonic()
     cpu_threads = _effective_cpu_threads()
@@ -290,11 +302,17 @@ def _engine_process(conn: Any, ocr_config: dict[str, str]) -> None:
         "enable_mkldnn": True,
         "cpu_threads": cpu_threads,
     }
+    detection_model = None
+    recognition_model = None
+    effective_model_profile = "upstream-default"
+
     if version == "PP-OCRv6":
-        # Pin the exact quality tier instead of relying on PaddleOCR defaults.
+        # Keep detection and recognition on the same explicit PP-OCRv6 tier.
+        detection_model, recognition_model = _ppocrv6_model_names(model_profile)
+        effective_model_profile = model_profile
         model_kwargs.update(
-            text_detection_model_name=PP_OCRV6_MEDIUM_DET,
-            text_recognition_model_name=PP_OCRV6_MEDIUM_REC,
+            text_detection_model_name=detection_model,
+            text_recognition_model_name=recognition_model,
         )
     else:
         model_kwargs.update(lang=language, ocr_version=version)
@@ -305,12 +323,13 @@ def _engine_process(conn: Any, ocr_config: dict[str, str]) -> None:
             "load_seconds": round(time.monotonic() - started, 3),
             "language": language,
             "ocr_version": version,
+            "model_profile": effective_model_profile,
             "device": device,
             "cpu_threads": cpu_threads,
             "enable_mkldnn": True,
             "enable_hpi": enable_hpi,
-            "text_detection_model": PP_OCRV6_MEDIUM_DET if version == "PP-OCRv6" else None,
-            "text_recognition_model": PP_OCRV6_MEDIUM_REC if version == "PP-OCRv6" else None,
+            "text_detection_model": detection_model,
+            "text_recognition_model": recognition_model,
         }
     )
 
@@ -326,6 +345,7 @@ def _engine_process(conn: Any, ocr_config: dict[str, str]) -> None:
                 {
                     "language": language,
                     "ocr_version": version,
+                    "model_profile": effective_model_profile,
                     "device": device,
                 }
             )
@@ -398,6 +418,7 @@ class PaddleSession:
         return {
             "language": str(ocr["language"]),
             "version": str(ocr["version"]),
+            "model_profile": str(ocr.get("model_profile", "medium")),
             "device": str(ocr["device"]),
         }
 
@@ -427,10 +448,11 @@ class PaddleSession:
         self._started_at = time.monotonic()
         self._last_used = self._started_at
         LOG.info(
-            "PaddleOCR session ready in %.2fs: language=%s version=%s device=%s cpu_threads=%s",
+            "PaddleOCR session ready in %.2fs: language=%s version=%s profile=%s device=%s cpu_threads=%s",
             float(ready.get("load_seconds", 0.0)),
             config["language"],
             config["version"],
+            ready.get("model_profile"),
             config["device"],
             ready.get("cpu_threads"),
         )
@@ -615,21 +637,29 @@ class Handler(BaseHTTPRequestHandler):
             self._json(404, {"error": "not_found"})
             return
         cfg = load_app_config()["ocr"]
+        if cfg["version"] == "PP-OCRv6":
+            model_profile = str(cfg.get("model_profile", "medium"))
+            detection_model, recognition_model = _ppocrv6_model_names(model_profile)
+        else:
+            model_profile = "upstream-default"
+            detection_model = None
+            recognition_model = None
+
         self._json(
             200,
             {
                 "ok": True,
                 "language": cfg["language"],
                 "ocr_version": cfg["version"],
+                "model_profile": model_profile,
                 "device": cfg["device"],
                 "session_active": _session().session_active,
                 "session_age_seconds": _session().age_seconds,
                 "session_idle_seconds": SESSION_IDLE_SECONDS,
                 "page_timeout_seconds": PAGE_TIMEOUT_SECONDS,
                 "tmp_dir": str(TMP_DIR),
-                "model_profile": "medium" if cfg["version"] == "PP-OCRv6" else "upstream-default",
-                "text_detection_model": PP_OCRV6_MEDIUM_DET if cfg["version"] == "PP-OCRv6" else None,
-                "text_recognition_model": PP_OCRV6_MEDIUM_REC if cfg["version"] == "PP-OCRv6" else None,
+                "text_detection_model": detection_model,
+                "text_recognition_model": recognition_model,
                 "enable_hpi": _env_bool("OCR_ENABLE_HPI", False),
             },
         )

@@ -4,6 +4,14 @@
 
 ## 0.2.1 - 2026-08-21
 
+### OCR model profiles
+
+- add a Control Center selector for PP-OCRv6 **Medium**, **Small** and **Tiny** detection/recognition profiles, with Medium remaining the default;
+- hot-reload profile changes by restarting the next OCR session with the selected matching model pair;
+- keep existing saved configurations backward-compatible by defaulting missing `ocr.model_profile` to `medium`;
+- reject the unsupported PP-OCRv6 Tiny + Japanese combination;
+- align the Control Center pipeline overview with the current Paperless → selective OCR → one-request metadata classification → optional correspondent fallback flow.
+
 ### OCR robustness
 
 - downsample only the temporary OCR raster when either side exceeds 4000 pixels, matching PaddleX 3.7's OCR detection `max_side_limit` while preserving aspect ratio and DPI so the visible Paperless page/original remains unchanged;

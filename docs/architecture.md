@@ -7,7 +7,7 @@
 
 The architecture is built around OCR quality, practical local inference on modest CPU-only hardware, and reliable automation inside Paperless:
 
-- **OCR quality before classification:** OCR text is the input to the metadata model. The current pipeline therefore uses PP-OCRv6 Medium for stronger scan OCR while HPI/OpenVINO keeps that quality tier practical on CPU. A vision-language pipeline would remove the separate OCR stage but requires substantially more inference capacity.
+- **OCR quality before classification:** OCR text is the input to the metadata model. PP-OCRv6 Medium remains the quality-focused default, while Small and Tiny can reduce inference cost on more constrained systems. HPI/OpenVINO accelerates the selected profile on CPU. A vision-language pipeline would remove the separate OCR stage but requires substantially more inference capacity.
 - **One normal LLM request per document:** title, document type, date, tags and an existing correspondent are returned together so the document context is not reprocessed independently for every metadata field. The reference deployment uses `qwen3.5:4b`.
 - **Automatic but bounded metadata:** normal results are written back automatically, while document types, tags and existing correspondents remain constrained to the current Paperless taxonomy. New correspondent candidates go through Paperless Suggestions.
 - **Bounded resource usage:** PaddleOCR/OpenVINO and Ollama inference are serialized, OCR sessions are reused briefly across pages, and heavy model processes are released again after processing.
@@ -27,7 +27,8 @@ OCR needed for a page?
           ↓ authenticated HTTP
         ocr-service
         PaddleOCR
-        PP-OCRv6 Medium
+        PP-OCRv6 profile
+        Medium / Small / Tiny
         HPI / OpenVINO
           ↓
         native OcrElement tree
@@ -77,7 +78,7 @@ The plugin is verified against OCRmyPDF **17.4.2** as bundled by Paperless-ngx *
 
 1. OCRmyPDF decides whether the page needs OCR and rasterizes it;
 2. the plugin streams that image to `ocr-service`;
-3. PaddleOCR runs detection and recognition with PP-OCRv6 Medium;
+3. PaddleOCR runs detection and recognition with the selected PP-OCRv6 profile;
 4. the service returns line/word geometry and text;
 5. the plugin returns an `OcrElement` tree plus plain text;
 6. OCRmyPDF creates the searchable archive representation.
@@ -100,15 +101,15 @@ When the first OCR request arrives:
 
 `/health.session_active` follows ownership of the global AI slot, not merely process liveness. A reported idle state therefore means the OCR service has actually released the shared lock.
 
-The default deployment uses PP-OCRv6 Medium, PaddleX HPI/OpenVINO, four CPU threads, a 7 GiB OCR limit and a five-second idle timeout.
+The default deployment uses the PP-OCRv6 Medium profile, PaddleX HPI/OpenVINO, four CPU threads, a 7 GiB OCR limit and a five-second idle timeout. Small and Tiny profiles can be selected in the Control Center without changing the deployment.
 
 ## CPU-focused OCR runtime
 
-The OCR path is tuned to keep PP-OCRv6 Medium practical on CPU-only systems without reducing the configured model tier for speed. OCR quality matters here because the recognized text becomes the input to metadata classification.
+The OCR path is tuned to keep PP-OCRv6 practical on CPU-only systems while making the quality/performance trade-off explicit. OCR quality matters here because the recognized text becomes the input to metadata classification.
 
 The main runtime choices are:
 
-- PP-OCRv6 **Medium** detection and recognition models;
+- matching PP-OCRv6 **Medium**, **Small** or **Tiny** detection/recognition models, with Medium as the default;
 - PaddleX HPI with OpenVINO on CPU;
 - a persistent PaddleX/OpenVINO cache;
 - four inference threads in the reference deployment;

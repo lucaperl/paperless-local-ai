@@ -100,7 +100,7 @@ If the two configurations disagree, the OCR request fails closed with `ocr_langu
 
 ### OCRmyPDF behavior
 
-The tested setup keeps Paperless in its normal automatic OCR flow and uses OCRmyPDF for archive generation. Scan/raster pages that OCRmyPDF sends to the OCR engine are handled by PaddleOCR with PP-OCRv6 Medium.
+The tested setup keeps Paperless in its normal automatic OCR flow and uses OCRmyPDF for archive generation. Scan/raster pages that OCRmyPDF sends to the OCR engine are handled by PaddleOCR with the PP-OCRv6 profile selected in the Control Center; Medium is the default.
 
 The validated OCRmyPDF renderer contract is:
 
