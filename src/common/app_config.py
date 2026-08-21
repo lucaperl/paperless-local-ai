@@ -15,6 +15,9 @@ HISTORY_DIR = Path(os.getenv("APP_CONFIG_HISTORY_DIR", "/config/app-history"))
 LOCK_FILE = Path(os.getenv("APP_CONFIG_LOCK_FILE", "/config/app-config.lock"))
 
 OCR_MODEL_PROFILES = ("medium", "small", "tiny")
+OCR_MAX_SIDE_PIXELS_DEFAULT = 3000
+OCR_MAX_SIDE_PIXELS_MIN = 2000
+OCR_MAX_SIDE_PIXELS_MAX = 4000
 
 
 DEFAULT_CONFIG = {
@@ -34,6 +37,7 @@ DEFAULT_CONFIG = {
         "language": "en",
         "version": "PP-OCRv6",
         "model_profile": "medium",
+        "max_side_pixels": OCR_MAX_SIDE_PIXELS_DEFAULT,
         "device": "cpu",
     },
     "runtime": {
@@ -154,6 +158,13 @@ def validate_config(raw):
     ocr = cfg["ocr"]
     for key in ("language", "version", "model_profile", "device"):
         ocr[key] = _require_nonempty_string(ocr[key], f"ocr.{key}")
+
+    ocr["max_side_pixels"] = _positive_int(
+        ocr["max_side_pixels"],
+        "ocr.max_side_pixels",
+        OCR_MAX_SIDE_PIXELS_MIN,
+        OCR_MAX_SIDE_PIXELS_MAX,
+    )
 
     ocr["model_profile"] = ocr["model_profile"].lower()
     if ocr["model_profile"] not in OCR_MODEL_PROFILES:

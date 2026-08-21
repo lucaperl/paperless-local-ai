@@ -127,7 +127,7 @@ In the Control Center:
 
 1. save the tested Paperless and Ollama connections;
 2. review the LLM queue/error/review tag names;
-3. review OCR language/version/device;
+3. review OCR language/version/model profile/max image side/device;
 4. review polling and Dry Run;
 5. review Classification;
 6. optionally configure Correspondent fallback.

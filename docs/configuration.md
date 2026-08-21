@@ -6,7 +6,7 @@ The **Control Center** is the main interface for normal `paperless-local-ai` con
 
 1. **App Settings → Connections** — configure and test Paperless and Ollama.
 2. **App Settings → Pipeline & Tags** — choose LLM queue/error/review tag names.
-3. **App Settings → OCR** — choose OCR language/version/model profile/device.
+3. **App Settings → OCR** — choose OCR language/version/model profile/max image side/device.
 4. **App Settings → Runtime** — review polling, cleanup and Dry Run.
 5. **Classification** — review the primary prompt/model settings and run a test.
 6. **Correspondent fallback** — optionally configure/test correspondent identification.
@@ -46,6 +46,7 @@ Configure:
 - language;
 - PaddleOCR generation;
 - PP-OCRv6 model profile;
+- maximum OCR image side in pixels;
 - device.
 
 The current validated OCR generation is **PP-OCRv6**. The Control Center exposes three matching detection/recognition profiles:
@@ -58,11 +59,17 @@ The current validated OCR generation is **PP-OCRv6**. The Control Center exposes
 
 Each profile selects the matching PP-OCRv6 detection and recognition models. **Tiny does not support Japanese.**
 
-Existing saved configurations without `ocr.model_profile` automatically use `medium`, so the setting does not require a deployment migration.
+Existing saved configurations without `ocr.model_profile` automatically use `medium`.
+
+The temporary OCR-only raster is limited by `ocr.max_side_pixels`. The default is **3000 px** on the longest side; supported values are **2000–4000 px**. The OCRmyPDF bridge keeps the page aspect ratio and adjusts DPI proportionally, so this does not resize the original PDF or the visible archived page. The same limit is also passed to PaddleOCR text detection as a second safety boundary.
+
+Reference measurements with PP-OCRv6 Medium on the CPU-only 16 GiB test host were approximately **4.4–4.7 GiB** OCR-service peak at 3000 px, **4.9–5.1 GiB** at 3200 px and **6.5 GiB** at 4000 px. These are observed test values, not universal RAM requirements; page content, model profile and runtime can change memory use. **3000 px is the recommended default for 16 GiB hosts.**
+
+Existing saved configurations without `ocr.max_side_pixels` automatically use `3000`, so the setting does not require a deployment migration.
 
 The configured language is also checked against the language requested by Paperless through the OCRmyPDF plugin. A mismatch is rejected rather than silently running a different model language.
 
-HPI/OpenVINO enablement, CPU threads, memory, shared memory and the warm-session timeout are deployment-owned settings because they affect container/runtime construction.
+HPI/OpenVINO enablement, CPU threads, container memory, shared memory and the warm-session timeout are deployment-owned settings because they affect container/runtime construction. The OCR raster limit itself is runtime-owned and can be changed in the Control Center without recreating the containers.
 
 ## Runtime
 
