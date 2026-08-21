@@ -1,6 +1,6 @@
 # Architecture
 
-`paperless-local-ai` is intentionally narrow: use PaddleOCR inside Paperless' normal OCR pipeline, classify metadata with a small local model, and keep uncertain new correspondents behind human review.
+`paperless-local-ai` is intentionally narrow: replace Tesseract OCR inference with PaddleOCR inside Paperless' normal OCR pipeline, classify metadata with a small local model, and keep uncertain new correspondents behind human review.
 
 ## Pipeline
 
@@ -16,6 +16,7 @@ OCR needed for a page?
         OCRmyPDF plugin
           ↓ authenticated HTTP
         ocr-service
+        PaddleOCR
         PP-OCRv6 Medium
         HPI / OpenVINO
           ↓
@@ -41,7 +42,7 @@ optional correspondent-only request
 Paperless metadata + Inbox/review
 ```
 
-The original uploaded PDF remains Paperless' original. OCR happens while Paperless consumes the document; `paperless-local-ai` does not maintain a second OCR queue.
+The original uploaded PDF remains Paperless' original. OCR happens while Paperless consumes the document; `paperless-local-ai` does not maintain a separate OCR queue.
 
 ## Services
 
@@ -49,7 +50,7 @@ One Compose project runs four long-lived services from two images:
 
 | Service | Purpose |
 |---|---|
-| `ocr-service` | authenticated PP-OCRv6 service used by the OCRmyPDF plugin |
+| `ocr-service` | authenticated PaddleOCR service used by the OCRmyPDF plugin |
 | `metadata-worker` | metadata classification and optional correspondent fallback |
 | `prompt-ui` | Control Center: configuration, testing and history |
 | `suggestion-bridge` | Paperless native review adapter for new correspondent candidates |
@@ -64,11 +65,14 @@ The OCR image writes `ocrmypdf_plai.py` into the persistent `/integration` mount
 
 The plugin is verified against OCRmyPDF **17.4.2** as bundled by Paperless-ngx **3.0.5**. It uses OCRmyPDF 17's native `generate_ocr()` interface:
 
-1. OCRmyPDF rasterizes the page;
+1. OCRmyPDF decides whether the page needs OCR and rasterizes it;
 2. the plugin streams that image to `ocr-service`;
-3. the service returns line/word geometry and text;
-4. the plugin returns an `OcrElement` tree plus plain text;
-5. OCRmyPDF creates the searchable archive representation.
+3. PaddleOCR runs detection and recognition with PP-OCRv6 Medium;
+4. the service returns line/word geometry and text;
+5. the plugin returns an `OcrElement` tree plus plain text;
+6. OCRmyPDF creates the searchable archive representation.
+
+For pages handled by the plugin, PaddleOCR is the OCR inference engine instead of Tesseract.
 
 No hOCR/XML conversion is used.
 
@@ -88,23 +92,48 @@ When the first OCR request arrives:
 
 The default deployment uses PP-OCRv6 Medium, PaddleX HPI/OpenVINO, four CPU threads, a 7 GiB OCR limit and a five-second idle timeout.
 
+## CPU-focused OCR runtime
+
+The OCR path is tuned to make PP-OCRv6 practical on CPU-only systems without reducing the configured model to a lower quality tier.
+
+The main runtime choices are:
+
+- PP-OCRv6 **Medium** detection and recognition models;
+- PaddleX HPI with OpenVINO on CPU;
+- a persistent PaddleX/OpenVINO cache;
+- four inference threads in the reference deployment;
+- brief session reuse across pages of the same document;
+- full Paddle subprocess teardown after the idle window.
+
+On the reference Intel Core i3-8100, warm PP-OCRv6 inference for a 300-DPI page measured approximately **15.8 seconds with the standard Paddle runtime** and **10.7 seconds with HPI/OpenVINO**, a reduction of roughly **32%**.
+
+Complete live OCR of a cached page is typically around **15–25 seconds** depending on surrounding OCRmyPDF and PDF-processing overhead. First-time model download or HPI/OpenVINO artifact preparation can be substantially slower.
+
 ## Shared OCR/LLM resource lock
 
 OCR and metadata inference share one exclusive file lock below `coordination/ai.lock`.
 
 That prevents Paddle/OpenVINO and Ollama from competing for the same CPU/RAM budget. The metadata worker holds the lock across the primary classification and optional correspondent fallback, then explicitly unloads configured Ollama models before releasing the transaction.
 
-## Why one metadata request?
+## One structured metadata request
 
-The reference system is an Intel Core i3-8100 without a GPU. Repeating prompt processing for title, tags, type, date and correspondent made per-field LLM workflows unnecessarily slow.
+The primary metadata stage returns all normal metadata in one structured request constrained by the current Paperless taxonomy:
 
-The main stage therefore returns all normal metadata in one structured request constrained by the current Paperless taxonomy.
+- title;
+- document type;
+- content tags;
+- date;
+- an existing correspondent.
 
-## Why a separate correspondent fallback?
+The document context is therefore processed once for normal classification rather than once per metadata field.
 
-The main request stays constrained to existing values. Only when it cannot resolve a correspondent does a second narrow prompt get permission to return a free-text sender name.
+## Separate correspondent fallback
+
+The main request stays constrained to existing values. Only when it cannot resolve a correspondent does the optional second narrow prompt get permission to return a free-text sender name.
 
 An exact existing match can be applied. A genuinely new name becomes a review candidate and is never auto-created.
+
+When the fallback is needed, the configured model stays loaded across the primary and fallback requests and is explicitly unloaded afterward.
 
 ## Configuration and state
 
@@ -122,6 +151,6 @@ integration/   generated OCRmyPDF plugin consumed by Paperless
 
 ## Suggestion bridge identity
 
-For Paperless-ngx 3.0.5, open correspondent review records are matched primarily by a SHA-256 signature of the normalized document content used by Paperless' no-RAG AI classifier. Ambiguous matches fail closed.
+For Paperless-ngx 3.0.5, open correspondent review records are matched by a SHA-256 signature of the normalized document content used by Paperless' no-RAG AI classifier. Ambiguous matches fail closed.
 
-The legacy short-prefix signature remains only for migrated older records. Filename matching is deliberately not used because Paperless' internal model filename and normal REST filename fields are not equivalent.
+Filename matching is deliberately not used because Paperless' internal model filename and normal REST filename fields are not equivalent.

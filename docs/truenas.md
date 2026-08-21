@@ -97,9 +97,7 @@ For Paperless and Ollama URLs, use addresses reachable from inside the app conta
 
 Run **Test connections with current draft** before saving.
 
-## 5. Integrate the OCRmyPDF plugin into Paperless
-
-This step is required for 0.2.0.
+## 5. Integrate PaddleOCR into Paperless/OCRmyPDF
 
 The OCR service writes:
 
@@ -131,6 +129,8 @@ PAPERLESS_OCR_USER_ARGS={"plugins":["/opt/paperless-local-ai/ocrmypdf_plai.py"],
 
 Redeploy/restart Paperless after changing its mounts/environment.
 
+For scanned pages that need OCR, OCRmyPDF calls the plugin and PaddleOCR performs OCR inference instead of Tesseract.
+
 The OCR language configured in Paperless must correspond to **App Settings → OCR** in the Control Center.
 
 See [Paperless setup](paperless-setup.md) for details and the tested OCR contract.
@@ -139,7 +139,7 @@ See [Paperless setup](paperless-setup.md) for details and the tested OCR contrac
 
 Create the required metadata/review tags and a **Document Added** workflow that assigns the `LLM` queue tag.
 
-0.2.0 does **not** use a PaddleOCR queue tag. OCR happens inside Paperless import before the metadata workflow.
+OCR does not use a separate PaddleOCR queue tag. It happens inside Paperless import before the metadata workflow.
 
 ## 7. Test one document
 
@@ -149,7 +149,7 @@ Expected:
 
 ```text
 Paperless import
-→ OCRmyPDF calls local PP-OCRv6
+→ OCRmyPDF calls local PaddleOCR / PP-OCRv6
 → searchable archive / extracted content
 → Document Added workflow adds LLM
 → metadata classification
@@ -173,6 +173,8 @@ CPU threads:   4
 
 These are the tested reference settings, not minimum requirements.
 
+On the reference Intel Core i3-8100, HPI/OpenVINO reduced warm PP-OCRv6 inference for a 300-DPI page from approximately **15.8 seconds to 10.7 seconds**. Complete live OCR of a cached page is typically around **15–25 seconds** depending on surrounding OCRmyPDF/PDF processing.
+
 ## Updates
 
 The supplied YAML follows the floating `stable` GHCR tag. TrueNAS can present its normal image update when that digest changes.
@@ -181,4 +183,3 @@ A container image cannot rewrite stored Custom App YAML or Paperless' app config
 
 For pinned deployments, replace `stable` in both image names with the exact release.
 
-See [Updating](upgrading.md).

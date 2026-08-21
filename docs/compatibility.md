@@ -21,7 +21,7 @@ Compatibility claims are intentionally narrow: an environment is listed as teste
 
 ## Paperless / OCRmyPDF versions
 
-0.2.0 is more version-sensitive than 0.1.x because OCR integrates through OCRmyPDF's plugin API.
+The OCR integration uses OCRmyPDF's plugin API and is therefore version-sensitive.
 
 The included plugin is verified against OCRmyPDF **17.4.2**, specifically the native `OcrEngine.generate_ocr()` / `OcrElement` interface used by Paperless-ngx **3.0.5**.
 
@@ -29,13 +29,17 @@ Do not assume a newer Paperless/OCRmyPDF release is compatible until the plugin 
 
 The native new-correspondent suggestion bridge is also version-sensitive because it depends on Paperless' AI classification-suggestion request shape. Its tested target is likewise Paperless-ngx **3.0.5**.
 
-Paperless 2.x is not a supported target for the 0.2.0 OCR/plugin path.
+Paperless 2.x is not a supported target for the current OCR/plugin path.
 
-## Models and languages
+## OCR models and languages
 
-Classification and Correspondent fallback can use installed Ollama models selected independently in the Control Center.
+The tested OCR runtime uses PaddleOCR with **PP-OCRv6 Medium** detection and recognition models.
 
 OCR language is configured separately. The service accepts common aliases from Paperless/Tesseract and maps them to the configured PP-OCRv6 language code, but rejects an actual language mismatch.
+
+## LLM models and prompts
+
+Classification and Correspondent fallback can use installed Ollama models selected independently in the Control Center.
 
 Classification and Correspondent fallback include English and German prompt presets and support custom prompt text.
 
