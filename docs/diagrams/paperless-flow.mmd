@@ -4,42 +4,42 @@
     "fontSize": "20px"
   },
   "flowchart": {
-    "nodeSpacing": 15,
-    "rankSpacing": 25,
-    "padding": 4
+    "nodeSpacing": 18,
+    "rankSpacing": 28,
+    "padding": 5,
+    "curve": "linear"
   }
 }}%%
 
 flowchart TB
-    A["Paperless import"] --> B["Paperless / OCRmyPDF"]
-    B --> C{"OCR needed?"}
+    A["Paperless import"] --> B{"OCR needed?"}
 
-    C -->|No| T["Keep native text path"]
-    C -->|Yes| O["OCRmyPDF plugin → local PP-OCRv6<br/>HPI / OpenVINO"]
+    B -->|No| N["Use existing PDF text"]
+    B -->|Yes| O["PaddleOCR · PP-OCRv6 Medium<br/>CPU · HPI / OpenVINO"]
 
-    T --> P["Searchable archive + Paperless content"]
+    N --> P["Searchable document in Paperless"]
     O --> P
 
-    P --> Q["Document Added workflow → LLM tag"]
-    Q --> D["Primary LLM classification<br/>title · type · date · tags · correspondent"]
+    P --> D["Automatic metadata classification<br/>one LLM request per document<br/><br/>title · document type · date · tags · correspondent"]
 
-    D -->|Correspondent found| W["Write back to Paperless"]
-    D -->|No correspondent| E{"Fallback enabled?"}
+    D --> C{"Existing correspondent matched?"}
+
+    C -->|Yes| W["Write metadata to Paperless"]
+    C -->|No| E{"Correspondent fallback enabled?"}
 
     E -->|No| W
-    E -->|Yes| F["Correspondent fallback<br/><br/>Separate sender-identification LLM call<br/>using document text + current Paperless correspondents"]
+    E -->|Yes| F["Correspondent-only LLM request"]
 
-    F -->|Existing correspondent| W
-    F -->|New sender| S["Paperless suggestion / review"]
-    F -->|No reliable sender| W
-    S --> W
+    F -->|Existing or no reliable correspondent| W
+    F -->|New correspondent| S["Paperless Suggestions"]
 
-    W --> R["Inbox / Paperless review"]
+    W --> R["Human review in Paperless"]
+    S --> R
 
     classDef paperless fill:#eef5ff,stroke:#4c78a8,color:#111;
     classDef local fill:#e9f9f1,stroke:#238763,color:#111;
     classDef fallback fill:#f5edff,stroke:#7b55a1,color:#111;
 
-    class A,B,C,T,P,Q,W,R paperless;
-    class O,D local;
+    class A,B,N,P,W,R paperless;
+    class O,D,C local;
     class E,F,S fallback;
