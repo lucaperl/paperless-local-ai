@@ -33,7 +33,9 @@ Paperless 2.x is not a supported target for the current OCR/plugin path.
 
 ## OCR models and languages
 
-The tested OCR runtime uses PaddleOCR with **PP-OCRv6 Medium** detection and recognition models.
+The tested reference runtime uses PaddleOCR with **PP-OCRv6 Medium** detection and recognition models. The Control Center also exposes matching **Small** and **Tiny** PP-OCRv6 profiles. Medium remains the default and the reference profile used for the published CPU measurements.
+
+PP-OCRv6 Tiny does not support Japanese; configuration validation rejects that combination.
 
 OCR language is configured separately. The service accepts common aliases from Paperless/Tesseract and maps them to the configured PP-OCRv6 language code, but rejects an actual language mismatch.
 

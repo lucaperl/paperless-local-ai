@@ -72,7 +72,12 @@ def test_worker_eof_tears_down_session_and_releases_ai_lock(tmp_path):
 
     process = _WorkerKilledDuringReceive()
     conn = _EOFConnection(process)
-    config = {"language": "de", "version": "PP-OCRv6", "device": "cpu"}
+    config = {
+        "language": "de",
+        "version": "PP-OCRv6",
+        "model_profile": "medium",
+        "device": "cpu",
+    }
 
     session = PaddleSession.__new__(PaddleSession)
     session._mutex = threading.RLock()

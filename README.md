@@ -12,7 +12,7 @@ Normal metadata classification is handled in **one structured LLM request per do
 
 ## Highlights
 
-- **Improved scan OCR with PaddleOCR** — PP-OCRv6 Medium handles OCR inference for scanned pages instead of Tesseract.
+- **Improved scan OCR with PaddleOCR** — PP-OCRv6 Medium is the quality-focused default, with Small and Tiny profiles selectable when lower inference cost matters.
 - **Automatic metadata assignment in one LLM request** — title, document type, date, tags and an existing correspondent are classified together and written back to Paperless automatically.
 - **Designed for CPU-only systems** — the OCR and LLM paths are deliberately structured to avoid repeated model work and simultaneous heavy inference.
 - **Paperless-native correspondent Suggestions** — the common path stays at one LLM request; only an unresolved correspondent can trigger a second, focused request. Genuinely new correspondents are surfaced through Paperless Suggestions and are never auto-created.
@@ -22,7 +22,7 @@ Normal metadata classification is handled in **one structured LLM request per do
 
 `paperless-local-ai` is designed around three priorities: **OCR quality, practical local inference on modest CPU-only hardware, and reliable automation inside Paperless.**
 
-**Better OCR before the LLM.** Metadata classification can only be as reliable as the text it receives. For the document set this project was built around, Tesseract output was often not clean enough for reliable classification with a small local model. Vision-language models can avoid a separate OCR step, but are much more demanding on older CPU-only hardware. `paperless-local-ai` therefore uses **PaddleOCR with PP-OCRv6 Medium** as a middle ground: stronger OCR while remaining practical on CPU. HPI/OpenVINO accelerates the same Medium models rather than reducing the OCR model tier for speed.
+**Better OCR before the LLM.** Metadata classification can only be as reliable as the text it receives. For the document set this project was built around, Tesseract output was often not clean enough for reliable classification with a small local model. Vision-language models can avoid a separate OCR step, but are much more demanding on older CPU-only hardware. `paperless-local-ai` therefore uses **PaddleOCR with PP-OCRv6**, defaulting to the quality-focused Medium profile. Small and Tiny can be selected when lower inference cost matters more than maximum recognition quality, while HPI/OpenVINO accelerates the selected profile on CPU.
 
 **One LLM request per document.** Field-by-field classification repeats much of the same prompt processing for title, document type, date, tags and correspondent. `paperless-local-ai` returns all normal metadata together in **one structured LLM request per document**. The reference setup uses the small `qwen3.5:4b` model, keeping local classification practical even when a single CPU inference already takes around a minute.
 
@@ -102,7 +102,7 @@ The Control Center configures normal app behavior:
 
 - Paperless and Ollama connections;
 - LLM queue/error/review tags;
-- OCR language/version/device;
+- OCR language/version/model profile/device;
 - polling and Dry Run;
 - Classification prompt/model settings;
 - optional Correspondent fallback.

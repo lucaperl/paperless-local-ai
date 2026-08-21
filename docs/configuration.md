@@ -6,7 +6,7 @@ The **Control Center** is the main interface for normal `paperless-local-ai` con
 
 1. **App Settings → Connections** — configure and test Paperless and Ollama.
 2. **App Settings → Pipeline & Tags** — choose LLM queue/error/review tag names.
-3. **App Settings → OCR** — choose OCR language/version/device.
+3. **App Settings → OCR** — choose OCR language/version/model profile/device.
 4. **App Settings → Runtime** — review polling, cleanup and Dry Run.
 5. **Classification** — review the primary prompt/model settings and run a test.
 6. **Correspondent fallback** — optionally configure/test correspondent identification.
@@ -45,9 +45,20 @@ Configure:
 
 - language;
 - PaddleOCR generation;
+- PP-OCRv6 model profile;
 - device.
 
-The current validated OCR generation is **PP-OCRv6** and the OCR image explicitly selects the **Medium** detection and recognition models.
+The current validated OCR generation is **PP-OCRv6**. The Control Center exposes three matching detection/recognition profiles:
+
+| Profile | Intended use |
+|---|---|
+| **Medium** | highest quality; default and recommended |
+| **Small** | balance of quality and inference cost |
+| **Tiny** | lowest inference cost; lower recognition accuracy |
+
+Each profile selects the matching PP-OCRv6 detection and recognition models. **Tiny does not support Japanese.**
+
+Existing saved configurations without `ocr.model_profile` automatically use `medium`, so the setting does not require a deployment migration.
 
 The configured language is also checked against the language requested by Paperless through the OCRmyPDF plugin. A mismatch is rejected rather than silently running a different model language.
 
