@@ -1,4 +1,4 @@
 title: paperless-local-ai
-description: CPU-first selective OCR and local AI metadata automation for Paperless-ngx
+description: CPU-first PaddleOCR/OCRmyPDF and local AI metadata automation for Paperless-ngx
 url: "https://lucaperl.github.io"
 baseurl: "/paperless-local-ai"

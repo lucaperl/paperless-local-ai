@@ -22,8 +22,6 @@ DEFAULT_CONFIG = {
         "ollama_url": "http://ollama:11434",
     },
     "workflow": {
-        "ocr_queue_tag": "PaddleOCR",
-        "ocr_error_tag": "PaddleOCR Error",
         "llm_queue_tag": "LLM",
         "llm_error_tag": "LLM Error",
         "review_tag": "Inbox",
@@ -90,11 +88,17 @@ def validate_config(raw):
         raise ConfigError("App configuration must be a JSON object")
 
     cfg = _deepcopy_default()
+
+    # Only copy fields that belong to the current schema. This intentionally
+    # drops removed pre-0.2 OCR queue/error keys instead of carrying dead
+    # configuration forward.
     for section in ("connections", "workflow", "ocr", "runtime"):
         incoming = raw.get(section, {})
         if not isinstance(incoming, dict):
             raise ConfigError(f"{section} must be an object")
-        cfg[section].update(incoming)
+        for key in cfg[section]:
+            if key in incoming:
+                cfg[section][key] = incoming[key]
 
     cfg["version"] = raw.get("version", 1)
     cfg["updated_at"] = raw.get("updated_at")
@@ -104,23 +108,35 @@ def validate_config(raw):
         raise ConfigError("updated_at must be a string or null")
 
     conn = cfg["connections"]
-    conn["paperless_url"] = _validate_url(conn["paperless_url"], "connections.paperless_url")
-    conn["ollama_url"] = _validate_url(conn["ollama_url"], "connections.ollama_url")
+    conn["paperless_url"] = _validate_url(
+        conn["paperless_url"], "connections.paperless_url"
+    )
+    conn["ollama_url"] = _validate_url(
+        conn["ollama_url"], "connections.ollama_url"
+    )
 
     workflow = cfg["workflow"]
-    for key in ("ocr_queue_tag", "ocr_error_tag", "llm_queue_tag", "llm_error_tag", "review_tag"):
-        workflow[key] = _require_nonempty_string(workflow[key], f"workflow.{key}")
+    for key in ("llm_queue_tag", "llm_error_tag", "review_tag"):
+        workflow[key] = _require_nonempty_string(
+            workflow[key], f"workflow.{key}"
+        )
 
     technical = [
-        workflow["ocr_queue_tag"], workflow["ocr_error_tag"], workflow["llm_queue_tag"],
-        workflow["llm_error_tag"], workflow["review_tag"],
+        workflow["llm_queue_tag"],
+        workflow["llm_error_tag"],
+        workflow["review_tag"],
     ]
     if len({x.casefold() for x in technical}) != len(technical):
         raise ConfigError("Technical workflow tags must have distinct names")
 
     extra = workflow.get("extra_excluded_tags", [])
-    if not isinstance(extra, list) or any(not isinstance(x, str) or not x.strip() for x in extra):
-        raise ConfigError("workflow.extra_excluded_tags must be a list of non-empty strings")
+    if not isinstance(extra, list) or any(
+        not isinstance(x, str) or not x.strip() for x in extra
+    ):
+        raise ConfigError(
+            "workflow.extra_excluded_tags must be a list of non-empty strings"
+        )
+
     dedup = []
     seen = set()
     for item in extra:
@@ -137,10 +153,16 @@ def validate_config(raw):
 
     runtime = cfg["runtime"]
     runtime["poll_interval_seconds"] = _positive_int(
-        runtime["poll_interval_seconds"], "runtime.poll_interval_seconds", 5, 3600
+        runtime["poll_interval_seconds"],
+        "runtime.poll_interval_seconds",
+        5,
+        3600,
     )
     runtime["review_prune_interval_seconds"] = _positive_int(
-        runtime["review_prune_interval_seconds"], "runtime.review_prune_interval_seconds", 60, 86400
+        runtime["review_prune_interval_seconds"],
+        "runtime.review_prune_interval_seconds",
+        60,
+        86400,
     )
     if not isinstance(runtime["dry_run"], bool):
         raise ConfigError("runtime.dry_run must be true or false")
@@ -151,7 +173,10 @@ def validate_config(raw):
 def _atomic_write_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     os.replace(tmp, path)
 
 
@@ -214,14 +239,16 @@ def list_history():
     for path in sorted(HISTORY_DIR.glob("app-config-v*.json"), reverse=True):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-            items.append({
-                "file": path.name,
-                "version": data.get("version"),
-                "updated_at": data.get("updated_at"),
-                "history_saved_at": data.get("history_saved_at"),
-                "history_source": data.get("history_source"),
-                "config_sha256": config_hash(data),
-            })
+            items.append(
+                {
+                    "file": path.name,
+                    "version": data.get("version"),
+                    "updated_at": data.get("updated_at"),
+                    "history_saved_at": data.get("history_saved_at"),
+                    "history_source": data.get("history_source"),
+                    "config_sha256": config_hash(data),
+                }
+            )
         except Exception:
             items.append({"file": path.name, "error": "not readable"})
     return items
@@ -234,7 +261,11 @@ def restore_history(filename):
     if not path.exists():
         raise ConfigError("History version not found")
     raw = json.loads(path.read_text(encoding="utf-8"))
-    raw = {k: v for k, v in raw.items() if k in DEFAULT_CONFIG or k in {"version", "updated_at"}}
+    raw = {
+        k: v
+        for k, v in raw.items()
+        if k in DEFAULT_CONFIG or k in {"version", "updated_at"}
+    }
     return save_config(raw, source=f"restore:{filename}")
 
 
@@ -242,11 +273,8 @@ def technical_tag_names(config=None):
     cfg = config or load_config()
     w = cfg["workflow"]
     return {
-        w["ocr_queue_tag"], w["ocr_error_tag"], w["llm_queue_tag"],
-        w["llm_error_tag"], w["review_tag"], *w["extra_excluded_tags"],
+        w["llm_queue_tag"],
+        w["llm_error_tag"],
+        w["review_tag"],
+        *w["extra_excluded_tags"],
     }
-
-
-def blocking_tag_names(config=None):
-    cfg = config or load_config()
-    return {cfg["workflow"]["ocr_queue_tag"], cfg["workflow"]["ocr_error_tag"]}

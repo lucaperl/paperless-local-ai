@@ -4,15 +4,13 @@ The **Control Center** is the main interface for normal `paperless-local-ai` con
 
 ## Recommended first-time setup order
 
-Work through the UI in this order:
-
 1. **App Settings → Connections** — configure and test Paperless and Ollama.
-2. **App Settings → Pipeline & Tags** — choose queue/error/review tag names.
-3. **App Settings → OCR** — review language, PaddleOCR generation and device.
+2. **App Settings → Pipeline & Tags** — choose LLM queue/error/review tag names.
+3. **App Settings → OCR** — choose OCR language/version/device.
 4. **App Settings → Runtime** — review polling, cleanup and Dry Run.
 5. **Classification** — review the primary prompt/model settings and run a test.
-6. **Correspondent fallback** — optionally configure and test the separate sender-identification stage.
-7. Complete the matching [Paperless setup](paperless-setup.md) if you have not already done so.
+6. **Correspondent fallback** — optionally configure/test sender identification.
+7. Complete the matching [Paperless setup](paperless-setup.md).
 
 Saved runtime and prompt configurations are versioned and can be restored from the UI.
 
@@ -24,18 +22,20 @@ Configure:
 - Ollama URL;
 - Paperless token presence check.
 
-The token itself remains a deployment secret and is never shown by the UI.
+The token remains a deployment secret and is never shown by the UI.
 
-The URLs must be reachable **from the app containers**. `localhost` inside a container is not the Docker/TrueNAS host. See the networking examples in the [Docker](installation.md) or [TrueNAS](truenas.md) installation guide.
+The URLs must be reachable **from the app containers**. `localhost` inside a container is not the Docker/TrueNAS host.
 
 ## Pipeline & tags
 
 Configure:
 
-- OCR queue/error tags;
-- LLM queue/error tags;
+- LLM queue tag;
+- LLM error tag;
 - human-review tag;
 - extra tags excluded from normal LLM content-tag candidates.
+
+0.2.0 has no OCR queue/error tags. OCR is invoked by Paperless/OCRmyPDF during import.
 
 Paperless tag names must match these values exactly.
 
@@ -47,30 +47,34 @@ Configure:
 - PaddleOCR generation;
 - device.
 
-Native digital PDF text is kept. Scan/raster pages are selectively reprocessed when the OCR worker classifies them as needing PaddleOCR.
+The current validated OCR generation is **PP-OCRv6** and the 0.2.0 OCR image explicitly selects the **Medium** detection and recognition models.
+
+The configured language is also checked against the language requested by Paperless through the OCRmyPDF plugin. A mismatch is rejected rather than silently running a different model language.
+
+HPI/OpenVINO enablement, CPU threads, memory, shared memory and the warm-session timeout are deployment-owned settings because they affect container/runtime construction.
 
 ## Runtime
 
 Configure:
 
-- poll interval;
+- metadata-worker poll interval;
 - review cleanup interval;
 - Dry Run.
 
-These values are stored in `APP_DATA_DIR/config/app-config.json` and hot-reloaded by the workers.
+These values are stored in `APP_DATA_DIR/config/app-config.json` and hot-reloaded by the app.
 
 ### Dry Run
 
-Dry Run is a safety mode for the **metadata worker**, not a read-only mode for the entire pipeline.
+Dry Run is a safety mode for the **metadata worker**, not for Paperless import/OCR.
 
 With Dry Run enabled, automatic metadata processing:
 
 - does **not** write title, document type, date, content tags or correspondent;
 - does **not** persist a new-correspondent review record;
 - still stores the processing result below `APP_DATA_DIR/core/results/`;
-- still manages technical queue/error tags.
+- still manages technical LLM/review workflow tags.
 
-The OCR worker is separate. If a queued scanned document is reprocessed with PaddleOCR, Paperless' extracted `content` may still be updated even while Dry Run is enabled.
+OCR remains part of Paperless' own import path and is unaffected by metadata Dry Run.
 
 ## Classification
 
@@ -84,7 +88,7 @@ One request covers:
 - content tags;
 - an existing correspondent.
 
-The structured response is constrained to the current eligible Paperless taxonomy for document type, tags and existing correspondent.
+The structured response is constrained to the current eligible Paperless taxonomy.
 
 ### Safe interactive testing
 
@@ -95,40 +99,49 @@ For an existing Paperless document you can:
 
 These interactive actions do not modify the selected Paperless document.
 
+Interactive LLM tests use the same global `ai.lock` as OCR and production metadata jobs.
+
 ## Correspondent fallback
 
-This is an optional second LLM stage used only when the primary classification returns no correspondent and the fallback is enabled.
+This optional second LLM stage runs only when the primary classification returns no correspondent and the fallback is enabled.
 
-It receives the document text plus the current Paperless correspondent list and has its own prompt, model settings, tests, history and production enable switch.
+It receives the document text plus the current Paperless correspondent list and has its own prompt/model settings.
 
 Possible outcomes:
 
-- exact match to an existing correspondent → apply automatically;
+- exact match to existing correspondent → apply automatically;
 - genuinely new sender → keep as a human-review candidate;
 - no reliable sender → leave correspondent unresolved.
 
 New correspondents are never auto-created.
 
-The fallback can be previewed and tested while its production switch is off.
+## Ollama lifecycle
+
+The metadata worker keeps configured models alive across the primary request and optional correspondent fallback for the current document, then explicitly unloads them before leaving the shared AI transaction.
+
+The finite keep-alive value is a crash fail-safe, not the normal unload mechanism.
 
 ## Language
 
 The Control Center interface is English. Fresh installations start with OCR language `en` plus English Classification and Correspondent fallback prompts.
 
-Classification and Correspondent fallback each include **English** and **German** prompt presets. **Load preset into draft** changes only the visible prompt fields; review or edit them and save when you want to activate the preset.
+Classification and Correspondent fallback each include English and German prompt presets.
 
-OCR language is independent from prompt language. Choose the language of the scanned documents under **App Settings → OCR**. The language picker provides PP-OCRv6 language codes while still allowing a code to be entered manually.
+OCR language is independent from prompt language. Choose the language of the scanned documents under **App Settings → OCR**.
 
-Existing saved configurations are left unchanged by software updates, so an installation can keep its current OCR language, prompt text and technical tag names until you choose to change them.
+Existing saved configurations are validated against the current schema. Removed pre-0.2 OCR queue/error settings are ignored rather than retained.
 
 ## Deployment-only settings
 
-These remain outside the Control Center because Docker needs them before the app starts or because they are secrets:
+These remain outside the Control Center because Docker/Paperless needs them before the app starts or because they are secrets:
 
 - `PAPERLESS_TOKEN`;
+- `OCR_SERVICE_TOKEN`;
 - image/version;
 - `APP_DATA_DIR`;
 - host bind addresses and ports;
-- container CPU/RAM/shared-memory limits.
+- OCR HPI/OpenVINO enablement;
+- OCR CPU/thread/RAM/shared-memory/idle limits;
+- Paperless-side `PLAI_OCR_*` values and OCRmyPDF plugin configuration.
 
-Changing deployment-owned values requires recreating or redeploying the affected containers.
+Changing deployment-owned values requires recreating/redeploying the affected containers.
