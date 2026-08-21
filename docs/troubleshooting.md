@@ -75,7 +75,7 @@ Subsequent cold-session starts should reuse those artifacts.
 
 ## OCR reports idle but metadata does not start
 
-In 0.2.0, `/health.session_active=false` means the OCR service has released the global AI slot.
+`/health.session_active=false` means the OCR service has released the global AI slot.
 
 Check:
 
@@ -94,7 +94,7 @@ Check:
 - the metadata worker can reach both Paperless and Ollama;
 - `ai.lock` is not held by an active OCR session.
 
-There are no OCR queue/error tags to clear in 0.2.0.
+OCR has no queue/error tags to clear because it runs during Paperless import.
 
 ## A document was processed but metadata did not change
 
