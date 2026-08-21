@@ -8,7 +8,7 @@ Start with the checks for your deployment type, then use the symptom-specific se
 docker compose --profile tools run --rm doctor
 ```
 
-It checks the saved App settings, Paperless reachability/token, required queue/review tags, Ollama reachability and configured model names.
+It checks saved app settings, Paperless/token access, required metadata/review tags, Ollama reachability and configured model names.
 
 ## TrueNAS: check the Control Center first
 
@@ -17,89 +17,129 @@ The published TrueNAS template does not include the one-shot `doctor` service.
 Use:
 
 1. **App Settings → Connections → Test connections with current draft**;
-2. the TrueNAS app/container logs for the failing service;
-3. the symptom-specific checks below.
+2. the TrueNAS app/container logs;
+3. the checks below.
 
 ## Logs
 
 Docker Compose:
 
 ```bash
-docker compose logs --tail 200 ocr-worker
+docker compose logs --tail 200 ocr-service
 docker compose logs --tail 200 metadata-worker
 docker compose logs --tail 200 prompt-ui
 docker compose logs --tail 200 suggestion-bridge
 ```
 
-On TrueNAS, use the app's container-log view for the corresponding service.
+On TrueNAS, use the corresponding container-log view.
 
 ## Paperless or Ollama connection fails
 
-The configured URLs are used from inside the containers.
+Configured URLs are resolved from inside the app containers.
 
 Check that:
 
-- you are not using `localhost` for a service running outside that container;
-- the target host/port is reachable from the container network;
-- Paperless/Ollama is listening on an address reachable from the app;
-- firewalls or host rules do not block the connection.
+- you are not using `localhost` for an external service;
+- target host/port is reachable from the container network;
+- Paperless/Ollama listens on a reachable address;
+- firewall/host rules permit the connection.
 
-For separate Compose projects, service names such as `paperless` or `ollama` only work when you explicitly place the services on a shared Docker network.
+Separate Compose projects do not automatically share service-name DNS.
 
-## OCR queue never moves
+## Paperless import does not use PaddleOCR
+
+Check the Paperless-side integration first:
+
+- `/opt/paperless-local-ai/ocrmypdf_plai.py` exists inside the Paperless container;
+- `PAPERLESS_OCR_USER_ARGS` contains that plugin plus `pdf_renderer=fpdf2` and `optimize=0`;
+- `PLAI_OCR_URL` is reachable from inside Paperless;
+- `PLAI_OCR_TOKEN` exactly matches `OCR_SERVICE_TOKEN`;
+- `ocr-service` `/health` is reachable;
+- Paperless' OCR language corresponds to the language configured in the Control Center.
+
+Native-text PDFs may legitimately avoid Paddle inference in Paperless/OCRmyPDF's automatic path. Use a real scanned/raster PDF for the first OCR test.
+
+If the OCR service returns `ocr_language_mismatch`, align the two OCR language settings.
+
+## First OCR request is much slower
+
+A fresh OCR cache can need to download model assets and/or prepare HPI/OpenVINO inference artifacts.
+
+The cache persists below:
+
+```text
+APP_DATA_DIR/ocr/
+```
+
+Subsequent cold-session starts should reuse those artifacts.
+
+## OCR reports idle but metadata does not start
+
+In 0.2.0, `/health.session_active=false` means the OCR service has released the global AI slot.
 
 Check:
 
-- the Paperless workflow or manual action adds the OCR queue tag configured under **App Settings → Pipeline & Tags**;
-- the Paperless API token has document read/write permission;
-- Paperless and Control Center tag names match exactly;
-- OCR language/version/device under **App Settings → OCR** are valid;
-- enough Docker RAM/shared memory is assigned.
-
-On the first OCR job, model assets may still be downloading into the persistent OCR cache.
+- the shared `coordination` directory is mounted into both OCR and metadata services;
+- the `LLM` tag is on the document;
+- the metadata worker is running;
+- the configured model exists in Ollama.
 
 ## LLM queue never moves
 
 Check:
 
-- **App Settings → Connections → Test connections with current draft** succeeds for Ollama;
+- the Paperless **Document Added** workflow adds the configured LLM queue tag;
+- Paperless and Control Center tag names match;
 - the model configured in Classification exists in Ollama;
-- no OCR queue/error blocking tag remains on the document;
-- the shared `ai.lock` is not held indefinitely by another worker/container.
+- the metadata worker can reach both Paperless and Ollama;
+- `ai.lock` is not held by an active OCR session.
+
+There are no OCR queue/error tags to clear in 0.2.0.
 
 ## A document was processed but metadata did not change
 
 Check whether **Dry Run** is enabled.
 
-Dry Run suppresses metadata and persistent-review writes, but it still moves technical workflow tags and stores the processing result. OCR is separate and may still update Paperless' extracted `content`.
+Dry Run suppresses metadata/review writes but still stores processing results and manages metadata workflow tags.
 
-See [Configuration](configuration.md#dry-run).
+OCR is part of Paperless import and is independent from metadata Dry Run.
 
 ## Existing content tags disappeared or changed
 
 Normal metadata write-back replaces the document's eligible content tags with the tags returned by the classifier.
 
-Technical workflow/review tags and tags configured as additionally excluded are preserved.
+Technical workflow/review tags and additionally excluded tags are preserved.
 
-Use Dry Run and one test document before enabling automatic processing on an existing archive. See [Paperless setup](paperless-setup.md#what-metadata-is-written).
+Use Dry Run and one test document before enabling metadata automation on an existing archive.
+
+## Ollama stays loaded after a document finishes
+
+Normal metadata processing explicitly unloads every configured Ollama model after the primary/fallback transaction.
+
+Check:
+
+- metadata-worker logs for `[UNLOAD]` / `[UNLOAD-WARN]`;
+- Ollama `/api/ps`;
+- whether another client outside `paperless-local-ai` is actively using the same model.
+
+The configured finite keep-alive is only a fail-safe if normal explicit unload cannot run.
 
 ## App settings seem ignored
 
-Shared runtime settings are loaded from `APP_DATA_DIR/config/app-config.json`. The OCR and metadata workers reload them during polling, and Ollama/Paperless URLs are resolved at request time. A container restart is normally unnecessary.
+Runtime settings are loaded from `APP_DATA_DIR/config/app-config.json`.
 
-Docker-only values such as bind ports, volumes and CPU/RAM limits are different: changing those requires recreating/redeploying the affected container because Docker owns them.
+Deployment-owned values such as ports, mounts, HPI enablement, CPU/RAM/shared-memory limits and Paperless-side plugin environment require recreating/redeploying the affected containers.
 
 ## New correspondent does not appear in native Suggestions
 
 Check:
 
-- **Enable in production** is on under **Correspondent fallback → Settings**;
-- fallback produced a genuinely new name, not an exact existing correspondent;
-- the document still carries the configured review tag;
-- Paperless AI settings point at the suggestion bridge and embeddings are disabled;
-- Paperless can reach the bridge port;
+- **Enable in production** is on under Correspondent fallback;
+- fallback produced a genuinely new name;
+- the document still has the review tag;
+- Paperless AI settings point at the suggestion bridge;
+- embeddings are disabled for this narrow bridge integration;
+- Paperless can reach the bridge;
 - bridge `/health` is healthy.
 
-The bridge deliberately returns no new suggestion when document matching is absent or ambiguous.
-
-If you do not need new correspondents in Paperless' native Suggestions UI, the bridge integration is optional.
+The bridge deliberately fails closed on absent or ambiguous document matching.

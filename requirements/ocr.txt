@@ -1,9 +1,8 @@
-# Direct runtime requirements plus the OCR-stack versions measured in the
-# production 0.1.0 validation. Pinning these avoids a later image rebuild
-# silently changing PaddleX/OpenCV/Numpy behavior under the same release tag.
+# Direct runtime requirements plus the OCR-stack versions validated for 0.2.0.
+# Pinning the measured stack avoids a later image rebuild silently changing
+# PaddleX/OpenCV/Numpy behavior under the same release tag.
 paddleocr==3.7.0
 paddlex==3.7.2
-PyMuPDF==1.28.2
 requests==2.34.2
 numpy==1.26.2
 opencv-contrib-python==4.10.0.84

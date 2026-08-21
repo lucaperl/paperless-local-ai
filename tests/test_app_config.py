@@ -1,4 +1,4 @@
-from app_config import DEFAULT_CONFIG, blocking_tag_names, technical_tag_names, validate_config
+from app_config import DEFAULT_CONFIG, technical_tag_names, validate_config
 
 
 def test_default_config_is_valid():
@@ -9,18 +9,20 @@ def test_default_config_is_valid():
     assert cfg["runtime"]["poll_interval_seconds"] == 10
 
 
-def test_technical_tags_are_derived_once():
+def test_technical_tags_no_longer_include_ocr_queue_tags():
     cfg = validate_config(DEFAULT_CONFIG)
     names = technical_tag_names(cfg)
-    assert {"PaddleOCR", "PaddleOCR Error", "LLM", "LLM Error", "Inbox", "TODO"} <= names
-    assert blocking_tag_names(cfg) == {"PaddleOCR", "PaddleOCR Error"}
+    assert {"LLM", "LLM Error", "Inbox", "TODO"} <= names
+    assert "PaddleOCR" not in names
+    assert "PaddleOCR Error" not in names
 
 
-def test_existing_language_and_tag_values_are_preserved_by_validation():
-    cfg = {
+def test_removed_ocr_queue_keys_are_ignored():
+    raw = {
         **DEFAULT_CONFIG,
         "workflow": {
             **DEFAULT_CONFIG["workflow"],
+            "ocr_queue_tag": "PaddleOCR",
             "ocr_error_tag": "PaddleOCR Fehler",
             "llm_error_tag": "LLM Fehler",
         },
@@ -29,15 +31,16 @@ def test_existing_language_and_tag_values_are_preserved_by_validation():
             "language": "de",
         },
     }
-    validated = validate_config(cfg)
+    validated = validate_config(raw)
     assert validated["ocr"]["language"] == "de"
-    assert validated["workflow"]["ocr_error_tag"] == "PaddleOCR Fehler"
     assert validated["workflow"]["llm_error_tag"] == "LLM Fehler"
+    assert "ocr_queue_tag" not in validated["workflow"]
+    assert "ocr_error_tag" not in validated["workflow"]
 
 
 def test_duplicate_workflow_tag_names_are_rejected():
     cfg = validate_config(DEFAULT_CONFIG)
-    cfg["workflow"]["llm_queue_tag"] = cfg["workflow"]["ocr_queue_tag"]
+    cfg["workflow"]["llm_error_tag"] = cfg["workflow"]["llm_queue_tag"]
     try:
         validate_config(cfg)
     except ValueError as exc:

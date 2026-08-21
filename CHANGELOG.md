@@ -2,6 +2,46 @@
 
 ## Unreleased
 
+## 0.2.0 - 2026-08-21
+
+### OCR architecture
+
+- replace the separate tag-driven `ocr-worker` with an authenticated `ocr-service` used directly by Paperless' OCRmyPDF pipeline;
+- add an OCRmyPDF 17 `OcrEngine.generate_ocr()` plugin that streams rasterized pages to the local service and returns native `OcrElement` geometry without an hOCR/XML roundtrip;
+- preserve the Paperless original while OCRmyPDF creates the searchable archive/PDF-A representation and Paperless stores the resulting OCR text;
+- remove the old PaddleOCR queue/error tags from the app configuration and keep metadata queuing as a normal Paperless **Document Added → LLM tag** workflow.
+
+### PaddleOCR runtime
+
+- use PaddleOCR 3.7.0 / PaddleX 3.7.2 with explicit **PP-OCRv6 Medium** detection and recognition models;
+- enable PaddleX HPI/OpenVINO for the CPU reference deployment;
+- use a persistent PaddleX/OpenVINO cache, 4 CPU threads, a 7 GiB OCR limit and a 5-second warm-session timeout by default;
+- keep OCR and Ollama serialized through the shared `ai.lock`;
+- make `/health.session_active` follow ownership of the global AI slot so the service cannot report idle before the lock is actually released.
+
+### Metadata runtime
+
+- keep the primary structured metadata request plus optional correspondent fallback as two distinct LLM stages;
+- retain the configured Ollama model only across the current metadata transaction, then explicitly unload it;
+- preserve a finite keep-alive as a crash fail-safe while ensuring normal processing ends with Ollama unloaded.
+
+### Deployment and configuration
+
+- keep four long-running services: `ocr-service`, `metadata-worker`, `prompt-ui` and `suggestion-bridge`;
+- add the persistent `/integration` bridge path used to publish the OCRmyPDF plugin to Paperless;
+- add deployment settings for the authenticated OCR endpoint, HPI/OpenVINO runtime, shared memory and OCR resource limits;
+- document the required Paperless plugin mount and `PLAI_OCR_*` / `PAPERLESS_OCR_USER_ARGS` integration;
+- update the Control Center and AppConfig contracts so OCR queue/error settings from 0.1.x are ignored instead of carried forward.
+
+### Cleanup and validation
+
+- remove the legacy direct PyMuPDF dependency from the OCR image while retaining the `requests` pin required by the PaddleOCR/PaddleX stack;
+- add regression coverage for the OCR service, removed queue settings, public deployment contracts and session/lock state;
+- validate the final local candidate end-to-end on Paperless-ngx 3.0.5: two-page API upload, searchable PDF/A-2b, byte-identical original, PP-OCRv6/OpenVINO OCR, metadata write-back, Inbox handoff, explicit Ollama unload and zero observed Paddle/Ollama overlap.
+
+> [!IMPORTANT]
+> 0.2.0 changes the deployment contract. Existing 0.1.x installations must update the app Compose/YAML **and** Paperless' OCRmyPDF integration before switching to the 0.2.0 images. See [Updating](docs/upgrading.md).
+
 ## 0.1.3 - 2026-08-19
 
 - switch fresh-install OCR, technical error-tag and prompt defaults to English while preserving existing saved configurations;
@@ -48,18 +88,16 @@ Initial public release.
 
 ## 0.1.0-alpha.3 - 2026-08-18
 
-- fix atomic review-record persistence in the packaged core image;
-- harden native suggestion request matching and collision behavior.
+- clean up stale review records;
+- test real filename collisions;
+- keep review matching fail closed when identity is ambiguous.
 
 ## 0.1.0-alpha.2 - 2026-08-18
 
-- centralize shared runtime settings and add versioned App-Einstellungen;
-- move to one persistent `APP_DATA_DIR`;
-- make shared runtime settings hot-reloadable.
+- unify PaddleOCR and metadata processing into one deployable project;
+- add the Control Center configuration path and shared runtime configuration;
+- add review persistence and the native Paperless correspondent suggestion bridge.
 
 ## 0.1.0-alpha.1 - 2026-08-18
 
-- package OCR and core runtimes into images;
-- provide one Compose application with four services;
-- keep Ollama external;
-- add doctor checks, documentation and initial CI.
+- initial staged unified-app prototype.

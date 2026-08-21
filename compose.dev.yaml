@@ -1,5 +1,5 @@
 services:
-  ocr-worker:
+  ocr-service:
     build:
       context: .
       dockerfile: docker/ocr.Dockerfile

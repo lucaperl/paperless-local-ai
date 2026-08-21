@@ -4,7 +4,6 @@ from datetime import datetime
 from pathlib import Path
 
 from app_config import (
-    blocking_tag_names,
     ensure_config as ensure_app_config,
     load_config as load_app_config,
 )
@@ -17,6 +16,7 @@ from prompt_runtime import (
     load_config,
     performance_from_raw,
     prompt_hashes,
+    unload_ollama_model,
     render_prompts,
     validate_result,
 )
@@ -36,6 +36,8 @@ RESULTS = Path("/data/results")
 RESULTS.mkdir(parents=True, exist_ok=True)
 
 client = PaperlessClient()
+
+LLM_TRANSACTION_KEEP_ALIVE = "2m"
 
 
 def log(msg):
@@ -140,7 +142,11 @@ def run_correspondent_fallback(fresh, tax, main_result):
         return "", fallback
     try:
         rendered = render_correspondent_prompts(fresh, tax, config)
-        result, raw, wall_duration, _payload = call_correspondent_ollama(rendered, config)
+        result, raw, wall_duration, _payload = call_correspondent_ollama(
+            rendered,
+            config,
+            keep_alive_override=LLM_TRANSACTION_KEEP_ALIVE,
+        )
         errors = validate_correspondent_result(result)
         fallback.update({
             "status": "invalid" if errors else "ok",
@@ -326,34 +332,41 @@ def write_review_record_safe(doc_id, candidate, fallback):
         log(f"[REVIEW-WARN] ID {doc_id}: {type(exc).__name__}: {exc}")
 
 
+def configured_ollama_models():
+    models = set()
+    try:
+        models.add(load_config()["model"])
+    except Exception:
+        pass
+    try:
+        corr = load_correspondent_config()
+        if corr.get("enabled") and corr.get("model"):
+            models.add(corr["model"])
+    except Exception:
+        pass
+    return sorted(models)
+
+
+def unload_ollama_models(models):
+    for model in models:
+        try:
+            unload_ollama_model(model)
+            log(f"[UNLOAD] Ollama model released: {model}")
+        except Exception as exc:
+            log(f"[UNLOAD-WARN] {model}: {type(exc).__name__}: {exc}")
+
+
+
 def process(doc, tax, app_cfg):
     doc_id = doc["id"]
     fresh = current_document(doc_id)
-    tag_ids = set(fresh.get("tags", []))
-
     workflow = app_cfg["workflow"]
     runtime = app_cfg["runtime"]
     queue_name = workflow["llm_queue_tag"]
     error_name = workflow["llm_error_tag"]
-    blocking_names = blocking_tag_names(app_cfg)
 
     queue_tag = tax["tag_by_name"][queue_name]
     error_tag = tax["tag_by_name"][error_name]
-
-    blocking_ids = {
-        tax["tag_by_name"][name]
-        for name in blocking_names
-        if name in tax["tag_by_name"]
-    }
-    active_blockers = tag_ids & blocking_ids
-    if active_blockers:
-        names = [
-            name
-            for name in blocking_names
-            if tax["tag_by_name"].get(name) in active_blockers
-        ]
-        log(f"[WAIT] ID {doc_id}: blocked by {', '.join(sorted(names))}")
-        return
 
     config = load_config()
     rendered = render_prompts(fresh, tax, config)
@@ -364,7 +377,11 @@ def process(doc, tax, app_cfg):
         + f", PromptConfig v{config['version']}"
     )
 
-    result, raw, wall_duration, _payload = call_ollama(rendered, config)
+    result, raw, wall_duration, _payload = call_ollama(
+        rendered,
+        config,
+        keep_alive_override=LLM_TRANSACTION_KEEP_ALIVE,
+    )
     validation_errors = validate_result(result, tax, config)
 
     correspondent_candidate = ""
@@ -513,7 +530,11 @@ def main():
             for doc in docs:
                 try:
                     with ai_resource_lock("LLM", doc["id"]):
-                        process(doc, tax, app_cfg)
+                        models = configured_ollama_models()
+                        try:
+                            process(doc, tax, app_cfg)
+                        finally:
+                            unload_ollama_models(models)
                 except Exception as e:
                     mark_error(doc["id"], queue_tag, error_tag, e, error_name)
         except Exception as e:

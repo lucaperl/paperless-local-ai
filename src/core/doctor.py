@@ -86,8 +86,6 @@ def main():
 
     tag_names = {str(x.get("name", "")) for x in tags}
     required = [
-        workflow["ocr_queue_tag"],
-        workflow["ocr_error_tag"],
         workflow["llm_queue_tag"],
         workflow["llm_error_tag"],
         workflow["review_tag"],
@@ -96,7 +94,7 @@ def main():
     if missing:
         good &= fail("Missing Paperless tags: " + ", ".join(missing))
     else:
-        ok("All required queue/review tags are present")
+        ok("All required metadata/review tags are present")
 
     try:
         r = requests.get(f"{ollama_url}/api/tags", timeout=20)

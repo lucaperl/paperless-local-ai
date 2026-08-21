@@ -7,10 +7,11 @@ This guide covers a normal Docker Compose deployment. For TrueNAS SCALE, use the
 You need:
 
 - a running Paperless-ngx instance;
-- a running Ollama instance that the app containers can reach;
+- a running Ollama instance reachable from the app containers;
 - Docker Compose v2;
 - a Paperless API token;
-- an installed Ollama model (`qwen3.5:4b` is the default).
+- an installed Ollama model (`qwen3.5:4b` is the default);
+- permission to add the OCRmyPDF plugin mount/environment to Paperless.
 
 Fresh installations use English OCR and English prompt defaults. OCR language and the two prompt stages can be changed independently in the Control Center.
 
@@ -22,119 +23,153 @@ cd paperless-local-ai
 cp .env.example .env
 ```
 
-## 2. Create the Paperless token and configure deployment values
+## 2. Configure deployment secrets and paths
 
-In Paperless, create an API token under **My Profile**. The token's user must be allowed to read and update the documents and taxonomy the app should manage.
+Create a Paperless API token under **My Profile**. The token's user must be allowed to read/update the documents and taxonomy the app should manage.
 
 Edit `.env` and set at least:
 
 ```text
 PAPERLESS_TOKEN
+OCR_SERVICE_TOKEN
 APP_VERSION
 APP_DATA_DIR
-PROMPT_UI_BIND / PROMPT_UI_PORT
-SUGGESTION_BRIDGE_BIND / SUGGESTION_BRIDGE_PORT
 ```
 
-`APP_VERSION=stable` follows the newest non-prerelease image. Replace `stable` with an exact release number if you want the deployment to stay pinned.
-
-Normal runtime settings such as Paperless/Ollama URLs, OCR language, workflow tags and prompts are configured in the Control Center, not duplicated in `.env`.
-
-## 3. Start the Control Center
-
-Start only the web UI first:
+Generate `OCR_SERVICE_TOKEN` as a separate random secret, for example:
 
 ```bash
-docker compose up -d prompt-ui
+python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-Default local URL:
+The same secret is later configured in Paperless as `PLAI_OCR_TOKEN`.
+
+`APP_VERSION=stable` follows the newest non-prerelease image. Replace it with an exact release number for a pinned deployment.
+
+Normal runtime settings such as Paperless/Ollama URLs, OCR language, workflow tags and prompts are configured in the Control Center.
+
+## 3. Start the app
+
+```bash
+docker compose up -d
+```
+
+Default host bindings are loopback-only:
 
 ```text
-http://127.0.0.1:30148/
+Control Center:     http://127.0.0.1:30148/
+Suggestion bridge:  http://127.0.0.1:30149/
+OCR service:        http://127.0.0.1:30150/
 ```
 
-The Control Center has no built-in authentication. Only bind it to localhost or a trusted network.
+The Control Center has no built-in authentication. Keep it on localhost or a trusted network.
 
-If Docker runs on another machine and you want to open the Control Center from your workstation, set `PROMPT_UI_BIND` in `.env` to a trusted address on the Docker host, then open `http://<docker-host>:30148/`. Do not expose the Control Center directly to the public Internet.
+Paperless must be able to reach the OCR service. If Paperless is not attached to this Compose network, change `OCR_SERVICE_BIND` from `127.0.0.1` to a trusted host/LAN address (or `0.0.0.0` with appropriate firewalling) and use that reachable address in `PLAI_OCR_URL`. If Paperless is explicitly attached to the same Docker network, it can instead use `http://ocr-service:8082` without relying on the published host port.
 
-If you later enable Paperless' native new-correspondent review, the suggestion bridge must also be reachable from Paperless. Keep `SUGGESTION_BRIDGE_BIND=127.0.0.1` unless you use that feature; otherwise bind it to a trusted host/LAN address Paperless can reach.
+The OCR service requires its bearer token for OCR requests. Keep it private/LAN-only even with authentication enabled.
 
-### Choose reachable Paperless and Ollama URLs
+### Container networking
 
-The fresh defaults are:
+The fresh app defaults for external services are:
 
 ```text
 http://paperless:8000
 http://ollama:11434
 ```
 
-Those names work only when `paperless` and `ollama` are resolvable from this Compose network. Separate Compose projects do **not** automatically share service-name DNS.
+Those names work only when they resolve from this Compose network.
 
-Common setups:
+Common alternatives:
 
-- **Paperless/Ollama on another machine:** use that machine's LAN address and published port.
-- **Paperless/Ollama on the same Docker host but outside this Compose project:** use an address and published port that are reachable from the containers, typically the host's LAN address.
-- **Shared user-defined Docker network:** service names can be used after you explicitly attach the relevant services to the same network.
+- use another machine's LAN address and published port;
+- use the Docker host's reachable LAN address for services in another Compose project on the same host;
+- explicitly attach projects to a shared user-defined Docker network.
 
-Do not use `localhost` for Paperless or Ollama unless those services actually run inside the same container, which they normally do not.
+Do not use `localhost` for Paperless or Ollama unless the target service really runs inside that same container.
 
-Under **App Settings → Connections**, enter the URLs and use **Test connections with current draft** before saving.
+Open **App Settings → Connections** and use **Test connections with current draft** before saving.
 
-## 4. Configure the app
+## 4. Configure Paperless OCRmyPDF
 
-In **App Settings**:
+This step is required in 0.2.0.
+
+The OCR service publishes the plugin below:
+
+```text
+APP_DATA_DIR/integration/ocrmypdf_plai.py
+```
+
+Mount that directory into the Paperless container read-only, for example:
+
+```yaml
+volumes:
+  - /absolute/path/to/paperless-local-ai/data/integration:/opt/paperless-local-ai:ro
+```
+
+Then add these Paperless environment values:
+
+```text
+PLAI_OCR_URL=http://<host-or-service-reachable-from-paperless>:30150
+PLAI_OCR_TOKEN=<same value as OCR_SERVICE_TOKEN>
+PLAI_OCR_TIMEOUT_SECONDS=1800
+PAPERLESS_OCR_USER_ARGS={"plugins":["/opt/paperless-local-ai/ocrmypdf_plai.py"],"pdf_renderer":"fpdf2","optimize":0}
+```
+
+`PLAI_OCR_URL` is resolved from inside the Paperless container. Choose an address it can actually reach.
+
+The OCR language requested by Paperless must correspond to the language configured under **App Settings → OCR**. Common Paperless/Tesseract codes such as `deu`/`eng` are normalized to PP-OCRv6 codes such as `de`/`en`.
+
+See [Paperless setup](paperless-setup.md) for the full tested integration contract.
+
+## 5. Configure metadata processing
+
+In the Control Center:
 
 1. save the tested Paperless and Ollama connections;
-2. review the pipeline tag names;
-3. review OCR language, PaddleOCR generation and device;
-4. review polling and Dry Run.
+2. review the LLM queue/error/review tag names;
+3. review OCR language/version/device;
+4. review polling and Dry Run;
+5. review Classification;
+6. optionally configure Correspondent fallback.
 
-Then open **Classification** and **Correspondent fallback** and review the model/prompt settings.
+The default model is `qwen3.5:4b`. Any selected model must already exist in Ollama.
 
-The default model is `qwen3.5:4b`. If you select another model, it must already exist in the configured Ollama instance.
+## 6. Configure Paperless workflow/tags
 
-## 5. Configure Paperless
+Follow [Paperless setup](paperless-setup.md).
 
-Follow [Paperless setup](paperless-setup.md) to create the required tags and import workflow.
+0.2.0 requires only the metadata/review workflow tags from this app. OCR is no longer queued by a `PaddleOCR` tag.
 
-The tag names in Paperless must exactly match the names saved in the Control Center.
+## 7. Verify
 
-## 6. Test before production
-
-The interactive tests in the Control Center are the safest first check:
-
-- **Classification → Preview** renders the exact request without calling Ollama.
-- **Classification → Test** calls Ollama for an existing Paperless document without modifying that document.
-- **Correspondent fallback → Preview/Test** does the same for the optional sender-identification stage.
-
-For an automatic pipeline test, you can enable **Dry Run** before starting all workers.
-
-Dry Run applies to the metadata worker only:
-
-- it does not write title, document type, date, content tags or correspondent;
-- it does not persist a new-correspondent review record;
-- it still stores the processing result under `APP_DATA_DIR/core/results/`;
-- technical queue/error tags still move as the workflow progresses.
-
-The OCR worker is separate from Dry Run. If a queued scanned document is reprocessed with PaddleOCR, Paperless' extracted `content` may still be updated.
-
-## 7. Start the full stack and verify
+Run:
 
 ```bash
-docker compose up -d
 docker compose --profile tools run --rm doctor
 ```
 
-The doctor checks the saved settings, Paperless/token access, required tags, Ollama and configured models.
+Then import one scanned document you can verify.
 
-For the first end-to-end test, use one document you can easily verify:
+Expected sequence:
 
-- add the configured OCR queue tag manually to an existing document; or
-- import a new document after the Paperless workflow is enabled.
+```text
+Paperless import
+→ OCRmyPDF / PP-OCRv6 when OCR is needed
+→ Document Added workflow adds LLM tag
+→ metadata worker
+→ Inbox
+```
 
-Only process a larger batch after that document completes as expected.
+For a scanned PDF, verify both the extracted text and Paperless' archive file before processing a larger batch.
+
+## Dry Run
+
+Dry Run applies to the **metadata worker only**.
+
+With Dry Run enabled it suppresses title/type/date/content-tag/correspondent write-back and persistent new-correspondent review records, but it still stores the processing result and manages technical metadata tags.
+
+OCR is part of Paperless import and is therefore independent from metadata Dry Run.
 
 ## First OCR run
 
-PaddleOCR model assets are cached below `APP_DATA_DIR/ocr/`. The first OCR job may take longer while missing model files are downloaded.
+PaddleOCR models and HPI/OpenVINO artifacts are cached below `APP_DATA_DIR/ocr/`. The first run on a fresh cache can take substantially longer while models and optimized inference artifacts are prepared.
