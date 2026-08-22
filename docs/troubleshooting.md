@@ -136,6 +136,23 @@ If the kernel reports a **global host OOM**, raising only the OCR container limi
 
 Check `/health` for the active `max_side_pixels` value and OCR logs for the actual raster dimensions sent to PaddleOCR.
 
+## OCR retries and final failures
+
+Transient OCR failures are retried inside the Paperless/OCRmyPDF import while the consume task is still active. The default waits are 15 seconds, 1 minute, 5 minutes and 10 minutes. Change or disable the schedule under **App Settings → OCR**. The default schedule is kept below Paperless' 1800-second worker timeout with room for the OCR attempts; longer custom schedules may require a higher `PAPERLESS_WORKER_TIMEOUT`.
+
+The **OCR recovery** card shows four normal states:
+
+- **Ready** — no recovery action is needed;
+- **OCR running** — an OCR attempt is active;
+- **Waiting to retry** — a transient failure was detected and another bounded attempt is scheduled; **Retry now** skips only the remaining wait;
+- **Needs attention** — the configured retries were exhausted or the failure was classified as deterministic.
+
+Only transient failures are retried. Authentication/configuration errors, OCR language mismatches, malformed input and deterministic Paddle errors fail immediately.
+
+Final failures remain visible in Paperless File Tasks and are also kept in the Control Center's bounded **Recent final failures** history. Paperless-ngx 3.0.5 does not expose a supported generic retry operation for an already failed initial consume task, so the Control Center deliberately does not pretend it can safely requeue that completed failure. Fix the cause, then submit the source again through Paperless. **Dismiss** only removes the Control Center history entry.
+
+If repeated failures are memory-related, lower **Maximum OCR image side** before increasing the OCR container memory limit.
+
 ## App settings seem ignored
 
 Runtime settings are loaded from `APP_DATA_DIR/config/app-config.json`.

@@ -99,7 +99,9 @@ When the first OCR request arrives:
 4. after the idle timeout, the subprocess is stopped;
 5. only after cleanup is complete is `ai.lock` released.
 
-`/health.session_active` follows ownership of the global AI slot, not merely process liveness. A reported idle state therefore means the OCR service has actually released the shared lock.
+Transient worker/service failures use a bounded retry protocol between the OCRmyPDF bridge and `ocr-service`. One HTTP request represents one Paddle attempt. If the worker dies or another retryable condition occurs, `ocr-service` tears down the failed session, releases `ai.lock`, records recovery state and returns HTTP 503 with the configured next delay. The OCRmyPDF bridge waits and submits the same page again with a stable recovery request ID. This avoids keeping a single service connection open across long backoff periods. Deterministic failures return a final error immediately.
+
+`/health.session_active` follows ownership of the global AI slot, not merely process liveness. A reported idle state therefore means the OCR service has actually released the shared lock. `/health` also exposes the current retry schedule plus only the minimal retry-control state needed by the bridge. Document source names, page details and errors remain on the shared coordination volume for the Control Center and are not exposed through the unauthenticated health endpoint.
 
 The default deployment uses the PP-OCRv6 Medium profile, PaddleX HPI/OpenVINO, four CPU threads, a 7 GiB OCR limit and a five-second idle timeout. Small and Tiny profiles can be selected in the Control Center without changing the deployment.
 
@@ -154,7 +156,7 @@ Persistent state lives below one `APP_DATA_DIR`:
 config/        app and prompt configuration/history
 core/          result and open review records
 ocr/           PaddleX/OpenVINO cache and OCR runtime state
-coordination/  shared ai.lock
+coordination/  shared ai.lock + bounded OCR recovery state/history
 integration/   generated OCRmyPDF plugin consumed by Paperless
 ```
 

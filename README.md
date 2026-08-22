@@ -12,7 +12,7 @@ Normal metadata classification is handled in **one structured LLM request per do
 
 ## Highlights
 
-- **Improved scan OCR with PaddleOCR** — PP-OCRv6 Medium is the quality-focused default, with Small and Tiny profiles selectable when lower inference cost matters.
+- **Improved scan OCR with PaddleOCR** — PP-OCRv6 Medium is the quality-focused default, with Small and Tiny profiles selectable when lower inference cost matters; bounded automatic retries recover from transient OCR worker/service failures.
 - **Automatic metadata assignment in one LLM request** — title, document type, date, tags and an existing correspondent are classified together and written back to Paperless automatically.
 - **Designed for CPU-only systems** — the OCR and LLM paths are deliberately structured to avoid repeated model work and simultaneous heavy inference.
 - **Paperless-native correspondent Suggestions** — the common path stays at one LLM request; only an unresolved correspondent can trigger a second, focused request. Genuinely new correspondents are surfaced through Paperless Suggestions and are never auto-created.
@@ -102,7 +102,7 @@ The Control Center configures normal app behavior:
 
 - Paperless and Ollama connections;
 - LLM queue/error/review tags;
-- OCR language/version/model profile, temporary OCR raster limit and device;
+- OCR language/version/model profile, temporary OCR raster limit, automatic retry schedule and recovery status;
 - polling and Dry Run;
 - Classification prompt/model settings;
 - optional Correspondent fallback.
