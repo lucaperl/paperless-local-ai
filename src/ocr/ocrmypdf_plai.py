@@ -11,9 +11,11 @@ import http.client
 import json
 import logging
 import os
+import time
+import uuid
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from PIL import Image
 from ocrmypdf import BoundingBox, OcrElement, hookimpl
@@ -26,6 +28,9 @@ PADDLE_DEFAULT_MAX_SIDE_PIXELS = 3000
 PADDLE_MIN_SIDE_PIXELS = 2000
 PADDLE_MAX_SIDE_PIXELS = 4000
 CONFIG_LOOKUP_TIMEOUT_SECONDS = 1.5
+DEFAULT_RETRY_DELAYS_SECONDS = [15, 60, 300, 600]
+RETRY_STATUS_POLL_SECONDS = 2.0
+MAX_TOTAL_ATTEMPTS = 11
 
 
 def _downsample_for_paddle(
@@ -81,7 +86,7 @@ def _validated_max_side_pixels(value: Any) -> int:
     return pixels
 
 
-def _configured_max_side_pixels() -> int:
+def _service_health(*, log_errors: bool = True) -> dict[str, Any] | None:
     conn = None
     try:
         scheme, host, port, path = _endpoint_parts("/health")
@@ -92,15 +97,52 @@ def _configured_max_side_pixels() -> int:
         body = response.read()
         if 200 <= response.status < 300:
             payload = json.loads(body.decode("utf-8"))
-            if isinstance(payload, dict):
-                return _validated_max_side_pixels(payload.get("max_side_pixels"))
-        LOG.warning("OCR service config lookup returned HTTP %s; using %d px fallback", response.status, PADDLE_DEFAULT_MAX_SIDE_PIXELS)
+            return payload if isinstance(payload, dict) else None
+        if log_errors:
+            LOG.warning("OCR service health lookup returned HTTP %s", response.status)
     except Exception as exc:
-        LOG.warning("OCR service config lookup failed (%s: %s); using %d px fallback", type(exc).__name__, exc, PADDLE_DEFAULT_MAX_SIDE_PIXELS)
+        if log_errors:
+            LOG.warning("OCR service health lookup failed (%s: %s)", type(exc).__name__, exc)
     finally:
         if conn is not None:
             conn.close()
+    return None
+
+
+def _configured_max_side_pixels() -> int:
+    payload = _service_health()
+    if payload is not None:
+        return _validated_max_side_pixels(payload.get("max_side_pixels"))
+    LOG.warning("Using %d px OCR raster fallback", PADDLE_DEFAULT_MAX_SIDE_PIXELS)
     return PADDLE_DEFAULT_MAX_SIDE_PIXELS
+
+
+def _validated_retry_delays(value: Any) -> list[int]:
+    if not isinstance(value, list):
+        return list(DEFAULT_RETRY_DELAYS_SECONDS)
+    out: list[int] = []
+    for item in value[:10]:
+        if isinstance(item, bool):
+            return list(DEFAULT_RETRY_DELAYS_SECONDS)
+        try:
+            delay = int(item)
+        except (TypeError, ValueError):
+            return list(DEFAULT_RETRY_DELAYS_SECONDS)
+        if not 1 <= delay <= 86400:
+            return list(DEFAULT_RETRY_DELAYS_SECONDS)
+        out.append(delay)
+    return out
+
+
+def _configured_retry_delays() -> list[int]:
+    payload = _service_health()
+    if payload is not None and "retry_delays_seconds" in payload:
+        return _validated_retry_delays(payload.get("retry_delays_seconds"))
+    LOG.warning(
+        "OCR retry configuration unavailable; using fallback schedule %s",
+        DEFAULT_RETRY_DELAYS_SECONDS,
+    )
+    return list(DEFAULT_RETRY_DELAYS_SECONDS)
 
 
 def _token() -> str:
@@ -122,7 +164,39 @@ def _requested_languages(options: Any) -> list[str]:
         return []
 
 
-def _remote_ocr(input_file: Path, options: Any) -> dict[str, Any]:
+class RetryableRemoteOCRError(RuntimeError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        retry_after_seconds: int | None = None,
+        service_authorized_retry: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
+        self.service_authorized_retry = service_authorized_retry
+
+
+def _source_name(options: Any, input_file: Path) -> str:
+    for attr in ("input_file", "input_file_or_options"):
+        raw = getattr(options, attr, None) if options is not None else None
+        if raw:
+            try:
+                return Path(str(raw)).name[:300]
+            except Exception:
+                pass
+    return input_file.name[:300]
+
+
+def _remote_ocr_once(
+    input_file: Path,
+    options: Any,
+    *,
+    request_id: str,
+    attempt: int,
+    page_number: int,
+    source: str,
+) -> dict[str, Any]:
     scheme, host, port, path = _endpoint_parts()
     timeout = float(os.environ.get("PLAI_OCR_TIMEOUT_SECONDS", "1800"))
     connection_cls = (
@@ -138,6 +212,10 @@ def _remote_ocr(input_file: Path, options: Any) -> dict[str, Any]:
         conn.putheader("Content-Type", "application/octet-stream")
         conn.putheader("Content-Length", str(size))
         conn.putheader("X-PLAI-Filename", input_file.name)
+        conn.putheader("X-PLAI-Request-ID", request_id)
+        conn.putheader("X-PLAI-Attempt", str(attempt))
+        conn.putheader("X-PLAI-Source", quote(source, safe=""))
+        conn.putheader("X-PLAI-Page-Number", str(page_number + 1))
         if languages:
             conn.putheader("X-PLAI-Language", ",".join(languages))
         conn.endheaders()
@@ -151,20 +229,122 @@ def _remote_ocr(input_file: Path, options: Any) -> dict[str, Any]:
 
         response = conn.getresponse()
         body = response.read()
-        if response.status < 200 or response.status >= 300:
-            detail = body.decode("utf-8", errors="replace")
-            raise RuntimeError(
-                f"paperless-local-ai OCR HTTP {response.status}: {detail}"
+        detail = body.decode("utf-8", errors="replace")
+        if response.status in {502, 503, 504}:
+            parsed = {}
+            try:
+                candidate = json.loads(detail)
+                if isinstance(candidate, dict):
+                    parsed = candidate
+            except Exception:
+                pass
+            service_authorized = (
+                response.status == 503
+                and parsed.get("error") == "ocr_retryable"
+                and parsed.get("request_id") == request_id
             )
-        payload = json.loads(body.decode("utf-8"))
-    except OSError as exc:
-        raise RuntimeError(f"paperless-local-ai OCR unavailable: {exc}") from exc
+            retry_after = None
+            if service_authorized:
+                try:
+                    retry_after = int(parsed.get("retry_after_seconds"))
+                except (TypeError, ValueError):
+                    try:
+                        retry_after = int(response.getheader("Retry-After") or "")
+                    except (TypeError, ValueError):
+                        retry_after = None
+            raise RetryableRemoteOCRError(
+                f"paperless-local-ai OCR HTTP {response.status}: {detail}",
+                retry_after_seconds=retry_after,
+                service_authorized_retry=service_authorized,
+            )
+        if response.status < 200 or response.status >= 300:
+            raise RuntimeError(f"paperless-local-ai OCR HTTP {response.status}: {detail}")
+        payload = json.loads(detail)
+    except RetryableRemoteOCRError:
+        raise
+    except (OSError, http.client.HTTPException) as exc:
+        raise RetryableRemoteOCRError(
+            f"paperless-local-ai OCR temporarily unavailable: {type(exc).__name__}: {exc}"
+        ) from exc
     finally:
         conn.close()
 
     if not isinstance(payload, dict):
         raise RuntimeError("paperless-local-ai OCR returned a non-object response")
     return payload
+
+
+def _wait_for_retry(delay_seconds: int, request_id: str) -> None:
+    delay_seconds = max(1, int(delay_seconds))
+    deadline = time.monotonic() + delay_seconds
+    LOG.warning("Waiting %ds before the next OCR attempt", delay_seconds)
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        payload = _service_health(log_errors=False)
+        recovery = payload.get("recovery", {}) if isinstance(payload, dict) else {}
+        if (
+            isinstance(recovery, dict)
+            and recovery.get("request_id") == request_id
+            and recovery.get("retry_now_requested") is True
+        ):
+            LOG.warning("OCR retry wait skipped by Control Center Retry now")
+            return
+        time.sleep(min(RETRY_STATUS_POLL_SECONDS, remaining))
+
+
+def _remote_ocr(
+    input_file: Path,
+    options: Any,
+    page_number: int = 0,
+) -> dict[str, Any]:
+    configured_delays = _configured_retry_delays()
+    request_id = uuid.uuid4().hex
+    source = _source_name(options, input_file)
+    attempt = 1
+
+    while True:
+        try:
+            return _remote_ocr_once(
+                input_file,
+                options,
+                request_id=request_id,
+                attempt=attempt,
+                page_number=page_number,
+                source=source,
+            )
+        except RetryableRemoteOCRError as exc:
+            # A 503 is the OCR service explicitly authorizing the next retry and
+            # supplying its current configured delay. Connection-level failures
+            # have no service response, so use the schedule fetched at start.
+            if exc.service_authorized_retry:
+                if attempt >= MAX_TOTAL_ATTEMPTS:
+                    raise RuntimeError(
+                        f"OCR retry safety limit reached after {attempt} attempt(s): {exc}"
+                    ) from exc
+                delay = exc.retry_after_seconds
+                if delay is None:
+                    index = attempt - 1
+                    if index >= len(configured_delays):
+                        raise RuntimeError(f"OCR retry schedule exhausted: {exc}") from exc
+                    delay = configured_delays[index]
+            else:
+                index = attempt - 1
+                if index >= len(configured_delays):
+                    raise RuntimeError(
+                        f"OCR unavailable after {attempt} attempt(s): {exc}"
+                    ) from exc
+                delay = configured_delays[index]
+
+            LOG.warning(
+                "Transient OCR failure on attempt %d; next attempt in %ds: %s",
+                attempt,
+                delay,
+                exc,
+            )
+            _wait_for_retry(delay, request_id)
+            attempt += 1
 
 
 def _bbox(poly: list[list[float]]) -> BoundingBox:
@@ -333,7 +513,10 @@ class RemotePaddleEngine(OcrEngine):
         options,
         page_number: int = 0,
     ) -> tuple[OcrElement, str]:
-        return _build_ocr_tree(_remote_ocr(input_file, options), page_number)
+        return _build_ocr_tree(
+            _remote_ocr(input_file, options, page_number),
+            page_number,
+        )
 
     @staticmethod
     def generate_hocr(

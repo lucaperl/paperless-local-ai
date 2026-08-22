@@ -1,3 +1,4 @@
+import service as ocr_service
 from service import _poly, _result_get, _seq
 
 
@@ -81,3 +82,15 @@ def test_run_paddle_enforces_configured_detection_limit(tmp_path):
     assert kwargs["return_word_box"] is True
     assert kwargs["text_det_limit_type"] == "max"
     assert kwargs["text_det_limit_side_len"] == 3000
+
+
+def test_transient_ocr_error_classifier_is_narrow():
+    assert ocr_service._is_transient_ocr_error_text("MemoryError: allocation failed")
+    assert ocr_service._is_transient_ocr_error_text("std::bad_alloc")
+    assert not ocr_service._is_transient_ocr_error_text("ValueError: invalid image")
+    assert not ocr_service._is_transient_ocr_error_text("language mismatch")
+
+
+def test_retryable_ocr_error_is_distinct():
+    exc = ocr_service.RetryableOCRError("worker exited")
+    assert isinstance(exc, RuntimeError)
