@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+## 0.2.4 - 2026-08-22
+
+### Control Center UX
+
+- reorder the main navigation to **Overview → App Settings → Classification → Correspondent fallback** so first-time setup follows the same order as the UI;
+- make **Test** the default tab for Classification and Correspondent fallback, keeping prompt editing available without making it the first screen a new user sees;
+- use established Paperless/Ollama/PaddleOCR terminology throughout the visible UI, including **Context window**, **Maximum output tokens**, **Temperature**, **Thinking**, **Keep alive**, **PaddleOCR model**, **Inference device** and **Document Suggestions**;
+- move advanced model parameters and worker timing behind expandable sections while keeping the settings fully available;
+- add an explicit **Unsaved changes** state and remove config hashes/filenames from the normal history/configuration views;
+- render Classification and Correspondent test results in a human-readable summary, with raw JSON, validation and performance data under **Technical details**;
+- replace the static OCR Overview status with a real health check against the OCR service and current OCR recovery state.
+
+### OCR recovery UX
+
+- rename the retry setting to **Automatic OCR retries** and explain the default 15 s / 1 min / 5 min / 10 min schedule in normal language;
+- keep raw exception text under **Technical details**, show actionable status text first and add simple guidance for memory, language, authentication and service-availability failures;
+- rename the failure list to **Recent OCR failures**; **Dismiss** now confirms that it only hides the notice and never retries, modifies or deletes the document;
+- clarify that **Retry now** skips the remaining delay for the next scheduled attempt without increasing the retry limit.
+
+### RAM guidance
+
+- add measured OCR peaks for PP-OCRv6 Medium at 3000 / 3200 / 4000 px and measured qwen3.5:4b memory at 4k / 8k / 16k context;
+- include the real 16k Classification measurement (~4.2 GiB peak) and a short tuning guide for users with a constrained AI-memory budget;
+- explain that heavy PaddleOCR and Ollama inference are serialized, so their peaks normally do not occur at the same time;
+- document observed AI-workload memory directly, with practical tuning guidance for constrained systems.
+
+### Deployment
+
+- normal image update; existing Docker Compose and TrueNAS Custom App YAML remain valid;
+- no OCR algorithm, retry algorithm, port, mount, secret or container resource-limit changes.
+
 ## 0.2.3 - 2026-08-22
 
 ### Automatic OCR recovery

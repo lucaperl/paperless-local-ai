@@ -84,11 +84,11 @@ Check:
 - the metadata worker is running;
 - the configured model exists in Ollama.
 
-## LLM queue never moves
+## Classification queue never moves
 
 Check:
 
-- the Paperless **Document Added** workflow adds the configured LLM queue tag;
+- the Paperless **Document Added** workflow adds the configured classification queue tag;
 - Paperless and Control Center tag names match;
 - the model configured in Classification exists in Ollama;
 - the metadata worker can reach both Paperless and Ollama;
@@ -98,11 +98,11 @@ OCR has no queue/error tags to clear because it runs during Paperless import.
 
 ## A document was processed but metadata did not change
 
-Check whether **Dry Run** is enabled.
+Check whether **Dry run** is enabled.
 
-Dry Run suppresses metadata/review writes but still stores processing results and manages metadata workflow tags.
+Dry run suppresses metadata/review writes but still stores processing results and manages metadata workflow tags.
 
-OCR is part of Paperless import and is independent from metadata Dry Run.
+OCR is part of Paperless import and is independent from metadata Dry run.
 
 ## Existing content tags disappeared or changed
 
@@ -126,32 +126,47 @@ The configured finite keep-alive is only a fail-safe if normal explicit unload c
 
 ## OCR process is killed or the host runs out of memory
 
-High-resolution scan rasters can make PaddleOCR memory use rise sharply even when the source PDF itself is small.
+High-resolution pages can make PaddleOCR use several GiB of RAM even when the source PDF itself is small.
 
-Under **App Settings → OCR**, lower **Maximum OCR image side** before increasing the OCR container memory limit. The default is **3000 px**. Reference PP-OCRv6 Medium tests observed roughly **4.4–4.7 GiB** OCR-service peak at 3000 px, **4.9–5.1 GiB** at 3200 px and **6.5 GiB** at 4000 px. Actual memory use varies.
+Measured with PP-OCRv6 Medium on the reference setup:
 
-The limit affects only the temporary OCR raster. The Paperless original remains untouched and OCRmyPDF keeps the visible page geometry unchanged.
+| Maximum OCR image dimension | OCR-service peak |
+|---|---:|
+| 3000 px | ~4.4–4.7 GiB |
+| 3200 px | ~4.9–5.1 GiB |
+| 4000 px | ~6.5 GiB |
 
-If the kernel reports a **global host OOM**, raising only the OCR container limit can make the host-wide pressure worse. Leave enough RAM for Paperless, the container host and other services.
+If OCR is killed or the host reports an OOM:
 
-Check `/health` for the active `max_side_pixels` value and OCR logs for the actual raster dimensions sent to PaddleOCR.
+1. Lower **App Settings → OCR → Maximum OCR image dimension** first.
+2. If needed, try **PP-OCRv6 Small** or **Tiny**. Their exact RAM savings have not been benchmarked, but they have lower inference cost than Medium.
+3. Check other host workloads. Paperless, Ollama, the OS/cache and unrelated services also need memory.
+4. Raise `OCR_MEMORY_LIMIT` only when the host genuinely has spare RAM. It is a safety ceiling, not a RAM-reduction setting.
 
-## OCR retries and final failures
+The image limit affects only the temporary image sent to PaddleOCR. The original Paperless document is unchanged.
 
-Transient OCR failures are retried inside the Paperless/OCRmyPDF import while the consume task is still active. The default waits are 15 seconds, 1 minute, 5 minutes and 10 minutes. Change or disable the schedule under **App Settings → OCR**. The default schedule is kept below Paperless' 1800-second worker timeout with room for the OCR attempts; longer custom schedules may require a higher `PAPERLESS_WORKER_TIMEOUT`.
+If the kernel reports a **global host OOM**, increasing only the OCR container limit can make the host-wide problem worse.
 
-The **OCR recovery** card shows four normal states:
+## OCR retries and failures
 
-- **Ready** — no recovery action is needed;
-- **OCR running** — an OCR attempt is active;
-- **Waiting to retry** — a transient failure was detected and another bounded attempt is scheduled; **Retry now** skips only the remaining wait;
-- **Needs attention** — the configured retries were exhausted or the failure was classified as deterministic.
+Temporary OCR errors are retried automatically. The default waits are 15 seconds, 1 minute, 5 minutes and 10 minutes.
 
-Only transient failures are retried. Authentication/configuration errors, OCR language mismatches, malformed input and deterministic Paddle errors fail immediately.
+The **OCR recovery** card shows:
 
-Final failures remain visible in Paperless File Tasks and are also kept in the Control Center's bounded **Recent final failures** history. Paperless-ngx 3.0.5 does not expose a supported generic retry operation for an already failed initial consume task, so the Control Center deliberately does not pretend it can safely requeue that completed failure. Fix the cause, then submit the source again through Paperless. **Dismiss** only removes the Control Center history entry.
+- **Ready** — OCR is available and no action is needed;
+- **OCR running** — a page is currently being processed;
+- **Waiting to retry** — the same page will be retried automatically after a temporary problem; **Retry now** skips only the remaining wait;
+- **Needs attention** — OCR did not recover automatically and the underlying problem needs to be fixed.
 
-If repeated failures are memory-related, lower **Maximum OCR image side** before increasing the OCR container memory limit.
+Raw exception text is available under **Technical details**. Common memory-related errors also point back to **Maximum OCR image dimension** as the first setting to reduce.
+
+Errors that are unlikely to resolve on their own, such as invalid authentication, an OCR-language mismatch, invalid configuration or malformed input, are not retried.
+
+If all attempts fail, the failed task remains visible in Paperless File Tasks and the Control Center keeps a bounded **Recent OCR failures** list. Paperless-ngx 3.0.5 does not provide a supported generic retry action for an already failed initial consume task. Fix the cause, then submit the source again through Paperless. **Dismiss** only hides the Control Center notice; it does not retry, modify or delete the document.
+
+With one Paperless task worker, later imports wait behind a document that is currently in retry backoff. The failed Paddle process has already stopped during the wait, so its heavy OCR memory is released.
+
+For longer custom retry schedules, remember that Paperless' worker timeout is 1800 seconds by default.
 
 ## App settings seem ignored
 
@@ -163,7 +178,7 @@ Deployment-owned values such as ports, mounts, HPI enablement, CPU/RAM/shared-me
 
 Check:
 
-- **Enable in production** is on under Correspondent fallback;
+- **Automatic fallback** is on under Correspondent fallback;
 - fallback produced a genuinely new name;
 - the document still has the review tag;
 - Paperless AI settings point at the suggestion bridge;
