@@ -332,6 +332,7 @@ def list_history():
                 "history_saved_at": data.get("history_saved_at"),
                 "history_source": data.get("history_source"),
                 "config_sha256": config_hash(data),
+                "summary": f"{data.get('model', 'model unknown')} · {data.get('num_ctx', '?')} context",
             })
         except Exception:
             items.append({

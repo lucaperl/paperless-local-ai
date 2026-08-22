@@ -59,6 +59,7 @@ HOST = os.getenv("PROMPT_UI_HOST", "0.0.0.0")
 PORT = int(os.getenv("PROMPT_UI_PORT", "8080"))
 client = PaperlessClient()
 PAPERLESS_TOKEN = os.environ.get("PAPERLESS_TOKEN", "")
+OCR_SERVICE_INTERNAL_URL = os.getenv("OCR_SERVICE_INTERNAL_URL", "http://ocr-service:8082").rstrip("/")
 
 
 HTML = r'''<!doctype html>
@@ -120,6 +121,8 @@ textarea{min-height:250px;resize:vertical;line-height:1.45}.split{display:grid;g
 .status-box{padding:9px 11px;border-radius:8px;background:#111b28;border:1px solid var(--line);color:var(--muted);white-space:pre-wrap}.status-box.good{color:var(--green)}
 .pill.warn{color:var(--orange);border-color:#6a5127;background:#261d0f}.pill.bad{color:var(--red);border-color:#653638;background:#2b1517}
 .ocr-recovery-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.ocr-recovery-actions{display:flex;align-items:center;gap:9px}.failure-item{padding:11px 0;border-bottom:1px solid var(--line)}.failure-item:last-child{border-bottom:0}.failure-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.failure-error{margin-top:5px;color:var(--muted);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.result .primary-result{grid-column:1/-1;order:-1}.result-summary{padding:12px;border:1px solid var(--line);border-radius:9px;background:#0d1520}.result-state{font-weight:700;margin-bottom:10px}.result-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.result-field{padding:8px 9px;border:1px solid #263448;border-radius:8px;background:#0b121b}.result-field span{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}.result-field strong{overflow-wrap:anywhere}.advanced-settings{margin-top:14px}.advanced-settings .help-body{color:var(--text)}
+@media(max-width:760px){.result-fields{grid-template-columns:1fr}}
 .mock-note{margin-top:18px;color:var(--subtle);font-size:11px;text-align:right}
 @media(max-width:1100px){.app{grid-template-columns:210px 1fr}.hero-grid{grid-template-columns:1fr 1fr}.section-grid,.split,.result{grid-template-columns:1fr}.form-grid.three{grid-template-columns:1fr 1fr}}
 @media(max-width:760px){.app{display:block}.sidebar{position:static;height:auto}.nav-group{grid-template-columns:repeat(2,minmax(0,1fr))}.nav-label{grid-column:1/-1}.sidebar-footer{display:none}.topbar{position:static;padding:14px 16px}.content{padding:18px 16px 36px}.hero-grid,.form-grid,.form-grid.three,.connection-row{grid-template-columns:1fr}.test-row{grid-template-columns:1fr}.toolbar-status{margin-left:0;width:100%}.placeholder-grid{grid-template-columns:1fr}}
@@ -409,13 +412,13 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
     <div class="nav-group">
       <div class="nav-label">Control Center</div>
       <button class="nav-btn active" data-page="overview"><span class="nav-icon">◫</span>Overview</button>
-      <button class="nav-btn" data-page="classification"><span class="nav-icon">◎</span>Classification</button>
-      <button class="nav-btn" data-page="correspondent"><span class="nav-icon">↪</span>Correspondent</button>
       <button class="nav-btn" data-page="app-settings"><span class="nav-icon">⚙</span>App Settings</button>
+      <button class="nav-btn" data-page="classification"><span class="nav-icon">◎</span>Classification</button>
+      <button class="nav-btn" data-page="correspondent"><span class="nav-icon">↪</span>Correspondent fallback</button>
     </div>
     <div class="sidebar-footer">
       <div class="status-line"><span class="dot"></span><strong id="sidebarMode">Loading…</strong></div>
-      <div id="sidebarAppVersion" class="mini" style="margin-top:8px">AppConfig …</div><div id="sidebarModel" class="mini">Loading…</div>
+      <div id="sidebarAppVersion" class="mini" style="margin-top:8px">Settings …</div><div id="sidebarModel" class="mini">Loading…</div>
     </div>
   </aside>
 
@@ -429,7 +432,7 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
       <section class="page active" id="page-overview">
         <details class="section-help">
           <summary>About the Control Center</summary>
-          <div class="help-body">Configure the app, validate connections, preview exact prompts and run real model tests before enabling production metadata writes. Deployment-only values and the Paperless API token remain in <code>.env</code>.</div>
+          <div class="help-body">Configure connections, workflow tags, OCR and model settings, then run safe tests against real Paperless documents before enabling metadata writes. Deployment-only values and secrets remain in the deployment configuration.</div>
         </details>
         <div class="hero-grid">
           <div id="overviewPaperlessCard" class="card metric-card"><div class="metric-top"><div><div class="metric-title">Paperless-ngx</div><div id="overviewPaperlessStatus" class="metric-value">Checking…</div></div><div class="metric-icon">P</div></div><div id="overviewPaperlessDetail" class="metric-detail">Loading…</div></div>
@@ -475,7 +478,7 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
                     <div class="pipeline-num">3</div>
                     <div class="pipeline-copy">
                       <div class="pipeline-title">PaddleOCR for scanned pages</div>
-                      <div class="pipeline-desc">Pages that need OCR use the selected PP-OCRv6 profile with HPI/OpenVINO, then return searchable text to Paperless/OCRmyPDF.</div>
+                      <div class="pipeline-desc">Pages that need OCR are processed by the selected PaddleOCR model, then searchable text is returned to Paperless/OCRmyPDF.</div>
                     </div>
                   </div>
 
@@ -483,14 +486,14 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
                     <div class="pipeline-num">4</div>
                     <div class="pipeline-copy">
                       <div class="pipeline-title">Automatic metadata classification</div>
-                      <div class="pipeline-desc">After Paperless adds the document and assigns the LLM queue tag, one structured request determines title, document type, date, tags and an existing correspondent.</div>
+                      <div class="pipeline-desc">After Paperless adds the document and assigns the classification queue tag, one LLM request with structured JSON output determines title, document type, date, tags and an existing correspondent.</div>
                     </div>
                   </div>
                 </div>
 
                 <div class="trigger-rule">
                   <strong>What happens after classification?</strong>
-                  The correspondent fallback is considered only when the primary classification returns <strong>no correspondent</strong>. It runs only if the fallback is enabled under Correspondent → Settings.
+                  The Correspondent fallback is considered only when Classification returns <strong>no correspondent</strong>. It runs only when automatic fallback is enabled under Correspondent fallback → Settings.
                 </div>
 
                 <div class="branch-choice">
@@ -503,7 +506,7 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
                       </div>
                       <div class="branch-copy">
                         The primary classification matched one of the correspondents already present in Paperless.
-                        That correspondent continues with the other metadata directly to write-back.
+                        That correspondent is applied together with the other metadata.
                       </div>
                     </div>
 
@@ -512,7 +515,7 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
                         <div class="branch-label bypass">No correspondent · fallback disabled</div>
                       </div>
                       <div class="branch-copy">
-                        No additional LLM call runs. The document continues to write-back with the correspondent left empty.
+                        No additional LLM call runs. The other metadata is applied and the correspondent remains empty.
                       </div>
                     </div>
 
@@ -527,19 +530,23 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
 
                       <div class="branch-outcomes">
                         <div class="branch-outcome">
-                          <strong>Existing or no reliable correspondent</strong>
-                          <span class="ok">write back</span>
+                          <strong>Existing correspondent</strong>
+                          <span class="ok">apply automatically</span>
                         </div>
                         <div class="branch-outcome">
                           <strong>New correspondent</strong>
-                          <span class="review">Paperless Suggestions</span>
+                          <span class="review">Document Suggestions</span>
+                        </div>
+                        <div class="branch-outcome">
+                          <strong>No reliable correspondent</strong>
+                          <span class="empty">left empty</span>
                         </div>
                       </div>
                     </div>
                   </div>
 
                   <div class="branch-merge">
-                    <span class="branch-merge-pill">all paths continue to write-back ↓</span>
+                    <span class="branch-merge-pill">all paths continue to metadata update ↓</span>
                   </div>
                 </div>
 
@@ -547,7 +554,7 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
                   <div class="pipeline-step local">
                     <div class="pipeline-num">5</div>
                     <div class="pipeline-copy">
-                      <div class="pipeline-title">Write back to Paperless</div>
+                      <div class="pipeline-title">Apply metadata to Paperless</div>
                       <div class="pipeline-desc">Metadata is applied to the same Paperless document; processing tags move it into the normal review state.</div>
                     </div>
                   </div>
@@ -561,8 +568,8 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
                     <div class="pipeline-step paperless">
                       <div class="pipeline-num">6</div>
                       <div class="pipeline-copy">
-                        <div class="pipeline-title">Paperless review</div>
-                        <div class="pipeline-desc">The normal Paperless workflow continues. Any proposed new correspondent is shown through Paperless Suggestions for human review.</div>
+                        <div class="pipeline-title">Review in Paperless</div>
+                        <div class="pipeline-desc">The normal Paperless workflow continues. Any proposed new correspondent is shown through Paperless Document Suggestions for human review.</div>
                       </div>
                     </div>
                   </div>
@@ -571,9 +578,9 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
             </div>
           </div>
           <div class="card section">
-            <h2>Current configuration</h2><p>Only values already available from the current APIs.</p>
+            <h2>Current configuration</h2><p>The settings most likely to matter during normal operation.</p>
             <div style="margin-top:12px">
-              <div class="kv"><span>Mode</span><strong id="overviewMode">Loading…</strong></div><div class="kv"><span>Classification</span><span id="overviewClassification">Loading…</span></div><div class="kv"><span>Correspondent fallback</span><span id="overviewCorrConfig">Loading…</span></div><div class="kv"><span>Polling interval</span><span id="overviewPoll">Loading…</span></div><div class="kv"><span>Review cleanup</span><span id="overviewCleanup">Loading…</span></div><div class="kv"><span>Max classification tags</span><span id="overviewMaxTags">Loading…</span></div>
+              <div class="kv"><span>Metadata writes</span><strong id="overviewMetadataWrites">Loading…</strong></div><div class="kv"><span>Classification model</span><span id="overviewClassification">Loading…</span></div><div class="kv"><span>Context window</span><span id="overviewContext">Loading…</span></div><div class="kv"><span>PaddleOCR model</span><span id="overviewOcrConfig">Loading…</span></div><div class="kv"><span>OCR image dimension</span><span id="overviewOcrImageSize">Loading…</span></div><div class="kv"><span>Correspondent fallback</span><span id="overviewCorrConfig">Loading…</span></div>
             </div>
           </div>
         </div>
@@ -581,25 +588,25 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
 
       <section class="page" id="page-classification">
         <div class="page-head">
-          <div><h1>Document classification</h1><p>Stage 1 runs for every document picked up by automatic LLM processing. The model determines title, document type, an existing Paperless correspondent, classification tags and document date in one structured request. Valid results are written directly to Paperless. If the correspondent remains empty, stage 2 can run afterwards.</p></div>
+          <div><h1>Document classification</h1><p>Classification runs for every document picked up by automatic metadata processing. One LLM request with structured JSON output determines title, document type, an existing Paperless correspondent, tags and document date. Valid results are applied directly to Paperless. If the correspondent remains empty, the optional Correspondent fallback can run afterwards.</p></div>
           <div id="classConfigStatus" class="config-badge">Loading…</div>
         </div>
         <div class="toolbar">
-          <button id="validateBtn" class="btn">Validate configuration</button>
+          <button id="validateBtn" class="btn">Check configuration</button>
           <button id="saveBtn" class="btn primary">Save changes</button>
-          <span id="saveStatus" class="toolbar-status">Nothing validated or saved yet.</span>
+          <span id="saveStatus" class="toolbar-status">Saved configuration loaded.</span>
         </div>
         <details class="section-help">
-          <summary>What do Validate and Save do?</summary>
-          <div class="help-body"><strong>Validate configuration</strong> checks required fields, placeholders and values without saving. <strong>Save changes</strong> creates a new version that is used from the next production classification job. No restart is required.</div>
+          <summary>What do Check and Save do?</summary>
+          <div class="help-body"><strong>Check configuration</strong> is optional and checks required fields, placeholders and values without saving. <strong>Save changes</strong> creates a new version that is used from the next production classification job. No restart is required.</div>
         </details>
 
         <div class="tabs" data-tabs="classification">
-          <button class="tab active" data-tab="class-prompt">Prompt</button><button class="tab" data-tab="class-test">Test</button><button class="tab" data-tab="class-output">Output &amp; allowed values</button><button class="tab" data-tab="class-settings">Settings</button><button class="tab" data-tab="class-history">History</button>
+          <button class="tab" data-tab="class-prompt">Prompt</button><button class="tab active" data-tab="class-test">Test</button><button class="tab" data-tab="class-output">Output &amp; allowed values</button><button class="tab" data-tab="class-settings">Settings</button><button class="tab" data-tab="class-history">History</button>
         </div>
 
-        <div class="tab-page active" id="class-prompt">
-          <details class="section-help"><summary>What is edited here?</summary><div class="help-body">The system prompt contains the general rules for stage 1. The classification prompt contains the task for one document. Placeholders such as <code>{{DOCUMENT_TEXT}}</code> are replaced with data from the selected Paperless document immediately before the model call.</div></details>
+        <div class="tab-page" id="class-prompt">
+          <details class="section-help"><summary>What is edited here?</summary><div class="help-body">The system prompt contains the general classification rules. The classification prompt contains the task for one document. Placeholders such as <code>{{DOCUMENT_TEXT}}</code> are replaced with data from the selected Paperless document immediately before the model call.</div></details>
           <div class="card panel" style="margin-bottom:14px"><div class="form-grid" style="align-items:end">
             <div class="field"><label>Prompt preset <button type="button" class="info-btn" data-tip="Built-in starting points for the prompt text. Loading a preset changes only the visible draft; it does not save or activate anything automatically.">i</button></label><select id="classPromptPreset"></select></div>
             <div><button id="classLoadPresetBtn" class="btn">Load preset into draft</button><div class="field-help">Replaces the two visible prompt fields only. Review or edit them, then save to activate.</div></div>
@@ -621,47 +628,49 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
           </div>
         </div>
 
-        <div class="tab-page" id="class-test">
-          <div class="action-note"><span>ⓘ</span><div><strong>Safe test before production.</strong> Select an existing Paperless document by ID. <strong>Preview final prompt</strong> loads the document and taxonomy and shows exactly what would be sent to the model without calling it. <strong>Run model test</strong> additionally performs a real Ollama request. Both use the currently visible, even unsaved draft and never modify the Paperless document.</div></div>
+        <div class="tab-page active" id="class-test">
+          <div class="action-note"><span>ⓘ</span><div><strong>Safe test with a real document.</strong> Select an existing Paperless document by ID. <strong>Preview prompts</strong> loads the document and current Paperless metadata values and shows what would be sent to the model without calling it. <strong>Run model test</strong> additionally performs a real Ollama request. Both use the currently visible, even unsaved draft and never modify the Paperless document.</div></div>
           <div class="card panel">
             <div class="test-row">
-              <div class="field"><label>Paperless document ID <button type="button" class="info-btn" data-tip="Numeric document ID from Paperless, for example from the document URL or API.">i</button></label><input id="docId" class="mono" type="number" min="1" value="93"></div>
-              <button id="previewBtn" class="btn">Preview final prompt</button>
+              <div class="field"><label>Paperless document ID <button type="button" class="info-btn" data-tip="Numeric document ID from Paperless, for example from the document URL or API.">i</button></label><input id="docId" class="mono" type="number" min="1" placeholder="e.g. 123"></div>
+              <button id="previewBtn" class="btn">Preview prompts</button>
               <button id="testBtn" class="btn primary">Run model test</button>
-              <div class="mini">A live model test uses the same shared AI lock as OCR and production LLM jobs. These expensive tasks therefore do not run at the same time; if the AI slot is busy, the test waits.</div>
+              <div class="mini">OCR and LLM inference run one at a time to avoid competing for the same CPU and RAM. If another AI task is active, the test waits.</div>
             </div>
             <div id="testStatus" class="status-box" style="margin-top:12px">Ready for prompt preview or model test.</div>
           </div>
           <div class="result">
             <div class="card panel"><h3 style="margin-top:0">System message sent to the model</h3><p class="mini">Exact rendered system prompt for this test.</p><pre id="systemPreview" class="preview"></pre></div>
             <div class="card panel"><h3 style="margin-top:0">User message sent to the model</h3><p class="mini">Exact rendered classification prompt including substituted placeholders.</p><pre id="userPreview" class="preview"></pre></div>
-            <div class="card panel"><h3 style="margin-top:0">Model response and validation</h3><p class="mini">Filled only by <strong>Run model test</strong>. Shows the structured suggestion, validation errors and performance data.</p><pre id="testResult" class="preview"></pre></div>
+            <div class="card panel primary-result"><h3 style="margin-top:0">Classification result</h3><p class="mini">Filled only by <strong>Run model test</strong>. The normal view shows the metadata result; raw response/validation/performance data stays under Technical details.</p><div id="classificationResultHuman" class="result-summary"><span class="mini">Run a model test to see the classification result.</span></div><details class="section-help" style="margin:10px 0 0"><summary>Technical details</summary><div class="help-body"><pre id="testResult" class="preview"></pre></div></details></div>
             <div class="card panel"><h3 style="margin-top:0">Test request details</h3><p class="mini">Technical details about the rendered request, such as configuration version and amount of document text used.</p><pre id="previewMeta" class="preview"></pre></div>
           </div>
         </div>
 
         <div class="tab-page" id="class-output">
-          <details class="section-help"><summary>What is shown here?</summary><div class="help-body">The output schema is the fixed JSON contract the model response must satisfy. Allowed Paperless values show the taxonomy loaded by the most recent preview or model test. Stage 1 can use only current list values for document type, correspondent and tags.</div></details>
+          <details class="section-help"><summary>What is shown here?</summary><div class="help-body">The output schema is the JSON contract the model response must satisfy. Allowed Paperless values are loaded by the most recent preview or model test. Classification can use only current list values for document type, correspondent and tags.</div></details>
           <div class="split">
-            <div class="card panel"><h3 style="margin-top:0">Expected JSON output</h3><p class="mini">Defines fields, data types and allowed values for the model response. It is generated automatically from the current configuration.</p><pre id="schemaPreview" class="preview"></pre></div>
-            <div class="card panel"><h3 style="margin-top:0">Currently allowed Paperless values</h3><p class="mini">Document types, correspondents and classification tags loaded from Paperless during the latest preview or model test. Technical process tags such as <code>Inbox</code> or <code>LLM</code> are excluded.</p><pre id="taxonomyPreview" class="preview"></pre></div>
+            <div class="card panel"><h3 style="margin-top:0">Output schema</h3><p class="mini">Defines fields, data types and allowed values for the model response. It is generated automatically from the current configuration.</p><pre id="schemaPreview" class="preview"></pre></div>
+            <div class="card panel"><h3 style="margin-top:0">Currently allowed Paperless values</h3><p class="mini">Document types, correspondents and tags loaded from Paperless during the latest preview or model test. Workflow tags such as <code>Inbox</code> or <code>LLM</code> are excluded.</p><pre id="taxonomyPreview" class="preview"></pre></div>
           </div>
         </div>
 
         <div class="tab-page" id="class-settings">
-          <details class="section-help"><summary>About these settings</summary><div class="help-body">These settings apply only to Stage 1. Changes affect production only after <strong>Save changes</strong>. They do not modify Ollama itself or the installed model.</div></details>
-          <div class="card panel"><div class="form-grid three">
-            <div class="field"><label>Ollama model <span class="mini">(model)</span> <button type="button" class="info-btn" data-tip="Exact name of a model already installed in Ollama, for example qwen3.5:4b. The Control Center does not download or install models.">i</button></label><input id="model"></div>
-            <div class="field"><label>Context window in tokens <span class="mini">(num_ctx)</span> <button type="button" class="info-btn" data-tip="Maximum context Ollama provides for prompt and response. A larger value allows more text but uses more memory and may be slower.">i</button></label><input id="numCtx" type="number"></div>
-            <div class="field"><label>Maximum response length in tokens <span class="mini">(num_predict)</span> <button type="button" class="info-btn" data-tip="Upper limit for the generated JSON response. Too small a value can truncate the response; it does not control the amount of document text read.">i</button></label><input id="numPredict" type="number"></div>
-            <div class="field"><label>Output randomness <span class="mini">(temperature)</span> <button type="button" class="info-btn" data-tip="0 provides the most reproducible results and is recommended for metadata. Higher values make responses more variable.">i</button></label><input id="temperature" type="number" min="0" max="2" step="0.05"></div>
-            <div class="field"><label>Additional model reasoning <span class="mini">(think)</span> <button type="button" class="info-btn" data-tip="Off is intended for this short structured classification. On enables the model's thinking mode and uses additional time/tokens.">i</button></label><select id="think"><option value="false">Off</option><option value="true">On</option></select></div>
-            <div class="field"><label>Keep model loaded after the job <span class="mini">(keep_alive)</span> <button type="button" class="info-btn" data-tip="Passed directly to Ollama. 0 unloads the model after the request; for example 5m keeps it loaded for five minutes. Longer keep-alive uses RAM for longer.">i</button></label><input id="keepAlive"></div>
-            <div class="field"><label>Maximum document text in characters <span class="mini">(content_char_limit)</span> <button type="button" class="info-btn" data-tip="Maximum number of characters from Paperless content included in the prompt. Shorter documents are used in full; longer documents are truncated according to the setting below.">i</button></label><input id="contentLimit" type="number"></div>
-            <div class="field"><label>Share kept from document start when truncated <span class="mini">(content_head_ratio)</span> <button type="button" class="info-btn" data-tip="Applies only when the document exceeds the character limit. 0.75 means 75% of the retained text comes from the start and 25% from the end.">i</button></label><input id="headRatio" type="number" min="0.5" max="0.95" step="0.05"></div>
-            <div class="field"><label>Maximum classification tags <span class="mini">(max_tags)</span> <button type="button" class="info-btn" data-tip="Limits how many classification tags the model response may contain. The value is applied directly to the output schema and validation; process tags do not count.">i</button></label><input id="maxTags" type="number" min="1" max="10"></div>
-            <div class="field"><label>Ollama timeout in seconds <span class="mini">(timeout)</span> <button type="button" class="info-btn" data-tip="Maximum time the worker waits for the model request. If exceeded, the request fails and follows normal error handling.">i</button></label><input id="ollamaTimeout" type="number"></div>
+          <details class="section-help"><summary>About these settings</summary><div class="help-body">These settings control Classification only. Changes are used by automatic classification after <strong>Save changes</strong>. They do not install or modify Ollama models.</div></details>
+          <div class="card panel"><h3 style="margin-top:0">Model and document input</h3><div class="form-grid three">
+            <div class="field"><label>Ollama model <button type="button" class="info-btn" data-tip="Exact name of a model already installed in Ollama, for example qwen3.5:4b. The Control Center does not download or install models.">i</button></label><input id="model"></div>
+            <div class="field"><label>Context window <button type="button" class="info-btn" data-tip="Maximum context window provided to the model, in tokens. Larger values allow more prompt/document text but use more memory and may be slower. Ollama parameter: num_ctx.">i</button></label><input id="numCtx" type="number"></div>
+            <div class="field"><label>Document text limit <button type="button" class="info-btn" data-tip="Maximum number of characters from Paperless document content included in the prompt. Shorter documents are used in full; longer documents are truncated.">i</button></label><input id="contentLimit" type="number"></div>
+            <div class="field"><label>Maximum tags returned by the model <button type="button" class="info-btn" data-tip="Limits how many Paperless tags the model may return. Workflow/review tags do not count.">i</button></label><input id="maxTags" type="number" min="1" max="10"></div>
           </div></div>
+          <details class="section-help advanced-settings"><summary>Advanced model settings</summary><div class="help-body"><div class="form-grid three">
+            <div class="field"><label>Maximum output tokens <button type="button" class="info-btn" data-tip="Maximum number of tokens Ollama may generate for the JSON response. Too small a value can truncate the result. Ollama parameter: num_predict.">i</button></label><input id="numPredict" type="number"></div>
+            <div class="field"><label>Temperature <button type="button" class="info-btn" data-tip="Sampling temperature. 0 is recommended for reproducible metadata; higher values make responses more variable.">i</button></label><input id="temperature" type="number" min="0" max="2" step="0.05"></div>
+            <div class="field"><label>Thinking <button type="button" class="info-btn" data-tip="Enables the model's thinking mode before the final response. It can use additional tokens and processing time, and not every model supports it. Ollama parameter: think.">i</button></label><select id="think"><option value="false">Off</option><option value="true">On</option></select></div>
+            <div class="field"><label>Keep alive <button type="button" class="info-btn" data-tip="How long Ollama keeps the model loaded after the request. 0 unloads it immediately; for example 5m keeps it loaded for five minutes. Ollama parameter: keep_alive.">i</button></label><input id="keepAlive"></div>
+            <div class="field"><label>Text kept from beginning <button type="button" class="info-btn" data-tip="Used only when document text exceeds the configured limit. 0.75 keeps 75% of the retained text from the beginning and 25% from the end.">i</button></label><input id="headRatio" type="number" min="0.5" max="0.95" step="0.05"></div>
+            <div class="field"><label>Request timeout <button type="button" class="info-btn" data-tip="Maximum number of seconds the worker waits for the Ollama request before treating it as failed.">i</button></label><input id="ollamaTimeout" type="number"></div>
+          </div></div></details>
         </div>
 
         <div class="tab-page" id="class-history">
@@ -676,16 +685,16 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
 
       <section class="page" id="page-correspondent">
         <div class="page-head">
-          <div><h1>Correspondent fallback</h1><p>Stage 2 is optional and runs only when stage 1 found no correspondent and <strong>Enable in production</strong> is on. It identifies only the correspondent. An unambiguous existing Paperless correspondent is applied automatically. A genuinely new name is never created automatically; it appears as a native Paperless suggestion for confirmation. If no reliable name is found, nothing changes.</p></div>
+          <div><h1>Correspondent fallback</h1><p>This optional fallback runs only when Classification found no correspondent and <strong>Automatic fallback</strong> is enabled. It identifies only the correspondent. An unambiguous existing Paperless correspondent is applied automatically. A genuinely new name is never created automatically; it appears in Paperless Document Suggestions for confirmation. If no reliable name is found, nothing changes.</p></div>
           <div id="corrConfigStatus" class="config-badge">Loading…</div>
         </div>
-        <div class="toolbar"><button id="corrValidateBtn" class="btn">Validate configuration</button><button id="corrSaveBtn" class="btn primary">Save changes</button><span id="corrSaveStatus" class="toolbar-status">Nothing validated or saved yet.</span></div>
-        <details class="section-help"><summary>What do Validate and Save do?</summary><div class="help-body"><strong>Validate configuration</strong> checks required fields, placeholders and values without saving. <strong>Save changes</strong> creates a new version. The <strong>Enable in production</strong> switch under Settings controls whether Stage 2 runs automatically.</div></details>
+        <div class="toolbar"><button id="corrValidateBtn" class="btn">Check configuration</button><button id="corrSaveBtn" class="btn primary">Save changes</button><span id="corrSaveStatus" class="toolbar-status">Saved configuration loaded.</span></div>
+        <details class="section-help"><summary>What do Check and Save do?</summary><div class="help-body"><strong>Check configuration</strong> is optional and checks required fields, placeholders and values without saving. <strong>Save changes</strong> creates a new version. The <strong>Automatic fallback</strong> switch under Settings controls whether the fallback runs automatically.</div></details>
 
-        <div class="tabs" data-tabs="correspondent"><button class="tab active" data-tab="corr-prompt">Prompt</button><button class="tab" data-tab="corr-test">Test</button><button class="tab" data-tab="corr-settings">Settings</button><button class="tab" data-tab="corr-history">History</button></div>
+        <div class="tabs" data-tabs="correspondent"><button class="tab" data-tab="corr-prompt">Prompt</button><button class="tab active" data-tab="corr-test">Test</button><button class="tab" data-tab="corr-settings">Settings</button><button class="tab" data-tab="corr-history">History</button></div>
 
-        <div class="tab-page active" id="corr-prompt">
-          <details class="section-help"><summary>What is edited here?</summary><div class="help-body">These prompts belong only to stage 2. They do not affect the title, document type, tags or date from stage 1. Unlike stage 1, this pass may suggest a new correspondent name, but it does not create one.</div></details>
+        <div class="tab-page" id="corr-prompt">
+          <details class="section-help"><summary>What is edited here?</summary><div class="help-body">These prompts belong only to the Correspondent fallback. They do not affect title, document type, tags or date from Classification. The fallback may suggest a new correspondent name, but it does not create one.</div></details>
           <div class="card panel" style="margin-bottom:14px"><div class="form-grid" style="align-items:end">
             <div class="field"><label>Prompt preset <button type="button" class="info-btn" data-tip="Built-in starting points for sender-identification prompt text. Loading a preset changes only the visible draft; it does not save or enable production use automatically.">i</button></label><select id="corrPromptPreset"></select></div>
             <div><button id="corrLoadPresetBtn" class="btn">Load preset into draft</button><div class="field-help">Replaces the two visible prompt fields only. Review or edit them, then save to activate.</div></div>
@@ -696,51 +705,53 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
           </div>
           <div class="card panel" style="margin-top:14px">
             <h3 style="margin-top:0">Available placeholders</h3>
-            <p class="mini"><code>{{DOCUMENT_TEXT}}</code> is required. <code>{{CORRESPONDENTS_JSON}}</code> and <code>{{CORRESPONDENTS_LINES}}</code> provide existing Paperless correspondents as reference. This list is not a hard restriction in stage 2: if the actual sender does not yet exist, the model may suggest a new name.</p>
+            <p class="mini"><code>{{DOCUMENT_TEXT}}</code> is required. <code>{{CORRESPONDENTS_JSON}}</code> and <code>{{CORRESPONDENTS_LINES}}</code> provide existing Paperless correspondents as reference. This list is not a hard restriction for the fallback: if the actual sender does not yet exist, the model may suggest a new name.</p>
             <div id="corrPlaceholders" class="placeholder-grid"></div>
           </div>
         </div>
 
-        <div class="tab-page" id="corr-test">
-          <div class="action-note"><span>ⓘ</span><div><strong>What happens during testing?</strong> <strong>Preview final prompt</strong> shows the exact Stage 2 input for a real Paperless document without calling the model. <strong>Run model test</strong> performs a real Ollama request. Neither Paperless metadata nor persistent review suggestions are written. Testing works even when <strong>Enable in production</strong> is off.</div></div>
+        <div class="tab-page active" id="corr-test">
+          <div class="action-note"><span>ⓘ</span><div><strong>Safe test with a real document.</strong> <strong>Preview prompts</strong> shows the exact Correspondent fallback input without calling the model. <strong>Run model test</strong> performs a real Ollama request. Neither Paperless metadata nor Document Suggestions are written. Testing works even when <strong>Automatic fallback</strong> is off.</div></div>
           <div class="card panel">
             <div class="test-row">
-              <div class="field"><label>Paperless document ID <button type="button" class="info-btn" data-tip="Numeric document ID from Paperless, for example from the document URL or API.">i</button></label><input id="corrDocId" type="number" min="1" value="93"></div>
-              <button id="corrPreviewBtn" class="btn">Preview final prompt</button>
+              <div class="field"><label>Paperless document ID <button type="button" class="info-btn" data-tip="Numeric document ID from Paperless, for example from the document URL or API.">i</button></label><input id="corrDocId" type="number" min="1" placeholder="e.g. 123"></div>
+              <button id="corrPreviewBtn" class="btn">Preview prompts</button>
               <button id="corrTestBtn" class="btn primary">Run model test</button>
-              <div class="mini">Preview and model test use the currently visible, even unsaved draft. A live model test uses the shared AI lock so OCR and LLM jobs do not consume the available resources at the same time.</div>
+              <div class="mini">Preview and model test use the currently visible, even unsaved draft. OCR and LLM inference run one at a time to avoid competing for the same CPU and RAM.</div>
             </div>
             <div id="corrTestStatus" class="status-box" style="margin-top:12px">Ready for prompt preview or model test.</div>
           </div>
           <div class="result">
             <div class="card panel"><h3 style="margin-top:0">System message sent to the model</h3><p class="mini">Exact rendered system prompt for this test.</p><pre id="corrSystemPreview" class="preview"></pre></div>
             <div class="card panel"><h3 style="margin-top:0">User message sent to the model</h3><p class="mini">Exact rendered correspondent prompt including substituted placeholders.</p><pre id="corrUserPreview" class="preview"></pre></div>
-            <div class="card panel"><h3 style="margin-top:0">Expected JSON output</h3><p class="mini">Stage 2 may return only the <code>correspondent</code> field.</p><pre id="corrSchemaPreview" class="preview"></pre></div>
-            <div class="card panel"><h3 style="margin-top:0">Model response and validation</h3><p class="mini">Filled only by <strong>Run model test</strong>. Shows the candidate, validation errors and performance data.</p><pre id="corrTestResult" class="preview"></pre></div>
+            <div class="card panel"><h3 style="margin-top:0">Output schema</h3><p class="mini">The Correspondent fallback may return only the <code>correspondent</code> field.</p><pre id="corrSchemaPreview" class="preview"></pre></div>
+            <div class="card panel primary-result"><h3 style="margin-top:0">Correspondent result</h3><p class="mini">Filled only by <strong>Run model test</strong>. The normal view shows whether the result matches an existing correspondent, proposes a new one or remains empty.</p><div id="correspondentResultHuman" class="result-summary"><span class="mini">Run a model test to see the correspondent result.</span></div><details class="section-help" style="margin:10px 0 0"><summary>Technical details</summary><div class="help-body"><pre id="corrTestResult" class="preview"></pre></div></details></div>
             <div class="card panel" style="grid-column:1/-1"><h3 style="margin-top:0">Test request details</h3><p class="mini">Technical details about the rendered request, such as configuration version and amount of document text used.</p><pre id="corrPreviewMeta" class="preview"></pre></div>
           </div>
         </div>
 
         <div class="tab-page" id="corr-settings">
-          <details class="section-help"><summary>About these settings</summary><div class="help-body">These settings apply only to stage 2. Configure whether the fallback runs automatically in production and which model/text parameters it uses. Tests in the Test tab are always available, regardless of the production switch.</div></details>
-          <div class="card panel"><h3 style="margin-top:0">Production use</h3>
-            <div class="field"><label>Enable in production <span class="mini">(enabled)</span> <button type="button" class="info-btn" data-tip="When On, stage 2 starts automatically only when stage 1 returned no correspondent. An exact existing Paperless name is applied directly; a new name is stored only as a suggestion for confirmation. Empty or uncertain results change nothing. This switch does not affect manual tests.">i</button></label><select id="corrEnabled"><option value="false">Off — manual testing only</option><option value="true">On — run when correspondent is empty</option></select></div>
+          <details class="section-help"><summary>About these settings</summary><div class="help-body">These settings control the Correspondent fallback only. Manual tests remain available whether automatic fallback is enabled or disabled.</div></details>
+          <div class="card panel"><h3 style="margin-top:0">Automatic fallback</h3>
+            <div class="field"><label>Automatic fallback <button type="button" class="info-btn" data-tip="When On, the fallback starts automatically only when Classification returned no correspondent. An exact existing Paperless correspondent is applied directly; a new name is shown through Document Suggestions for confirmation. Empty or uncertain results change nothing. This switch does not affect manual tests.">i</button></label><select id="corrEnabled"><option value="false">Off — manual testing only</option><option value="true">On — run when correspondent is empty</option></select></div>
           </div>
-          <div class="card panel"><h3 style="margin-top:0">Model and request parameters</h3><div class="form-grid three">
-            <div class="field"><label>Ollama model <span class="mini">(model)</span> <button type="button" class="info-btn" data-tip="Exact name of a model already installed in Ollama. The Control Center does not download or install models.">i</button></label><input id="corrModel"></div>
-            <div class="field"><label>Context window in tokens <span class="mini">(num_ctx)</span> <button type="button" class="info-btn" data-tip="Maximum context for the prompt and response of this second model call. Larger values use more memory and may be slower.">i</button></label><input id="corrNumCtx" type="number"></div>
-            <div class="field"><label>Maximum response length in tokens <span class="mini">(num_predict)</span> <button type="button" class="info-btn" data-tip="Upper limit for the short JSON response. Because only a name or empty string is expected, this can usually be much smaller than in stage 1.">i</button></label><input id="corrNumPredict" type="number"></div>
-            <div class="field"><label>Output randomness <span class="mini">(temperature)</span> <button type="button" class="info-btn" data-tip="0 is recommended for reproducible correspondent names. Higher values make suggestions more variable and increase unnecessary name variations.">i</button></label><input id="corrTemperature" type="number" min="0" max="2" step="0.05"></div>
-            <div class="field"><label>Additional model reasoning <span class="mini">(think)</span> <button type="button" class="info-btn" data-tip="Off is intended for short correspondent identification. On enables the model's thinking mode and uses additional time/tokens.">i</button></label><select id="corrThink"><option value="false">Off</option><option value="true">On</option></select></div>
-            <div class="field"><label>Keep model loaded after the job <span class="mini">(keep_alive)</span> <button type="button" class="info-btn" data-tip="Passed directly to Ollama. 0 unloads the model after the request; for example 5m keeps it loaded for five minutes.">i</button></label><input id="corrKeepAlive"></div>
-            <div class="field"><label>Maximum document text in characters <span class="mini">(content_char_limit)</span> <button type="button" class="info-btn" data-tip="Maximum number of characters from Paperless content included in the correspondent prompt. Shorter documents are used in full.">i</button></label><input id="corrContentLimit" type="number"></div>
-            <div class="field"><label>Share kept from document start when truncated <span class="mini">(content_head_ratio)</span> <button type="button" class="info-btn" data-tip="Applies only to truncated documents. 0.75 means 75% of the retained text comes from the start and 25% from the end.">i</button></label><input id="corrHeadRatio" type="number" min="0.5" max="0.95" step="0.05"></div>
-            <div class="field"><label>Ollama timeout in seconds <span class="mini">(timeout)</span> <button type="button" class="info-btn" data-tip="Maximum time the worker waits for the second model call. If exceeded, the call fails.">i</button></label><input id="corrTimeout" type="number"></div>
+          <div class="card panel"><h3 style="margin-top:0">Model and document input</h3><div class="form-grid three">
+            <div class="field"><label>Ollama model <button type="button" class="info-btn" data-tip="Exact name of a model already installed in Ollama. The Control Center does not download or install models.">i</button></label><input id="corrModel"></div>
+            <div class="field"><label>Context window <button type="button" class="info-btn" data-tip="Maximum context window for the fallback request, in tokens. Larger values use more memory and may be slower. Ollama parameter: num_ctx.">i</button></label><input id="corrNumCtx" type="number"></div>
+            <div class="field"><label>Document text limit <button type="button" class="info-btn" data-tip="Maximum number of characters from Paperless document content included in the correspondent prompt. Shorter documents are used in full.">i</button></label><input id="corrContentLimit" type="number"></div>
           </div></div>
+          <details class="section-help advanced-settings"><summary>Advanced model settings</summary><div class="help-body"><div class="form-grid three">
+            <div class="field"><label>Maximum output tokens <button type="button" class="info-btn" data-tip="Maximum number of tokens Ollama may generate for the short JSON response. Ollama parameter: num_predict.">i</button></label><input id="corrNumPredict" type="number"></div>
+            <div class="field"><label>Temperature <button type="button" class="info-btn" data-tip="Sampling temperature. 0 is recommended for reproducible correspondent names; higher values make responses more variable.">i</button></label><input id="corrTemperature" type="number" min="0" max="2" step="0.05"></div>
+            <div class="field"><label>Thinking <button type="button" class="info-btn" data-tip="Enables the model's thinking mode before the final response. It can use additional tokens and processing time, and not every model supports it. Ollama parameter: think.">i</button></label><select id="corrThink"><option value="false">Off</option><option value="true">On</option></select></div>
+            <div class="field"><label>Keep alive <button type="button" class="info-btn" data-tip="How long Ollama keeps the model loaded after the request. 0 unloads it immediately; for example 5m keeps it loaded for five minutes. Ollama parameter: keep_alive.">i</button></label><input id="corrKeepAlive"></div>
+            <div class="field"><label>Text kept from beginning <button type="button" class="info-btn" data-tip="Used only when document text exceeds the configured limit. 0.75 keeps 75% of the retained text from the beginning and 25% from the end.">i</button></label><input id="corrHeadRatio" type="number" min="0.5" max="0.95" step="0.05"></div>
+            <div class="field"><label>Request timeout <button type="button" class="info-btn" data-tip="Maximum number of seconds the worker waits for the fallback Ollama request before treating it as failed.">i</button></label><input id="corrTimeout" type="number"></div>
+          </div></div></details>
         </div>
 
         <div class="tab-page" id="corr-history">
-          <details class="section-help"><summary>What is versioned?</summary><div class="help-body">Prompt, production switch and stage-2 settings are versioned together, completely separate from stage 1. Restoring saves the selected older state as a new current version; existing history is preserved.</div></details>
+          <details class="section-help"><summary>What is versioned?</summary><div class="help-body">Prompt, automatic-fallback switch and settings are versioned together, separately from Classification. Restoring saves the selected older state as a new current version; existing history is preserved.</div></details>
           <div class="card panel">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h3 style="margin:0">Saved versions</h3><button id="corrHistoryRefresh" class="btn">Reload history</button></div>
             <p class="mini"><strong>Restore this version</strong> saves the selected state again as the current correspondent configuration. The currently active state remains in history as its own version.</p>
@@ -751,11 +762,11 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
 
       <section class="page" id="page-app-settings">
         <div class="page-head">
-          <div><h1>App Settings</h1><p>General runtime settings are versioned and hot-reloaded by the workers. Only deployment values such as ports, volumes, CPU/RAM limits and the Paperless API token remain in <code>.env</code> because Docker or the secret is needed before the app starts.</p></div>
+          <div><h1>App Settings</h1><p>Configure Paperless and Ollama connections, workflow tags, OCR and runtime behavior. Settings are versioned and loaded automatically; ports, volumes, resource limits and secrets remain deployment settings.</p></div>
           <div id="appConfigStatus" class="config-badge">Loading…</div>
         </div>
-        <div class="toolbar"><button id="appValidateBtn" class="btn">Validate configuration</button><button id="appSaveBtn" class="btn primary">Save changes</button><span id="appSaveStatus" class="toolbar-status">Nothing validated or saved yet.</span></div>
-        <details class="section-help"><summary>Test before production.</summary><div class="help-body">Test Paperless/Ollama connections with the current unsaved draft, preview the exact prompts and run live model tests for both LLM stages without changing the document. Use Dry Run to validate automatic metadata processing before enabling metadata writes. The Paperless API token is never shown in the browser or stored in JSON.</div></details>
+        <div class="toolbar"><button id="appValidateBtn" class="btn">Check configuration</button><button id="appSaveBtn" class="btn primary">Save changes</button><span id="appSaveStatus" class="toolbar-status">Saved configuration loaded.</span></div>
+        <details class="section-help"><summary>Safe testing</summary><div class="help-body">Test Paperless/Ollama connections with the current unsaved draft, preview prompts and run live model tests without changing the selected document. Use <strong>Dry run</strong> to validate automatic metadata processing without metadata writes. The Paperless API token is never shown in the browser or stored in JSON.</div></details>
 
         <div class="tabs" data-tabs="app"><button class="tab active" data-tab="app-connections">Connections</button><button class="tab" data-tab="app-workflow">Pipeline &amp; Tags</button><button class="tab" data-tab="app-ocr">OCR</button><button class="tab" data-tab="app-runtime">Runtime</button><button class="tab" data-tab="app-history">History</button></div>
 
@@ -765,52 +776,53 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
             <div class="card connection">
               <h3>Paperless-ngx</h3>
               <div class="field"><label>Paperless URL <button type="button" class="info-btn" data-tip="Base URL of the Paperless instance, for example http://paperless:8000 or a reachable LAN address. No trailing slash is required.">i</button></label><input id="appPaperlessUrl" type="text"></div>
-              <div class="field" style="margin-top:12px"><label>API token <button type="button" class="info-btn" data-tip="The token is a secret and therefore remains in .env or a Docker secret. It is never returned by this web UI.">i</button></label><div id="appTokenStatus" class="status-box">Loading…</div></div>
+              <div class="field" style="margin-top:12px"><label>API token <button type="button" class="info-btn" data-tip="The token is a secret and therefore remains in the deployment configuration or secret store. It is never returned by this web UI.">i</button></label><div id="appTokenStatus" class="status-box">Loading…</div></div>
             </div>
             <div class="card connection"><h3>Ollama</h3><div class="field"><label>Ollama URL <button type="button" class="info-btn" data-tip="Base URL of an existing Ollama instance. paperless-local-ai does not install or start Ollama.">i</button></label><input id="appOllamaUrl" type="text"></div></div>
           </div>
           <div class="card panel" style="margin-top:14px">
             <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button id="appConnectionTestBtn" class="btn good">Test connections with current draft</button><div id="appConnectionStatus" class="status-box" style="flex:1">Not tested yet.</div></div>
-            <p class="mini">Tests the currently visible draft without saving it: Paperless including the token, plus Ollama's <code>/api/tags</code>.</p>
+            <p class="mini">Tests the currently visible draft without saving it: Paperless access with the configured token and Ollama reachability.</p>
           </div>
         </div>
 
         <div class="tab-page" id="app-workflow">
           <details class="section-help"><summary>Pipeline &amp; tags</summary><div class="help-body">OCR is now part of the Paperless import path through OCRmyPDF and does not use queue tags. These three tags control metadata processing and human review. If you change a name, the corresponding tag must already exist in Paperless.</div></details>
           <div class="card panel"><div class="form-grid three">
-            <div class="field"><label>LLM queue tag <button type="button" class="info-btn" data-tip="Assign this tag from a Paperless Document Added workflow after import/OCR completes; the metadata worker then classifies the document.">i</button></label><input id="appLlmQueueTag"></div>
-            <div class="field"><label>LLM error tag <button type="button" class="info-btn" data-tip="Set when LLM classification fails.">i</button></label><input id="appLlmErrorTag"></div>
+            <div class="field"><label>Classification queue tag <button type="button" class="info-btn" data-tip="Assign this tag from a Paperless Document Added workflow after import/OCR completes; the metadata worker then classifies the document.">i</button></label><input id="appLlmQueueTag"></div>
+            <div class="field"><label>Classification error tag <button type="button" class="info-btn" data-tip="Set when LLM classification fails.">i</button></label><input id="appLlmErrorTag"></div>
             <div class="field"><label>Review tag <button type="button" class="info-btn" data-tip="Documents remain under this tag for human review. Persistent correspondent suggestions are removed once the document leaves review.">i</button></label><input id="appReviewTag"></div>
-            <div class="field"><label>Additional taxonomy-excluded tags <button type="button" class="info-btn" data-tip="Comma-separated additional tags that are never offered to the LLM as classification tags, for example TODO. The three technical tags above are excluded automatically.">i</button></label><input id="appExtraExcludedTags"></div>
+            <div class="field"><label>Additional tags excluded from classification <button type="button" class="info-btn" data-tip="Comma-separated additional tags that are never offered to the model as classification tags, for example TODO. The three technical tags above are excluded automatically.">i</button></label><input id="appExtraExcludedTags"></div>
           </div></div>
         </div>
 
         <div class="tab-page" id="app-ocr">
-          <details class="section-help"><summary>OCR behavior</summary><div class="help-body">These values control selective PaddleOCR processing. Medium is the default PP-OCRv6 profile; Small and Tiny trade some recognition quality for lower inference cost. The maximum OCR image side limits the temporary raster sent to PaddleOCR and is the main memory-safety control for unusually high-resolution scans. Automatic retries handle short-lived worker, memory or service failures with a bounded backoff schedule; deterministic configuration/input errors still fail immediately. Changes are picked up for the next OCR session, so no container restart is required. The original PDF is never modified.</div></details>
+          <details class="section-help"><summary>OCR behavior</summary><div class="help-body">These settings control scanned-page OCR. Most users can keep the defaults. <strong>Maximum OCR image dimension</strong> is the main OCR memory control: lower it when OCR is being killed or memory is tight. <strong>Automatic OCR retries</strong> handle temporary problems without user action. Changes apply to the next OCR session, and the original PDF is never modified.</div></details>
           <div class="card panel"><div class="form-grid three">
-            <div class="field"><label>OCR language <button type="button" class="info-btn" data-tip="Language of the scanned document for PaddleOCR. Start typing a language name or code. This setting is independent of the Control Center and prompt language.">i</button></label><input id="appOcrLanguage" list="ocrLanguageOptions" autocomplete="off"><datalist id="ocrLanguageOptions">
+            <div class="field"><label>OCR language <button type="button" class="info-btn" data-tip="Language used by PaddleOCR for scanned pages. It must match the OCR language configured in Paperless/OCRmyPDF. It is independent of the Control Center and prompt language.">i</button></label><input id="appOcrLanguage" list="ocrLanguageOptions" autocomplete="off"><datalist id="ocrLanguageOptions">
               <option value="af">Afrikaans</option><option value="az">Azerbaijani</option><option value="bs">Bosnian</option><option value="ca">Catalan</option><option value="ch">Chinese (Simplified)</option><option value="chinese_cht">Chinese (Traditional)</option><option value="cs">Czech</option><option value="cy">Welsh</option><option value="da">Danish</option><option value="de">German</option><option value="en">English</option><option value="es">Spanish</option><option value="et">Estonian</option><option value="eu">Basque</option><option value="fi">Finnish</option><option value="fr">French</option><option value="ga">Irish</option><option value="gl">Galician</option><option value="hr">Croatian</option><option value="hu">Hungarian</option><option value="id">Indonesian</option><option value="is">Icelandic</option><option value="it">Italian</option><option value="japan">Japanese</option><option value="ku">Kurdish</option><option value="la">Latin</option><option value="lb">Luxembourgish</option><option value="lt">Lithuanian</option><option value="lv">Latvian</option><option value="mi">Maori</option><option value="ms">Malay</option><option value="mt">Maltese</option><option value="nl">Dutch</option><option value="no">Norwegian</option><option value="oc">Occitan</option><option value="pl">Polish</option><option value="pt">Portuguese</option><option value="qu">Quechua</option><option value="rm">Romansh</option><option value="ro">Romanian</option><option value="rs_latin">Serbian (Latin)</option><option value="sk">Slovak</option><option value="sl">Slovenian</option><option value="sq">Albanian</option><option value="sv">Swedish</option><option value="sw">Swahili</option><option value="tl">Tagalog</option><option value="tr">Turkish</option><option value="uz">Uzbek</option><option value="vi">Vietnamese</option>
             </datalist></div>
-            <div class="field"><label>OCR version <button type="button" class="info-btn" data-tip="PaddleOCR model generation. Tested default: PP-OCRv6.">i</button></label><input id="appOcrVersion"></div>
-            <div class="field"><label>OCR model profile <span class="mini">(model_profile)</span> <button type="button" class="info-btn" data-tip="PP-OCRv6 quality/performance tier. Medium is the default and highest-quality profile; Small balances quality and speed; Tiny is fastest but has lower recognition accuracy and does not support Japanese.">i</button></label><select id="appOcrModelProfile"><option value="medium">PP-OCRv6 Medium — Best quality · Recommended</option><option value="small">PP-OCRv6 Small — Balanced</option><option value="tiny">PP-OCRv6 Tiny — Fastest · Lower accuracy</option></select></div>
-            <div class="field"><label>Maximum OCR image side <span class="mini">(max_side_pixels)</span> <button type="button" class="info-btn" data-tip="Longest side of the temporary OCR-only raster sent to PaddleOCR. Lower values reduce peak RAM use; higher values retain more source resolution. Supported range: 2000–4000 px. Default: 3000 px.">i</button></label><input id="appOcrMaxSidePixels" type="number" min="2000" max="4000" step="100"><div class="field-help">Reference measurements with PP-OCRv6 Medium: 3000 px ≈ 4.4–4.7 GiB OCR-service peak, 3200 px ≈ 4.9–5.1 GiB, 4000 px ≈ 6.5 GiB. Actual memory use varies with the page and runtime. 3000 px is recommended for a 16 GiB host.</div></div>
-            <div class="field"><label>Device <button type="button" class="info-btn" data-tip="PaddleOCR device. The tested low-power setup uses cpu.">i</button></label><input id="appOcrDevice"></div>
-            <div class="field" style="grid-column:1/-1"><label>Automatic retry delays in seconds <span class="mini">(retry_delays_seconds)</span> <button type="button" class="info-btn" data-tip="Comma-separated waits before each retry after a transient OCR failure. Each value adds one retry. Leave empty to disable automatic retries. Deterministic input or configuration errors are not retried.">i</button></label><input id="appOcrRetryDelays" class="mono" placeholder="15, 60, 300, 600"><div class="field-help">Default: <strong>15, 60, 300, 600</strong> = retry after 15 seconds, 1 minute, 5 minutes and 10 minutes. Keep the total backoff below Paperless&#39; worker timeout (1800 seconds by default) unless you raise <code>PAPERLESS_WORKER_TIMEOUT</code>. Up to 10 retries; each delay may be 1–86400 seconds.</div></div>
+            <input id="appOcrVersion" type="hidden">
+            <div class="field"><label>PaddleOCR model <button type="button" class="info-btn" data-tip="Selects matching PP-OCRv6 detection and recognition models. Medium prioritizes recognition quality; Small and Tiny reduce inference cost. Tiny does not support Japanese.">i</button></label><select id="appOcrModelProfile"><option value="medium">PP-OCRv6 Medium — Highest quality · Recommended</option><option value="small">PP-OCRv6 Small — Lower inference cost</option><option value="tiny">PP-OCRv6 Tiny — Lowest inference cost · Lower accuracy</option></select></div>
+            <div class="field"><label>Maximum OCR image dimension <button type="button" class="info-btn" data-tip="Maximum length of the longest side of the temporary image sent to PaddleOCR. Lower values reduce peak RAM use; higher values retain more source resolution. Supported range: 2000–4000 px. The original PDF is unchanged.">i</button></label><input id="appOcrMaxSidePixels" type="number" min="2000" max="4000" step="100"><div class="field-help">Measured PP-OCRv6 Medium OCR-service peaks: <strong>3000 px ≈ 4.4–4.7 GiB</strong>, 3200 px ≈ 4.9–5.1 GiB, 4000 px ≈ 6.5 GiB. 3000 px is the tested default; lower this first if OCR is memory-limited.</div></div>
+            <div class="field"><label>Inference device <button type="button" class="info-btn" data-tip="PaddleOCR inference device. The tested CPU-only setup uses cpu.">i</button></label><input id="appOcrDevice"></div>
+            <div class="field" style="grid-column:1/-1"><label>Automatic OCR retries <button type="button" class="info-btn" data-tip="If OCR is interrupted by a temporary problem, the same page can be retried automatically. Enter the delay before each retry in seconds, separated by commas. Each number adds one retry; leave empty to disable automatic retries.">i</button></label><input id="appOcrRetryDelays" class="mono" placeholder="15, 60, 300, 600"><div class="field-help">Default: <strong>15, 60, 300, 600</strong> means retry after 15 seconds, then 1 minute, 5 minutes and 10 minutes. Most users should keep this default. Invalid settings or input errors are not retried.</div></div>
           </div></div>
           <div class="card panel" style="margin-top:14px">
-            <div class="ocr-recovery-head"><div><h3 style="margin:0">OCR recovery</h3><p class="mini" style="margin:4px 0 0">Live state for automatic recovery. Successful transient retries need no action.</p></div><div class="ocr-recovery-actions"><span id="ocrRecoveryPill" class="pill">Loading…</span><button id="ocrRetryNowBtn" class="btn" style="display:none">Retry now</button></div></div>
+            <div class="ocr-recovery-head"><div><h3 style="margin:0">OCR recovery</h3><p class="mini" style="margin:4px 0 0">Normally no action is needed. If OCR is interrupted, this shows whether the page will retry automatically or needs attention.</p></div><div class="ocr-recovery-actions"><span id="ocrRecoveryPill" class="pill">Loading…</span><button id="ocrRetryNowBtn" class="btn" style="display:none" title="Skip the remaining wait and start the next already-scheduled attempt. This does not increase the retry limit.">Retry now</button></div></div>
             <div id="ocrRecoverySummary" class="status-box" style="margin-top:12px">Loading OCR recovery state…</div>
-            <details id="ocrFailureDetails" class="section-help" style="margin:12px 0 0"><summary>Recent final failures (<span id="ocrFailureCount">0</span>)</summary><div class="help-body"><div class="mini" style="margin-bottom:8px">Final failures are also visible in Paperless File Tasks. After automatic retries are exhausted, fix the cause and submit the source again in Paperless; paperless-local-ai does not silently requeue failed imports.</div><div id="ocrFailureList"><span class="mini">No final OCR failures recorded.</span></div></div></details>
+            <details id="ocrRecoveryTechnical" class="section-help" style="display:none;margin:10px 0 0"><summary>Technical details</summary><div id="ocrRecoveryTechnicalText" class="help-body"></div></details>
+            <details id="ocrFailureDetails" class="section-help" style="margin:12px 0 0"><summary>Recent OCR failures (<span id="ocrFailureCount">0</span>)</summary><div class="help-body"><div class="mini" style="margin-bottom:8px">These jobs did not recover automatically. Paperless also shows the failed File Task. <strong>Dismiss</strong> only hides this Control Center notice; it does not retry, modify or delete the document. Fix the cause before submitting the source again.</div><div id="ocrFailureList"><span class="mini">No OCR failures recorded.</span></div></div></details>
           </div>
         </div>
 
         <div class="tab-page" id="app-runtime">
-          <details class="section-help"><summary>Runtime behavior</summary><div class="help-body">Configure worker intervals and safe operating mode. Docker resource limits remain deployment settings because the container runtime applies them before the app starts.</div></details>
-          <div class="card panel"><div class="form-grid three">
-            <div class="field"><label>Polling interval in seconds <button type="button" class="info-btn" data-tip="How often the OCR and metadata workers look for queued documents. Minimum: 5 seconds.">i</button></label><input id="appPollInterval" type="number"></div>
-            <div class="field"><label>Review cleanup interval in seconds <button type="button" class="info-btn" data-tip="How often stale review records are removed when their document no longer carries the review tag. Default: 3600 = once per hour.">i</button></label><input id="appReviewPruneInterval" type="number"></div>
-            <div class="field"><label>Dry Run <button type="button" class="info-btn" data-tip="In Dry Run, classification is executed and logged, but document metadata and persistent review suggestions are not written. Technical queue/error tags may still change.">i</button></label><select id="appDryRun"><option value="false">Off — write metadata to Paperless</option><option value="true">On — run without metadata writes</option></select></div>
-          </div></div>
+          <details class="section-help"><summary>Runtime behavior</summary><div class="help-body"><strong>Dry run</strong> is the main safety setting for automatic metadata processing. Worker timing is normally left at its defaults and is available below under Advanced worker settings.</div></details>
+          <div class="card panel"><h3 style="margin-top:0">Metadata writes</h3><div class="field"><label>Dry run (no metadata writes) <button type="button" class="info-btn" data-tip="When On, Classification still runs and is logged, but document metadata and persistent correspondent suggestions are not written. Workflow/error tags may still change. OCR is unaffected.">i</button></label><select id="appDryRun"><option value="false">Off — write metadata to Paperless</option><option value="true">On — do not write metadata</option></select></div></div>
+          <details class="section-help advanced-settings"><summary>Advanced worker settings</summary><div class="help-body"><div class="form-grid">
+            <div class="field"><label>Polling interval <button type="button" class="info-btn" data-tip="How often the metadata worker checks for queued documents. Minimum: 5 seconds.">i</button></label><input id="appPollInterval" type="number"><div class="field-help">Seconds</div></div>
+            <div class="field"><label>Review cleanup interval <button type="button" class="info-btn" data-tip="How often stale review records are removed after their document leaves the review tag. Default: 3600 seconds (once per hour).">i</button></label><input id="appReviewPruneInterval" type="number"><div class="field-help">Seconds</div></div>
+          </div></div></details>
         </div>
 
         <div class="tab-page" id="app-history">
@@ -850,8 +862,8 @@ function loadCorrPromptPreset(){
 
 const pageMeta={
   overview:["Overview","System overview and current configuration"],
-  classification:["Classification","Primary local LLM metadata assignment"],
-  correspondent:["Correspondent fallback","Optional correspondent-identification stage"],
+  classification:["Classification","Automatic local LLM metadata assignment"],
+  correspondent:["Correspondent fallback","Optional correspondent identification"],
   "app-settings":["App Settings","Shared connections, workflow, OCR and runtime settings"]
 };
 
@@ -867,6 +879,7 @@ async function api(path,opts={}){
 function setStatus(id,msg,ok=true){
   const el=$(id);if(!el)return;
   el.textContent=msg;
+  el.classList.remove('warn-text');
   el.classList.toggle('good-text',ok);
   el.classList.toggle('bad-text',!ok);
   el.classList.toggle('good',ok&&el.classList.contains('status-box'));
@@ -874,40 +887,37 @@ function setStatus(id,msg,ok=true){
 }
 
 function draft(){return {version:currentConfig?.version||1,updated_at:currentConfig?.updated_at||null,system_prompt:$('systemPrompt').value,classification_template:$('classificationTemplate').value,model:$('model').value.trim(),num_ctx:Number($('numCtx').value),num_predict:Number($('numPredict').value),temperature:Number($('temperature').value),think:$('think').value==='true',keep_alive:/^-?\d+(\.\d+)?$/.test($('keepAlive').value.trim())?Number($('keepAlive').value):$('keepAlive').value,content_char_limit:Number($('contentLimit').value),content_head_ratio:Number($('headRatio').value),max_tags:Number($('maxTags').value),ollama_timeout_seconds:Number($('ollamaTimeout').value)}}
-function parseRetryDelays(value){const raw=value.trim();if(!raw)return[];const parts=raw.split(',').map(x=>x.trim());if(parts.some(x=>!/^\d+$/.test(x)))throw new Error('OCR retry delays must be comma-separated whole seconds, for example: 15, 60, 300, 600');return parts.map(Number)}
+function parseRetryDelays(value){const raw=value.trim();if(!raw)return[];const parts=raw.split(',').map(x=>x.trim());if(parts.some(x=>!/^\d+$/.test(x)))throw new Error('Automatic OCR retries must be whole-number seconds separated by commas, for example: 15, 60, 300, 600');return parts.map(Number)}
 function appDraft(){return {version:currentAppConfig?.version||1,updated_at:currentAppConfig?.updated_at||null,connections:{paperless_url:$('appPaperlessUrl').value.trim(),ollama_url:$('appOllamaUrl').value.trim()},workflow:{llm_queue_tag:$('appLlmQueueTag').value.trim(),llm_error_tag:$('appLlmErrorTag').value.trim(),review_tag:$('appReviewTag').value.trim(),extra_excluded_tags:$('appExtraExcludedTags').value.split(',').map(x=>x.trim()).filter(Boolean)},ocr:{language:$('appOcrLanguage').value.trim(),version:$('appOcrVersion').value.trim(),model_profile:$('appOcrModelProfile').value,max_side_pixels:Number($('appOcrMaxSidePixels').value),retry_delays_seconds:parseRetryDelays($('appOcrRetryDelays').value),device:$('appOcrDevice').value.trim()},runtime:{poll_interval_seconds:Number($('appPollInterval').value),review_prune_interval_seconds:Number($('appReviewPruneInterval').value),dry_run:$('appDryRun').value==='true'}}}
 function corrDraft(){return {version:currentCorrConfig?.version||1,updated_at:currentCorrConfig?.updated_at||null,enabled:$('corrEnabled').value==='true',system_prompt:$('corrSystemPrompt').value,prompt_template:$('corrPromptTemplate').value,model:$('corrModel').value.trim(),num_ctx:Number($('corrNumCtx').value),num_predict:Number($('corrNumPredict').value),temperature:Number($('corrTemperature').value),think:$('corrThink').value==='true',keep_alive:/^-?\d+(\.\d+)?$/.test($('corrKeepAlive').value.trim())?Number($('corrKeepAlive').value):$('corrKeepAlive').value,content_char_limit:Number($('corrContentLimit').value),content_head_ratio:Number($('corrHeadRatio').value),ollama_timeout_seconds:Number($('corrTimeout').value)}}
 
 function updateOverview(){
   if(currentAppConfig){
     const dry=currentAppConfig.runtime.dry_run;
-    const mode=dry?'DRY RUN':'PRODUCTION';
-    $('overviewMode').textContent=mode;
-    $('overviewMode').className=dry?'warn-text':'good-text';
-    $('topModeStatus').textContent=mode;
+    const metadataState=dry?'Metadata dry run':'Metadata writes enabled';
+    $('overviewMetadataWrites').textContent=dry?'Dry run':'Enabled';
+    $('overviewMetadataWrites').className=dry?'warn-text':'good-text';
+    $('topModeStatus').textContent=metadataState;
     $('topModeStatus').className='pill '+(dry?'warn':'good');
-    $('sidebarMode').textContent=mode;
-    $('sidebarAppVersion').textContent=`AppConfig v${currentAppConfig.version}`;
+    $('sidebarMode').textContent=metadataState;
+    $('sidebarAppVersion').textContent=`Settings v${currentAppConfig.version}`;
     $('overviewPaperlessDetail').textContent=currentAppConfig.connections.paperless_url;
     $('overviewOllamaDetail').textContent=currentAppConfig.connections.ollama_url;
-    $('overviewOcrStatus').textContent='Ready';
-    $('overviewOcrStatus').className='metric-value good-text';
-    $('overviewOcrCard').classList.add('good');
     const ocrProfile=currentAppConfig.ocr.model_profile||'medium';const ocrProfileLabel=ocrProfile.charAt(0).toUpperCase()+ocrProfile.slice(1);
-    $('overviewOcrDetail').textContent=`${currentAppConfig.ocr.version} ${ocrProfileLabel} · ${currentAppConfig.ocr.language} · max ${currentAppConfig.ocr.max_side_pixels||3000}px · ${currentAppConfig.ocr.device.toUpperCase()}`;
-    $('overviewPoll').textContent=`${currentAppConfig.runtime.poll_interval_seconds} seconds`;
-    $('overviewCleanup').textContent=`${currentAppConfig.runtime.review_prune_interval_seconds} seconds`;
+    $('overviewOcrConfig').textContent=`${currentAppConfig.ocr.version} ${ocrProfileLabel}`;
+    $('overviewOcrImageSize').textContent=`${currentAppConfig.ocr.max_side_pixels||3000} px`;
+    $('overviewOcrDetail').textContent=`${currentAppConfig.ocr.version} ${ocrProfileLabel} · ${currentAppConfig.ocr.language} · ${currentAppConfig.ocr.device.toUpperCase()}`;
   }
   if(currentConfig){
-    $('overviewClassification').textContent=`v${currentConfig.version} · ${currentConfig.model}`;
-    $('overviewMaxTags').textContent=String(currentConfig.max_tags);
+    $('overviewClassification').textContent=currentConfig.model;
+    $('overviewContext').textContent=`${currentConfig.num_ctx} tokens`;
   }
   if(currentCorrConfig){
     $('overviewCorrStatus').textContent=currentCorrConfig.enabled?'Enabled':'Disabled';
-    $('overviewCorrStatus').className='metric-value '+(currentCorrConfig.enabled?'good-text':'muted');
+    $('overviewCorrStatus').className='metric-value '+(currentCorrConfig.enabled?'good-text':'');
     $('overviewCorrCard').classList.toggle('good',currentCorrConfig.enabled);
     $('overviewCorrDetail').textContent=`v${currentCorrConfig.version} · ${currentCorrConfig.model}`;
-    $('overviewCorrConfig').textContent=`v${currentCorrConfig.version} · ${currentCorrConfig.enabled?'enabled':'disabled'}`;
+    $('overviewCorrConfig').textContent=currentCorrConfig.enabled?'Enabled':'Disabled';
   }
   const model=currentConfig?.model||currentCorrConfig?.model;
   const device=currentAppConfig?.ocr?.device;
@@ -922,7 +932,7 @@ function applyConnectionResult(r){
     status.textContent=result?.ok?'Connected':'Connection error';
     status.className='metric-value '+(result?.ok?'good-text':'bad-text');
     const base=key==='paperless'?currentAppConfig?.connections?.paperless_url:currentAppConfig?.connections?.ollama_url;
-    $(detailId).textContent=[base,result?.detail].filter(Boolean).join(' · ');
+    $(detailId).textContent=base||result?.detail||'';
   }
 }
 async function checkOverviewConnections(config){
@@ -930,6 +940,20 @@ async function checkOverviewConnections(config){
   catch(e){
     for(const id of ['overviewPaperlessStatus','overviewOllamaStatus']){$(id).textContent='Check failed';$(id).className='metric-value bad-text'}
   }
+}
+
+function renderOverviewOcrHealth(payload){
+  const card=$('overviewOcrCard');const status=$('overviewOcrStatus');
+  if(!payload?.ok){card.classList.remove('good');card.classList.add('bad');status.textContent='Unavailable';status.className='metric-value bad-text';return}
+  const recovery=payload.recovery||{};const state=recovery.state||{status:'idle'};const failures=recovery.failures||[];
+  const display=state.status==='idle'&&failures.length?'failed':state.status;
+  const labels={idle:'Ready',running:'OCR running',waiting:'Waiting to retry',failed:'Needs attention'};
+  status.textContent=labels[display]||'Ready';status.className='metric-value '+(display==='idle'?'good-text':display==='waiting'?'warn-text':display==='failed'?'bad-text':'');
+  card.classList.toggle('good',display==='idle');card.classList.toggle('bad',display==='failed');
+}
+async function refreshOverviewOcrHealth(){
+  try{renderOverviewOcrHealth(await api('/api/app/ocr/health'))}
+  catch(e){renderOverviewOcrHealth({ok:false,error:e.message})}
 }
 
 function fill(c){
@@ -940,45 +964,75 @@ function fill(c){
 function appFill(c,tokenConfigured){
   currentAppConfig=c;
   $('appPaperlessUrl').value=c.connections.paperless_url;$('appOllamaUrl').value=c.connections.ollama_url;$('appLlmQueueTag').value=c.workflow.llm_queue_tag;$('appLlmErrorTag').value=c.workflow.llm_error_tag;$('appReviewTag').value=c.workflow.review_tag;$('appExtraExcludedTags').value=(c.workflow.extra_excluded_tags||[]).join(', ');$('appOcrLanguage').value=c.ocr.language;$('appOcrVersion').value=c.ocr.version;$('appOcrModelProfile').value=c.ocr.model_profile||'medium';$('appOcrMaxSidePixels').value=c.ocr.max_side_pixels||3000;$('appOcrRetryDelays').value=(c.ocr.retry_delays_seconds||[]).join(', ');$('appOcrDevice').value=c.ocr.device;$('appPollInterval').value=c.runtime.poll_interval_seconds;$('appReviewPruneInterval').value=c.runtime.review_prune_interval_seconds;$('appDryRun').value=String(c.runtime.dry_run);
-  $('appConfigStatus').textContent=`v${c.version} · ${c.runtime.dry_run?'DRY RUN':'PRODUCTION'}`;$('appConfigStatus').style.color=c.runtime.dry_run?'var(--orange)':'var(--green)';
+  $('appConfigStatus').textContent=`Settings v${c.version} · ${c.runtime.dry_run?'metadata dry run':'metadata writes enabled'}`;$('appConfigStatus').style.color=c.runtime.dry_run?'var(--orange)':'var(--green)';
   $('appTokenStatus').textContent=tokenConfigured?'API token is configured in the deployment environment.':'API token is missing from the deployment environment.';$('appTokenStatus').className='status-box '+(tokenConfigured?'good':'bad');updateOverview();
 }
 function corrFill(c){
   currentCorrConfig=c;
   $('corrEnabled').value=String(c.enabled);$('corrSystemPrompt').value=c.system_prompt;$('corrPromptTemplate').value=c.prompt_template;$('corrModel').value=c.model;$('corrNumCtx').value=c.num_ctx;$('corrNumPredict').value=c.num_predict;$('corrTemperature').value=c.temperature;$('corrThink').value=String(c.think);$('corrKeepAlive').value=c.keep_alive;$('corrContentLimit').value=c.content_char_limit;$('corrHeadRatio').value=c.content_head_ratio;$('corrTimeout').value=c.ollama_timeout_seconds;
-  $('corrConfigStatus').textContent=`${c.enabled?'PRODUCTION ON':'PRODUCTION OFF'} · v${c.version} · ${c.model}`;$('corrConfigStatus').style.color=c.enabled?'var(--green)':'var(--muted)';updateOverview();
+  $('corrConfigStatus').textContent=`Automatic fallback ${c.enabled?'enabled':'disabled'} · v${c.version} · ${c.model}`;$('corrConfigStatus').style.color=c.enabled?'var(--green)':'var(--muted)';updateOverview();
 }
 
+function formatHistoryDate(value){if(!value)return'';const d=new Date(value);return Number.isNaN(d.getTime())?value:d.toLocaleString()}
 function renderHistory(items,id,restoreFn){
   const el=$(id);
-  el.innerHTML=items.length?items.map(x=>`<div class="history-item"><span class="badge">v${x.version??'?'}</span><span>${x.file}</span><span class="mini">${x.updated_at||''}<br>${(x.config_sha256||'').slice(0,16)}</span><button class="btn" onclick="${restoreFn}('${x.file}')">Restore this version</button></div>`).join(''):'<p class="mini">No older saved version yet.</p>';
+  el.innerHTML=items.length?items.map(x=>`<div class="history-item"><span class="badge">v${x.version??'?'}</span><span>${escapeHtml(x.summary||'Saved configuration')}</span><span class="mini">${escapeHtml(formatHistoryDate(x.updated_at||''))}</span><button class="btn" onclick="${restoreFn}('${escapeHtml(x.file)}')">Restore</button></div>`).join(''):'<p class="mini">No older saved version yet.</p>';
 }
 function renderAppHistory(items){renderHistory(items,'appHistoryList','restoreAppHistory')}
 function renderCorrHistory(items){renderHistory(items,'corrHistoryList','restoreCorrHistory')}
 function escapeHtml(value){return String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))}
 function humanDelay(seconds){seconds=Math.max(0,Math.round(Number(seconds)||0));if(seconds<60)return`${seconds}s`;if(seconds<3600)return`${Math.floor(seconds/60)}m ${seconds%60}s`;return`${Math.floor(seconds/3600)}h ${Math.floor((seconds%3600)/60)}m`}
+function renderClassificationResult(r){
+  const el=$('classificationResultHuman');if(!el)return;
+  const s=r?.suggestion||{};const errors=r?.validation_errors||[];const tags=Array.isArray(s.tags)?s.tags.join(', '):'—';
+  el.innerHTML=`<div class="result-state ${errors.length?'bad-text':'good-text'}">${errors.length?'Validation failed':'Valid result'}</div><div class="result-fields"><div class="result-field"><span>Title</span><strong>${escapeHtml(s.title||'—')}</strong></div><div class="result-field"><span>Document type</span><strong>${escapeHtml(s.document_type||'—')}</strong></div><div class="result-field"><span>Correspondent</span><strong>${escapeHtml(s.correspondent||'—')}</strong></div><div class="result-field"><span>Tags</span><strong>${escapeHtml(tags||'—')}</strong></div><div class="result-field"><span>Date</span><strong>${escapeHtml(s.created||'—')}</strong></div></div>${errors.length?`<div class="mini bad-text" style="margin-top:9px">${escapeHtml(errors.join(' · '))}</div>`:''}`;
+}
+function renderCorrespondentResult(r){
+  const el=$('correspondentResultHuman');if(!el)return;
+  const errors=r?.validation_errors||[];const name=r?.suggestion?.correspondent||'';const kind=r?.candidate_type||(!name?'empty':'candidate');
+  let title='No reliable correspondent found';if(kind==='existing')title='Existing correspondent';else if(kind==='new')title='New correspondent suggestion';else if(name)title='Correspondent candidate';
+  el.innerHTML=`<div class="result-state ${errors.length?'bad-text':'good-text'}">${errors.length?'Validation failed':escapeHtml(title)}</div>${name?`<div class="result-field"><span>Correspondent</span><strong>${escapeHtml(name)}</strong></div>`:'<div class="mini">The fallback returned an empty correspondent.</div>'}${errors.length?`<div class="mini bad-text" style="margin-top:9px">${escapeHtml(errors.join(' · '))}</div>`:''}`;
+}
+function markUnsaved(statusId){const el=$(statusId);if(!el)return;el.textContent='Unsaved changes.';el.className='toolbar-status warn-text'}
+function ocrErrorGuidance(value){
+  const text=String(value||'').toLowerCase();
+  if(/out of memory|memoryerror|cannot allocate memory|failed to allocate|bad_alloc|bad allocation/.test(text))return 'This looks memory-related. Try lowering Maximum OCR image dimension.';
+  if(/ocr_language_mismatch|language mismatch/.test(text))return 'Check that the OCR language in Paperless and App Settings → OCR is the same.';
+  if(/unauthorized|401|403/.test(text))return 'Check that the OCR service token configured for Paperless matches paperless-local-ai.';
+  if(/connection refused|failed to establish|service unavailable|connectionerror|name or service not known|temporary failure in name resolution/.test(text))return 'Check that the OCR service is running and reachable.';
+  return '';
+}
 function renderOcrRecovery(payload){
-  const state=payload?.state||{status:'idle'};const failures=payload?.failures||[];const pill=$('ocrRecoveryPill');const retry=$('ocrRetryNowBtn');const summary=$('ocrRecoverySummary');
+  const state=payload?.state||{status:'idle'};const failures=payload?.failures||[];const pill=$('ocrRecoveryPill');const retry=$('ocrRetryNowBtn');const summary=$('ocrRecoverySummary');const technical=$('ocrRecoveryTechnical');const technicalText=$('ocrRecoveryTechnicalText');
   const displayStatus=state.status==='idle'&&failures.length?'failed':state.status;const labels={idle:'Ready',running:'OCR running',waiting:'Waiting to retry',failed:'Needs attention'};pill.textContent=labels[displayStatus]||displayStatus||'Ready';pill.className='pill '+(displayStatus==='idle'?'good':displayStatus==='failed'?'bad':displayStatus==='waiting'?'warn':'');
   retry.style.display=state.status==='waiting'?'inline-block':'none';retry.dataset.requestId=state.request_id||'';retry.disabled=!!state.retry_now_requested;retry.textContent=state.retry_now_requested?'Retry requested':'Retry now';
+  const target=`${state.source||'OCR page'}${state.page_number?' · page '+state.page_number:''}`;const attempt=state.attempt||1;const maxAttempts=state.max_attempts||1;const hint=ocrErrorGuidance(state.last_error);
   if(state.status==='waiting'){
     const next=state.next_retry_at?Math.max(0,(new Date(state.next_retry_at).getTime()-Date.now())/1000):state.retry_after_seconds;
-    summary.textContent=`${state.source||'OCR page'}${state.page_number?' · page '+state.page_number:''} · attempt ${state.attempt||'?'} / ${state.max_attempts||'?'} failed. ${state.retry_now_requested?'Immediate retry requested.':'Next retry in '+humanDelay(next)+'.'}
-${state.last_error||''}`;
+    summary.textContent=state.retry_now_requested?`OCR was interrupted while processing ${target}. The next attempt has been requested. Attempt ${attempt} of ${maxAttempts} failed.`:`OCR was interrupted while processing ${target}. The same page will be tried again automatically in ${humanDelay(next)}. Attempt ${attempt} of ${maxAttempts} failed.`;
   }else if(state.status==='running'){
-    summary.textContent=`${state.source||'OCR page'}${state.page_number?' · page '+state.page_number:''} · attempt ${state.attempt||1} / ${state.max_attempts||1} is running.`;
+    summary.textContent=`OCR is processing ${target}. Attempt ${attempt} of ${maxAttempts}.`;
   }else if(state.status==='failed'){
-    summary.textContent=`Automatic OCR recovery stopped after a final failure.${state.source?'\n'+state.source+(state.page_number?' · page '+state.page_number:''):''}${state.last_error?'\n'+state.last_error:''}`;
+    summary.textContent=`OCR could not finish ${target} after ${attempt} attempt${attempt===1?'':'s'}. Automatic retries have stopped.${hint?' '+hint:''}`;
   }else if(failures.length){
-    summary.textContent=`OCR is currently idle. ${failures.length} final failure${failures.length===1?' needs':'s need'} review below.`;
+    summary.textContent=`OCR is ready, but ${failures.length} earlier OCR failure${failures.length===1?' needs':'s need'} attention below.`;
   }else{
-    summary.textContent='No OCR recovery action is needed. Transient failures are retried automatically according to the configured schedule.';
+    summary.textContent='OCR is ready. Temporary OCR problems are retried automatically. No action is needed.';
   }
+  technical.style.display=state.last_error?'block':'none';technicalText.textContent=state.last_error||'';
   $('ocrFailureCount').textContent=String(failures.length);
-  $('ocrFailureList').innerHTML=failures.length?failures.map(f=>`<div class="failure-item"><div class="failure-head"><div><strong>${escapeHtml(f.source||'OCR page')}</strong>${f.page_number?` <span class="mini">· page ${f.page_number}</span>`:''}<div class="mini">${escapeHtml(f.failed_at||'')} · ${f.attempts||1}/${f.max_attempts||1} attempt(s)</div></div><button class="btn" onclick="dismissOcrFailure('${escapeHtml(f.id)}')">Dismiss</button></div><div class="failure-error">${escapeHtml(f.error||'Unknown OCR error')}</div></div>`).join(''):'<span class="mini">No final OCR failures recorded.</span>';
+  $('ocrFailureList').innerHTML=failures.length?failures.map(f=>{const guidance=ocrErrorGuidance(f.error);return `<div class="failure-item"><div class="failure-head"><div><strong>${escapeHtml(f.source||'OCR page')}</strong>${f.page_number?` <span class="mini">· page ${f.page_number}</span>`:''}<div class="mini">${escapeHtml(f.failed_at||'')} · ${f.attempts||1} of ${f.max_attempts||1} attempts</div></div><button class="btn" title="Hide this notice. This does not retry or delete anything." onclick="dismissOcrFailure('${escapeHtml(f.id)}')">Dismiss</button></div><div class="mini" style="margin-top:6px">${escapeHtml(guidance||'Automatic recovery could not complete this OCR job. Fix the underlying cause before trying the source again.')}</div><details class="section-help" style="margin:8px 0 0"><summary>Technical details</summary><div class="help-body failure-error">${escapeHtml(f.error||'Unknown OCR error')}</div></details></div>`}).join(''):'<span class="mini">No OCR failures recorded.</span>';
 }
-async function refreshOcrRecovery(){try{renderOcrRecovery(await api('/api/app/ocr/recovery'))}catch(e){$('ocrRecoveryPill').textContent='Unavailable';$('ocrRecoverySummary').textContent=e.message}}
-window.dismissOcrFailure=async id=>{try{await api('/api/app/ocr/failures/dismiss',{method:'POST',body:JSON.stringify({failure_id:id})});await refreshOcrRecovery()}catch(e){alert(e.message)}};
+async function refreshOcrRecovery(){
+  try{
+    const health=await api('/api/app/ocr/health');renderOcrRecovery(health.recovery||{});
+    if(!health.ok){const pill=$('ocrRecoveryPill');const retry=$('ocrRetryNowBtn');const summary=$('ocrRecoverySummary');const technical=$('ocrRecoveryTechnical');const technicalText=$('ocrRecoveryTechnicalText');pill.textContent='Unavailable';pill.className='pill bad';retry.style.display='none';summary.textContent='The OCR service is unavailable. Check that it is running and reachable.';technical.style.display=health.error?'block':'none';technicalText.textContent=health.error||''}
+  }catch(e){$('ocrRecoveryPill').textContent='Unavailable';$('ocrRecoveryPill').className='pill bad';$('ocrRetryNowBtn').style.display='none';$('ocrRecoverySummary').textContent='The OCR service status could not be checked.';$('ocrRecoveryTechnical').style.display='block';$('ocrRecoveryTechnicalText').textContent=e.message}
+}
+window.dismissOcrFailure=async id=>{
+  if(!confirm('Dismiss this OCR failure notice?\n\nThis only hides the notice in the Control Center. It does not retry, modify or delete the document.'))return;
+  try{await api('/api/app/ocr/failures/dismiss',{method:'POST',body:JSON.stringify({failure_id:id})});await refreshOcrRecovery();await refreshOverviewOcrHealth()}catch(e){alert(e.message)}
+};
 
 async function init(){
   try{const s=await api('/api/state');classPromptPresets=s.presets||{};renderPromptPresetOptions('classPromptPreset',classPromptPresets);fill(s.config);$('placeholders').innerHTML=Object.entries(s.placeholders).map(([k,v])=>`<div class="placeholder-item"><code>{{${k}}}</code><span>${v}</span></div>`).join('');await loadHistory();$('topStatus').textContent='Control Center ready';$('topStatus').className='pill good'}
@@ -996,29 +1050,33 @@ async function loadCorrespondent(){
 $('classLoadPresetBtn').onclick=loadClassPromptPreset;
 $('corrLoadPresetBtn').onclick=loadCorrPromptPreset;
 
-$('validateBtn').onclick=async()=>{try{const r=await api('/api/config/validate',{method:'POST',body:JSON.stringify({config:draft()})});setStatus('saveStatus',`Configuration valid · not saved yet · SHA ${r.config_sha256.slice(0,12)}`)}catch(e){setStatus('saveStatus',e.message,false)}};
+for(const id of ['systemPrompt','classificationTemplate','model','numCtx','numPredict','temperature','think','keepAlive','contentLimit','headRatio','maxTags','ollamaTimeout']){$(id)?.addEventListener('input',()=>markUnsaved('saveStatus'));$(id)?.addEventListener('change',()=>markUnsaved('saveStatus'))}
+for(const id of ['appPaperlessUrl','appOllamaUrl','appLlmQueueTag','appLlmErrorTag','appReviewTag','appExtraExcludedTags','appOcrLanguage','appOcrVersion','appOcrModelProfile','appOcrMaxSidePixels','appOcrRetryDelays','appOcrDevice','appPollInterval','appReviewPruneInterval','appDryRun']){$(id)?.addEventListener('input',()=>markUnsaved('appSaveStatus'));$(id)?.addEventListener('change',()=>markUnsaved('appSaveStatus'))}
+for(const id of ['corrEnabled','corrSystemPrompt','corrPromptTemplate','corrModel','corrNumCtx','corrNumPredict','corrTemperature','corrThink','corrKeepAlive','corrContentLimit','corrHeadRatio','corrTimeout']){$(id)?.addEventListener('input',()=>markUnsaved('corrSaveStatus'));$(id)?.addEventListener('change',()=>markUnsaved('corrSaveStatus'))}
+
+$('validateBtn').onclick=async()=>{try{const r=await api('/api/config/validate',{method:'POST',body:JSON.stringify({config:draft()})});setStatus('saveStatus','Configuration valid · not saved yet.')}catch(e){setStatus('saveStatus',e.message,false)}};
 $('saveBtn').onclick=async()=>{try{const r=await api('/api/config/save',{method:'POST',body:JSON.stringify({config:draft()})});fill(r.config);setStatus('saveStatus',`Saved and active from the next classification job · v${r.config.version}`);await loadHistory()}catch(e){setStatus('saveStatus',e.message,false)}};
-async function doPreview(run){const id=Number($('docId').value);if(!id)return;setStatus('testStatus',run?'Model test running…':'Preparing final prompt…');try{const r=await api(run?'/api/test':'/api/preview',{method:'POST',body:JSON.stringify({document_id:id,config:draft()})});$('systemPreview').textContent=r.rendered.system_prompt;$('userPreview').textContent=r.rendered.user_prompt;$('schemaPreview').textContent=JSON.stringify(r.rendered.schema,null,2);$('taxonomyPreview').textContent=JSON.stringify(r.taxonomy,null,2);$('previewMeta').textContent=JSON.stringify(r.meta,null,2);$('testResult').textContent=run?JSON.stringify({suggestion:r.suggestion,validation_errors:r.validation_errors,performance:r.performance},null,2):'';setStatus('testStatus',run?'Model test complete · Paperless was not modified.':'Final prompt previewed · the model was not called.')}catch(e){setStatus('testStatus',e.message,false)}}
+async function doPreview(run){const id=Number($('docId').value);if(!id){setStatus('testStatus','Enter a Paperless document ID.',false);return}setStatus('testStatus',run?'Model test running…':'Preparing prompts…');try{const r=await api(run?'/api/test':'/api/preview',{method:'POST',body:JSON.stringify({document_id:id,config:draft()})});$('systemPreview').textContent=r.rendered.system_prompt;$('userPreview').textContent=r.rendered.user_prompt;$('schemaPreview').textContent=JSON.stringify(r.rendered.schema,null,2);$('taxonomyPreview').textContent=JSON.stringify(r.taxonomy,null,2);$('previewMeta').textContent=JSON.stringify(r.meta,null,2);$('testResult').textContent=run?JSON.stringify({suggestion:r.suggestion,validation_errors:r.validation_errors,performance:r.performance},null,2):'';if(run)renderClassificationResult(r);setStatus('testStatus',run?'Model test complete · Paperless was not modified.':'Prompts previewed · the model was not called.')}catch(e){setStatus('testStatus',e.message,false)}}
 $('previewBtn').onclick=()=>doPreview(false);$('testBtn').onclick=()=>doPreview(true);
 
-$('appValidateBtn').onclick=async()=>{try{const r=await api('/api/app/validate',{method:'POST',body:JSON.stringify({config:appDraft()})});setStatus('appSaveStatus',`Configuration valid · not saved yet · SHA ${r.config_sha256.slice(0,12)}`)}catch(e){setStatus('appSaveStatus',e.message,false)}};
-$('appSaveBtn').onclick=async()=>{try{const r=await api('/api/app/save',{method:'POST',body:JSON.stringify({config:appDraft()})});appFill(r.config,r.token_configured);setStatus('appSaveStatus',`Saved · AppConfig v${r.config.version}. Workers reload runtime settings automatically.`);renderAppHistory(r.history||[]);checkOverviewConnections(r.config)}catch(e){setStatus('appSaveStatus',e.message,false)}};
+$('appValidateBtn').onclick=async()=>{try{const r=await api('/api/app/validate',{method:'POST',body:JSON.stringify({config:appDraft()})});setStatus('appSaveStatus','Configuration valid · not saved yet.')}catch(e){setStatus('appSaveStatus',e.message,false)}};
+$('appSaveBtn').onclick=async()=>{try{const r=await api('/api/app/save',{method:'POST',body:JSON.stringify({config:appDraft()})});appFill(r.config,r.token_configured);setStatus('appSaveStatus',`Saved · Settings v${r.config.version} are active.`);renderAppHistory(r.history||[]);checkOverviewConnections(r.config)}catch(e){setStatus('appSaveStatus',e.message,false)}};
 $('appConnectionTestBtn').onclick=async()=>{setStatus('appConnectionStatus','Testing connections…');try{const r=await api('/api/app/connections/test',{method:'POST',body:JSON.stringify({config:appDraft()})});setStatus('appConnectionStatus',`Paperless: ${r.paperless.ok?'OK':'ERROR'}${r.paperless.detail?' · '+r.paperless.detail:''}\nOllama: ${r.ollama.ok?'OK':'ERROR'}${r.ollama.detail?' · '+r.ollama.detail:''}`,r.paperless.ok&&r.ollama.ok);applyConnectionResult(r)}catch(e){setStatus('appConnectionStatus',e.message,false)}};
 $('ocrRetryNowBtn').onclick=async()=>{const id=$('ocrRetryNowBtn').dataset.requestId;if(!id)return;try{await api('/api/app/ocr/retry-now',{method:'POST',body:JSON.stringify({request_id:id})});await refreshOcrRecovery()}catch(e){alert(e.message)}};
 async function refreshAppHistory(){const r=await api('/api/app/history');renderAppHistory(r.items||[])}
 $('appHistoryRefresh').onclick=()=>refreshAppHistory().catch(e=>setStatus('appSaveStatus',e.message,false));
-window.restoreAppHistory=async file=>{if(!confirm(`Restore these app settings? The selected state will be saved as a new current version; the current state remains in history.\n\nFile: ${file}`))return;try{const r=await api('/api/app/history/restore',{method:'POST',body:JSON.stringify({file})});appFill(r.config,r.token_configured);renderAppHistory(r.history||[]);setStatus('appSaveStatus',`Restored and saved as a new current version · v${r.config.version}`);checkOverviewConnections(r.config)}catch(e){alert(e.message)}};
+window.restoreAppHistory=async file=>{if(!confirm(`Restore these app settings? The selected state will be saved as a new current version; the current state remains in history.`))return;try{const r=await api('/api/app/history/restore',{method:'POST',body:JSON.stringify({file})});appFill(r.config,r.token_configured);renderAppHistory(r.history||[]);setStatus('appSaveStatus',`Restored and saved as a new current version · v${r.config.version}`);checkOverviewConnections(r.config)}catch(e){alert(e.message)}};
 
-$('corrValidateBtn').onclick=async()=>{try{const r=await api('/api/correspondent/validate',{method:'POST',body:JSON.stringify({config:corrDraft()})});setStatus('corrSaveStatus',`Configuration valid · not saved yet · SHA ${r.config_sha256.slice(0,12)}`)}catch(e){setStatus('corrSaveStatus',e.message,false)}};
-$('corrSaveBtn').onclick=async()=>{try{const r=await api('/api/correspondent/save',{method:'POST',body:JSON.stringify({config:corrDraft()})});corrFill(r.config);setStatus('corrSaveStatus',`Saved as v${r.config.version} · production fallback ${r.config.enabled?'ON':'OFF'}`);await refreshCorrHistory()}catch(e){setStatus('corrSaveStatus',e.message,false)}};
-async function corrPreview(run){const id=Number($('corrDocId').value);if(!id)return;setStatus('corrTestStatus',run?'Model test running…':'Preparing final prompt…');try{const r=await api(run?'/api/correspondent/test':'/api/correspondent/preview',{method:'POST',body:JSON.stringify({document_id:id,config:corrDraft()})});$('corrSystemPreview').textContent=r.rendered.system_prompt;$('corrUserPreview').textContent=r.rendered.user_prompt;$('corrSchemaPreview').textContent=JSON.stringify(r.rendered.schema,null,2);$('corrPreviewMeta').textContent=JSON.stringify(r.meta,null,2);$('corrTestResult').textContent=run?JSON.stringify({suggestion:r.suggestion,validation_errors:r.validation_errors,performance:r.performance},null,2):'';setStatus('corrTestStatus',run?'Model test complete · Paperless was not modified and no correspondent suggestion was saved.':'Final prompt previewed · the model was not called.')}catch(e){setStatus('corrTestStatus',e.message,false)}}
+$('corrValidateBtn').onclick=async()=>{try{const r=await api('/api/correspondent/validate',{method:'POST',body:JSON.stringify({config:corrDraft()})});setStatus('corrSaveStatus','Configuration valid · not saved yet.')}catch(e){setStatus('corrSaveStatus',e.message,false)}};
+$('corrSaveBtn').onclick=async()=>{try{const r=await api('/api/correspondent/save',{method:'POST',body:JSON.stringify({config:corrDraft()})});corrFill(r.config);setStatus('corrSaveStatus',`Saved as v${r.config.version} · automatic fallback ${r.config.enabled?'enabled':'disabled'}`);await refreshCorrHistory()}catch(e){setStatus('corrSaveStatus',e.message,false)}};
+async function corrPreview(run){const id=Number($('corrDocId').value);if(!id){setStatus('corrTestStatus','Enter a Paperless document ID.',false);return}setStatus('corrTestStatus',run?'Model test running…':'Preparing prompts…');try{const r=await api(run?'/api/correspondent/test':'/api/correspondent/preview',{method:'POST',body:JSON.stringify({document_id:id,config:corrDraft()})});$('corrSystemPreview').textContent=r.rendered.system_prompt;$('corrUserPreview').textContent=r.rendered.user_prompt;$('corrSchemaPreview').textContent=JSON.stringify(r.rendered.schema,null,2);$('corrPreviewMeta').textContent=JSON.stringify(r.meta,null,2);$('corrTestResult').textContent=run?JSON.stringify({suggestion:r.suggestion,validation_errors:r.validation_errors,performance:r.performance,candidate_type:r.candidate_type},null,2):'';if(run)renderCorrespondentResult(r);setStatus('corrTestStatus',run?'Model test complete · Paperless was not modified and no Document Suggestion was saved.':'Prompts previewed · the model was not called.')}catch(e){setStatus('corrTestStatus',e.message,false)}}
 $('corrPreviewBtn').onclick=()=>corrPreview(false);$('corrTestBtn').onclick=()=>corrPreview(true);
 async function refreshCorrHistory(){const s=await api('/api/correspondent/state');renderCorrHistory(s.history||[])}
 $('corrHistoryRefresh').onclick=()=>refreshCorrHistory().catch(e=>setStatus('corrSaveStatus',e.message,false));
-window.restoreCorrHistory=async file=>{if(!confirm(`Restore this correspondent version? The selected state will be saved as a new current version; the current state remains in history.\n\nFile: ${file}`))return;try{const r=await api('/api/correspondent/history/restore',{method:'POST',body:JSON.stringify({file})});corrFill(r.config);setStatus('corrSaveStatus',`Restored and saved as a new current version · v${r.config.version}`);await refreshCorrHistory()}catch(e){alert(e.message)}};
+window.restoreCorrHistory=async file=>{if(!confirm(`Restore this correspondent version? The selected state will be saved as a new current version; the current state remains in history.`))return;try{const r=await api('/api/correspondent/history/restore',{method:'POST',body:JSON.stringify({file})});corrFill(r.config);setStatus('corrSaveStatus',`Restored and saved as a new current version · v${r.config.version}`);await refreshCorrHistory()}catch(e){alert(e.message)}};
 
 async function loadHistory(){try{const r=await api('/api/history');renderHistory(r.items||[],'historyList','restoreHistory')}catch(e){$('historyList').textContent=e.message}}
-window.restoreHistory=async file=>{if(!confirm(`Restore this classification version? The selected state will be saved as a new current version; the current state remains in history.\n\nFile: ${file}`))return;try{const r=await api('/api/history/restore',{method:'POST',body:JSON.stringify({file})});fill(r.config);setStatus('saveStatus',`Restored and saved as a new current version · v${r.config.version}`);await loadHistory()}catch(e){alert(e.message)}};
+window.restoreHistory=async file=>{if(!confirm(`Restore this classification version? The selected state will be saved as a new current version; the current state remains in history.`))return;try{const r=await api('/api/history/restore',{method:'POST',body:JSON.stringify({file})});fill(r.config);setStatus('saveStatus',`Restored and saved as a new current version · v${r.config.version}`);await loadHistory()}catch(e){alert(e.message)}};
 $('historyRefresh').onclick=loadHistory;
 
 function activatePage(page){
@@ -1036,13 +1094,13 @@ function activateTab(group,id){
 }
 document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>activatePage(b.dataset.page));
 document.querySelectorAll('.tabs .tab').forEach(b=>b.onclick=()=>activateTab(b.closest('.tabs').dataset.tabs,b.dataset.tab));
-for(const [group,fallback] of [['classification','class-prompt'],['correspondent','corr-prompt'],['app','app-connections']]){let tab=fallback;try{tab=localStorage.getItem(`paperlessControlCenterTab:${group}`)||fallback}catch{}activateTab(group,tab)}
+for(const [group,fallback] of [['classification','class-test'],['correspondent','corr-test'],['app','app-connections']]){let tab=fallback;try{tab=localStorage.getItem(`paperlessControlCenterTab:${group}`)||fallback}catch{}activateTab(group,tab)}
 let initialPage='overview';try{initialPage=localStorage.getItem('paperlessControlCenterPage')||initialPage}catch{}activatePage(initialPage);
 
 document.querySelectorAll('.info-btn').forEach(btn=>{btn.addEventListener('click',e=>{e.stopPropagation();document.querySelectorAll('.info-btn.open').forEach(x=>{if(x!==btn)x.classList.remove('open')});btn.classList.toggle('open')})});
 document.addEventListener('click',()=>document.querySelectorAll('.info-btn.open').forEach(x=>x.classList.remove('open')));
 
-init();loadCorrespondent();loadApp();refreshOcrRecovery();setInterval(refreshOcrRecovery,5000);
+init();loadCorrespondent();loadApp();refreshOcrRecovery();refreshOverviewOcrHealth();setInterval(refreshOcrRecovery,5000);setInterval(refreshOverviewOcrHealth,5000);
 </script>
 </body>
 </html>
@@ -1113,6 +1171,18 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.command == "GET" and path == "/api/app/ocr/recovery":
             return response(self, HTTPStatus.OK, recovery_state_for_ui())
+
+        if self.command == "GET" and path == "/api/app/ocr/health":
+            result = {"ok": False, "health": None, "recovery": recovery_state_for_ui()}
+            try:
+                r = requests.get(OCR_SERVICE_INTERNAL_URL + "/health", timeout=5)
+                r.raise_for_status()
+                health = r.json()
+                result["ok"] = bool(health.get("ok", True)) if isinstance(health, dict) else True
+                result["health"] = health
+            except Exception as exc:
+                result["error"] = f"{type(exc).__name__}: {exc}"
+            return response(self, HTTPStatus.OK, result)
 
         if self.command == "POST" and path == "/api/app/ocr/retry-now":
             payload = body_json(self)
@@ -1370,8 +1440,17 @@ class Handler(BaseHTTPRequestHandler):
                 )
 
             errors = validate_correspondent_result(result)
+            candidate = result.get("correspondent", "") if isinstance(result, dict) else ""
+            candidate_type = (
+                "empty"
+                if not candidate
+                else "existing"
+                if candidate in tax["correspondents"]
+                else "new"
+            )
             base.update({
                 "suggestion": result,
+                "candidate_type": candidate_type,
                 "validation_errors": errors,
                 "performance": correspondent_performance_from_raw(
                     raw,
@@ -1403,7 +1482,7 @@ if __name__ == "__main__":
     app_cfg = ensure_app_config()
     cfg = ensure_config()
     print(
-        f"paperless-local-ai Control Center at http://{HOST}:{PORT} · AppConfig v{app_cfg['version']} · PromptConfig v{cfg['version']}",
+        f"paperless-local-ai Control Center at http://{HOST}:{PORT} · Settings v{app_cfg['version']} · Classification v{cfg['version']}",
         flush=True,
     )
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
