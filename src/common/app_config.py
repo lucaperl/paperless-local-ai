@@ -18,6 +18,9 @@ OCR_MODEL_PROFILES = ("medium", "small", "tiny")
 OCR_MAX_SIDE_PIXELS_DEFAULT = 3000
 OCR_MAX_SIDE_PIXELS_MIN = 2000
 OCR_MAX_SIDE_PIXELS_MAX = 4000
+OCR_RETRY_DELAYS_DEFAULT = (15, 60, 300, 600)
+OCR_RETRY_DELAYS_MAX_COUNT = 10
+OCR_RETRY_DELAY_MAX_SECONDS = 86400
 
 
 DEFAULT_CONFIG = {
@@ -38,6 +41,7 @@ DEFAULT_CONFIG = {
         "version": "PP-OCRv6",
         "model_profile": "medium",
         "max_side_pixels": OCR_MAX_SIDE_PIXELS_DEFAULT,
+        "retry_delays_seconds": list(OCR_RETRY_DELAYS_DEFAULT),
         "device": "cpu",
     },
     "runtime": {
@@ -89,6 +93,24 @@ def _positive_int(value, name, minimum=1, maximum=None):
         hi = f" and <= {maximum}" if maximum is not None else ""
         raise ConfigError(f"{name} must be >= {minimum}{hi}")
     return value
+
+
+def _retry_delays(value):
+    if not isinstance(value, list):
+        raise ConfigError("ocr.retry_delays_seconds must be a list of integer seconds")
+    if len(value) > OCR_RETRY_DELAYS_MAX_COUNT:
+        raise ConfigError(
+            f"ocr.retry_delays_seconds may contain at most {OCR_RETRY_DELAYS_MAX_COUNT} values"
+        )
+    return [
+        _positive_int(
+            delay,
+            f"ocr.retry_delays_seconds[{index}]",
+            1,
+            OCR_RETRY_DELAY_MAX_SECONDS,
+        )
+        for index, delay in enumerate(value)
+    ]
 
 
 def validate_config(raw):
@@ -165,6 +187,7 @@ def validate_config(raw):
         OCR_MAX_SIDE_PIXELS_MIN,
         OCR_MAX_SIDE_PIXELS_MAX,
     )
+    ocr["retry_delays_seconds"] = _retry_delays(ocr["retry_delays_seconds"])
 
     ocr["model_profile"] = ocr["model_profile"].lower()
     if ocr["model_profile"] not in OCR_MODEL_PROFILES:

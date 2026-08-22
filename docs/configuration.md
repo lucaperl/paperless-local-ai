@@ -47,6 +47,7 @@ Configure:
 - PaddleOCR generation;
 - PP-OCRv6 model profile;
 - maximum OCR image side in pixels;
+- automatic retry delays;
 - device.
 
 The current validated OCR generation is **PP-OCRv6**. The Control Center exposes three matching detection/recognition profiles:
@@ -66,6 +67,14 @@ The temporary OCR-only raster is limited by `ocr.max_side_pixels`. The default i
 Reference measurements with PP-OCRv6 Medium on the CPU-only 16 GiB test host were approximately **4.4–4.7 GiB** OCR-service peak at 3000 px, **4.9–5.1 GiB** at 3200 px and **6.5 GiB** at 4000 px. These are observed test values, not universal RAM requirements; page content, model profile and runtime can change memory use. **3000 px is the recommended default for 16 GiB hosts.**
 
 Existing saved configurations without `ocr.max_side_pixels` automatically use `3000`, so the setting does not require a deployment migration.
+
+`ocr.retry_delays_seconds` controls bounded automatic recovery for transient OCR failures. The default is **`[15, 60, 300, 600]`**, meaning one initial attempt followed by retries after 15 seconds, 1 minute, 5 minutes and 10 minutes. In the Control Center this is edited as a comma-separated list (`15, 60, 300, 600`). Each value adds one retry; an empty field disables automatic retries. Up to 10 delays are accepted, each from 1 to 86400 seconds. Paperless defaults `PAPERLESS_WORKER_TIMEOUT` to 1800 seconds, so the shipped schedule deliberately leaves headroom for the OCR attempts themselves. If you configure substantially longer backoffs, increase the Paperless worker timeout as well.
+
+Retries are intentionally limited to failures that can plausibly recover later, such as an unexpectedly terminated Paddle worker, IPC loss, memory-allocation failure or temporary OCR-service/network unavailability. Authentication, language/configuration, malformed-input and other deterministic errors fail immediately. A long Paddle page timeout remains a final error rather than starting another potentially 30-minute attempt.
+
+During retry backoff the failed Paddle subprocess is torn down and the shared `ai.lock` is released. The OCRmyPDF bridge keeps the Paperless consume task alive and starts the next attempt after the configured delay. The Control Center's **OCR recovery** card shows the current state and can skip an active wait with **Retry now**. The retry count remains bounded; `Retry now` does not add another attempt.
+
+Existing saved configurations without `ocr.retry_delays_seconds` automatically receive the default schedule.
 
 The configured language is also checked against the language requested by Paperless through the OCRmyPDF plugin. A mismatch is rejected rather than silently running a different model language.
 

@@ -4,6 +4,9 @@ from app_config import (
     OCR_MAX_SIDE_PIXELS_MAX,
     OCR_MAX_SIDE_PIXELS_MIN,
     OCR_MODEL_PROFILES,
+    OCR_RETRY_DELAYS_DEFAULT,
+    OCR_RETRY_DELAYS_MAX_COUNT,
+    OCR_RETRY_DELAY_MAX_SECONDS,
     technical_tag_names,
     validate_config,
 )
@@ -20,6 +23,10 @@ def test_default_config_is_valid():
     assert OCR_MAX_SIDE_PIXELS_MIN == 2000
     assert OCR_MAX_SIDE_PIXELS_MAX == 4000
     assert OCR_MODEL_PROFILES == ("medium", "small", "tiny")
+    assert cfg["ocr"]["retry_delays_seconds"] == [15, 60, 300, 600]
+    assert OCR_RETRY_DELAYS_DEFAULT == (15, 60, 300, 600)
+    assert OCR_RETRY_DELAYS_MAX_COUNT == 10
+    assert OCR_RETRY_DELAY_MAX_SECONDS == 86400
     assert cfg["runtime"]["poll_interval_seconds"] == 10
 
 
@@ -132,3 +139,41 @@ def test_ocr_max_side_pixels_bounds_are_enforced():
             assert "max_side_pixels" in str(exc)
         else:
             raise AssertionError(f"max_side_pixels={value} must be rejected")
+
+
+def test_existing_config_without_retry_delays_gets_default_schedule():
+    raw = {
+        **DEFAULT_CONFIG,
+        "ocr": {
+            "language": "de",
+            "version": "PP-OCRv6",
+            "model_profile": "medium",
+            "max_side_pixels": 3000,
+            "device": "cpu",
+        },
+    }
+    validated = validate_config(raw)
+    assert validated["ocr"]["retry_delays_seconds"] == [15, 60, 300, 600]
+
+
+def test_empty_retry_schedule_disables_automatic_retries():
+    raw = {
+        **DEFAULT_CONFIG,
+        "ocr": {**DEFAULT_CONFIG["ocr"], "retry_delays_seconds": []},
+    }
+    assert validate_config(raw)["ocr"]["retry_delays_seconds"] == []
+
+
+def test_retry_schedule_validation_is_bounded():
+    invalid = ([0], [86401], [1] * 11, "15,60")
+    for value in invalid:
+        raw = {
+            **DEFAULT_CONFIG,
+            "ocr": {**DEFAULT_CONFIG["ocr"], "retry_delays_seconds": value},
+        }
+        try:
+            validate_config(raw)
+        except ValueError as exc:
+            assert "retry_delays_seconds" in str(exc)
+        else:
+            raise AssertionError(f"retry_delays_seconds={value!r} must be rejected")

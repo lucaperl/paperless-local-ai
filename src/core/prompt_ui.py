@@ -34,6 +34,12 @@ from prompt_runtime import (
     validate_config,
     validate_result,
 )
+from ocr_recovery_state import (
+    dismiss_failure as dismiss_ocr_failure,
+    recovery_state_for_ui,
+    request_retry_now as request_ocr_retry_now,
+)
+
 from correspondent_runtime import (
     PLACEHOLDERS as CORRESPONDENT_PLACEHOLDERS,
     PROMPT_PRESETS as CORRESPONDENT_PROMPT_PRESETS,
@@ -112,6 +118,8 @@ textarea{min-height:250px;resize:vertical;line-height:1.45}.split{display:grid;g
 .info-btn:hover,.info-btn:focus{color:#fff;border-color:#5d7fa8;outline:none;background:#172538}.info-btn[data-tip]::after{content:attr(data-tip);position:absolute;left:50%;bottom:calc(100% + 10px);transform:translateX(-50%);width:min(360px,75vw);padding:9px 10px;border-radius:8px;background:#07101a;border:1px solid #334861;color:#d9e2ec;font-size:11px;font-weight:400;line-height:1.4;text-align:left;white-space:normal;box-shadow:0 12px 26px rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:.12s;z-index:50}
 .info-btn[data-tip]::before{content:"";position:absolute;left:50%;bottom:calc(100% + 4px);transform:translateX(-50%);border:6px solid transparent;border-top-color:#334861;opacity:0;transition:.12s;z-index:51}.info-btn:hover::after,.info-btn:focus::after,.info-btn.open::after,.info-btn:hover::before,.info-btn:focus::before,.info-btn.open::before{opacity:1}
 .status-box{padding:9px 11px;border-radius:8px;background:#111b28;border:1px solid var(--line);color:var(--muted);white-space:pre-wrap}.status-box.good{color:var(--green)}
+.pill.warn{color:var(--orange);border-color:#6a5127;background:#261d0f}.pill.bad{color:var(--red);border-color:#653638;background:#2b1517}
+.ocr-recovery-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.ocr-recovery-actions{display:flex;align-items:center;gap:9px}.failure-item{padding:11px 0;border-bottom:1px solid var(--line)}.failure-item:last-child{border-bottom:0}.failure-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.failure-error{margin-top:5px;color:var(--muted);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
 .mock-note{margin-top:18px;color:var(--subtle);font-size:11px;text-align:right}
 @media(max-width:1100px){.app{grid-template-columns:210px 1fr}.hero-grid{grid-template-columns:1fr 1fr}.section-grid,.split,.result{grid-template-columns:1fr}.form-grid.three{grid-template-columns:1fr 1fr}}
 @media(max-width:760px){.app{display:block}.sidebar{position:static;height:auto}.nav-group{grid-template-columns:repeat(2,minmax(0,1fr))}.nav-label{grid-column:1/-1}.sidebar-footer{display:none}.topbar{position:static;padding:14px 16px}.content{padding:18px 16px 36px}.hero-grid,.form-grid,.form-grid.three,.connection-row{grid-template-columns:1fr}.test-row{grid-template-columns:1fr}.toolbar-status{margin-left:0;width:100%}.placeholder-grid{grid-template-columns:1fr}}
@@ -778,7 +786,7 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
         </div>
 
         <div class="tab-page" id="app-ocr">
-          <details class="section-help"><summary>OCR behavior</summary><div class="help-body">These values control selective PaddleOCR processing. Medium is the default PP-OCRv6 profile; Small and Tiny trade some recognition quality for lower inference cost. The maximum OCR image side limits the temporary raster sent to PaddleOCR and is the main memory-safety control for unusually high-resolution scans. Changes are picked up for the next OCR session, so no container restart is required. The original PDF is never modified.</div></details>
+          <details class="section-help"><summary>OCR behavior</summary><div class="help-body">These values control selective PaddleOCR processing. Medium is the default PP-OCRv6 profile; Small and Tiny trade some recognition quality for lower inference cost. The maximum OCR image side limits the temporary raster sent to PaddleOCR and is the main memory-safety control for unusually high-resolution scans. Automatic retries handle short-lived worker, memory or service failures with a bounded backoff schedule; deterministic configuration/input errors still fail immediately. Changes are picked up for the next OCR session, so no container restart is required. The original PDF is never modified.</div></details>
           <div class="card panel"><div class="form-grid three">
             <div class="field"><label>OCR language <button type="button" class="info-btn" data-tip="Language of the scanned document for PaddleOCR. Start typing a language name or code. This setting is independent of the Control Center and prompt language.">i</button></label><input id="appOcrLanguage" list="ocrLanguageOptions" autocomplete="off"><datalist id="ocrLanguageOptions">
               <option value="af">Afrikaans</option><option value="az">Azerbaijani</option><option value="bs">Bosnian</option><option value="ca">Catalan</option><option value="ch">Chinese (Simplified)</option><option value="chinese_cht">Chinese (Traditional)</option><option value="cs">Czech</option><option value="cy">Welsh</option><option value="da">Danish</option><option value="de">German</option><option value="en">English</option><option value="es">Spanish</option><option value="et">Estonian</option><option value="eu">Basque</option><option value="fi">Finnish</option><option value="fr">French</option><option value="ga">Irish</option><option value="gl">Galician</option><option value="hr">Croatian</option><option value="hu">Hungarian</option><option value="id">Indonesian</option><option value="is">Icelandic</option><option value="it">Italian</option><option value="japan">Japanese</option><option value="ku">Kurdish</option><option value="la">Latin</option><option value="lb">Luxembourgish</option><option value="lt">Lithuanian</option><option value="lv">Latvian</option><option value="mi">Maori</option><option value="ms">Malay</option><option value="mt">Maltese</option><option value="nl">Dutch</option><option value="no">Norwegian</option><option value="oc">Occitan</option><option value="pl">Polish</option><option value="pt">Portuguese</option><option value="qu">Quechua</option><option value="rm">Romansh</option><option value="ro">Romanian</option><option value="rs_latin">Serbian (Latin)</option><option value="sk">Slovak</option><option value="sl">Slovenian</option><option value="sq">Albanian</option><option value="sv">Swedish</option><option value="sw">Swahili</option><option value="tl">Tagalog</option><option value="tr">Turkish</option><option value="uz">Uzbek</option><option value="vi">Vietnamese</option>
@@ -787,7 +795,13 @@ pre.preview{margin:0;min-height:180px;max-height:620px}
             <div class="field"><label>OCR model profile <span class="mini">(model_profile)</span> <button type="button" class="info-btn" data-tip="PP-OCRv6 quality/performance tier. Medium is the default and highest-quality profile; Small balances quality and speed; Tiny is fastest but has lower recognition accuracy and does not support Japanese.">i</button></label><select id="appOcrModelProfile"><option value="medium">PP-OCRv6 Medium — Best quality · Recommended</option><option value="small">PP-OCRv6 Small — Balanced</option><option value="tiny">PP-OCRv6 Tiny — Fastest · Lower accuracy</option></select></div>
             <div class="field"><label>Maximum OCR image side <span class="mini">(max_side_pixels)</span> <button type="button" class="info-btn" data-tip="Longest side of the temporary OCR-only raster sent to PaddleOCR. Lower values reduce peak RAM use; higher values retain more source resolution. Supported range: 2000–4000 px. Default: 3000 px.">i</button></label><input id="appOcrMaxSidePixels" type="number" min="2000" max="4000" step="100"><div class="field-help">Reference measurements with PP-OCRv6 Medium: 3000 px ≈ 4.4–4.7 GiB OCR-service peak, 3200 px ≈ 4.9–5.1 GiB, 4000 px ≈ 6.5 GiB. Actual memory use varies with the page and runtime. 3000 px is recommended for a 16 GiB host.</div></div>
             <div class="field"><label>Device <button type="button" class="info-btn" data-tip="PaddleOCR device. The tested low-power setup uses cpu.">i</button></label><input id="appOcrDevice"></div>
+            <div class="field" style="grid-column:1/-1"><label>Automatic retry delays in seconds <span class="mini">(retry_delays_seconds)</span> <button type="button" class="info-btn" data-tip="Comma-separated waits before each retry after a transient OCR failure. Each value adds one retry. Leave empty to disable automatic retries. Deterministic input or configuration errors are not retried.">i</button></label><input id="appOcrRetryDelays" class="mono" placeholder="15, 60, 300, 600"><div class="field-help">Default: <strong>15, 60, 300, 600</strong> = retry after 15 seconds, 1 minute, 5 minutes and 10 minutes. Keep the total backoff below Paperless&#39; worker timeout (1800 seconds by default) unless you raise <code>PAPERLESS_WORKER_TIMEOUT</code>. Up to 10 retries; each delay may be 1–86400 seconds.</div></div>
           </div></div>
+          <div class="card panel" style="margin-top:14px">
+            <div class="ocr-recovery-head"><div><h3 style="margin:0">OCR recovery</h3><p class="mini" style="margin:4px 0 0">Live state for automatic recovery. Successful transient retries need no action.</p></div><div class="ocr-recovery-actions"><span id="ocrRecoveryPill" class="pill">Loading…</span><button id="ocrRetryNowBtn" class="btn" style="display:none">Retry now</button></div></div>
+            <div id="ocrRecoverySummary" class="status-box" style="margin-top:12px">Loading OCR recovery state…</div>
+            <details id="ocrFailureDetails" class="section-help" style="margin:12px 0 0"><summary>Recent final failures (<span id="ocrFailureCount">0</span>)</summary><div class="help-body"><div class="mini" style="margin-bottom:8px">Final failures are also visible in Paperless File Tasks. After automatic retries are exhausted, fix the cause and submit the source again in Paperless; paperless-local-ai does not silently requeue failed imports.</div><div id="ocrFailureList"><span class="mini">No final OCR failures recorded.</span></div></div></details>
+          </div>
         </div>
 
         <div class="tab-page" id="app-runtime">
@@ -860,7 +874,8 @@ function setStatus(id,msg,ok=true){
 }
 
 function draft(){return {version:currentConfig?.version||1,updated_at:currentConfig?.updated_at||null,system_prompt:$('systemPrompt').value,classification_template:$('classificationTemplate').value,model:$('model').value.trim(),num_ctx:Number($('numCtx').value),num_predict:Number($('numPredict').value),temperature:Number($('temperature').value),think:$('think').value==='true',keep_alive:/^-?\d+(\.\d+)?$/.test($('keepAlive').value.trim())?Number($('keepAlive').value):$('keepAlive').value,content_char_limit:Number($('contentLimit').value),content_head_ratio:Number($('headRatio').value),max_tags:Number($('maxTags').value),ollama_timeout_seconds:Number($('ollamaTimeout').value)}}
-function appDraft(){return {version:currentAppConfig?.version||1,updated_at:currentAppConfig?.updated_at||null,connections:{paperless_url:$('appPaperlessUrl').value.trim(),ollama_url:$('appOllamaUrl').value.trim()},workflow:{llm_queue_tag:$('appLlmQueueTag').value.trim(),llm_error_tag:$('appLlmErrorTag').value.trim(),review_tag:$('appReviewTag').value.trim(),extra_excluded_tags:$('appExtraExcludedTags').value.split(',').map(x=>x.trim()).filter(Boolean)},ocr:{language:$('appOcrLanguage').value.trim(),version:$('appOcrVersion').value.trim(),model_profile:$('appOcrModelProfile').value,max_side_pixels:Number($('appOcrMaxSidePixels').value),device:$('appOcrDevice').value.trim()},runtime:{poll_interval_seconds:Number($('appPollInterval').value),review_prune_interval_seconds:Number($('appReviewPruneInterval').value),dry_run:$('appDryRun').value==='true'}}}
+function parseRetryDelays(value){const raw=value.trim();if(!raw)return[];const parts=raw.split(',').map(x=>x.trim());if(parts.some(x=>!/^\d+$/.test(x)))throw new Error('OCR retry delays must be comma-separated whole seconds, for example: 15, 60, 300, 600');return parts.map(Number)}
+function appDraft(){return {version:currentAppConfig?.version||1,updated_at:currentAppConfig?.updated_at||null,connections:{paperless_url:$('appPaperlessUrl').value.trim(),ollama_url:$('appOllamaUrl').value.trim()},workflow:{llm_queue_tag:$('appLlmQueueTag').value.trim(),llm_error_tag:$('appLlmErrorTag').value.trim(),review_tag:$('appReviewTag').value.trim(),extra_excluded_tags:$('appExtraExcludedTags').value.split(',').map(x=>x.trim()).filter(Boolean)},ocr:{language:$('appOcrLanguage').value.trim(),version:$('appOcrVersion').value.trim(),model_profile:$('appOcrModelProfile').value,max_side_pixels:Number($('appOcrMaxSidePixels').value),retry_delays_seconds:parseRetryDelays($('appOcrRetryDelays').value),device:$('appOcrDevice').value.trim()},runtime:{poll_interval_seconds:Number($('appPollInterval').value),review_prune_interval_seconds:Number($('appReviewPruneInterval').value),dry_run:$('appDryRun').value==='true'}}}
 function corrDraft(){return {version:currentCorrConfig?.version||1,updated_at:currentCorrConfig?.updated_at||null,enabled:$('corrEnabled').value==='true',system_prompt:$('corrSystemPrompt').value,prompt_template:$('corrPromptTemplate').value,model:$('corrModel').value.trim(),num_ctx:Number($('corrNumCtx').value),num_predict:Number($('corrNumPredict').value),temperature:Number($('corrTemperature').value),think:$('corrThink').value==='true',keep_alive:/^-?\d+(\.\d+)?$/.test($('corrKeepAlive').value.trim())?Number($('corrKeepAlive').value):$('corrKeepAlive').value,content_char_limit:Number($('corrContentLimit').value),content_head_ratio:Number($('corrHeadRatio').value),ollama_timeout_seconds:Number($('corrTimeout').value)}}
 
 function updateOverview(){
@@ -924,7 +939,7 @@ function fill(c){
 }
 function appFill(c,tokenConfigured){
   currentAppConfig=c;
-  $('appPaperlessUrl').value=c.connections.paperless_url;$('appOllamaUrl').value=c.connections.ollama_url;$('appLlmQueueTag').value=c.workflow.llm_queue_tag;$('appLlmErrorTag').value=c.workflow.llm_error_tag;$('appReviewTag').value=c.workflow.review_tag;$('appExtraExcludedTags').value=(c.workflow.extra_excluded_tags||[]).join(', ');$('appOcrLanguage').value=c.ocr.language;$('appOcrVersion').value=c.ocr.version;$('appOcrModelProfile').value=c.ocr.model_profile||'medium';$('appOcrMaxSidePixels').value=c.ocr.max_side_pixels||3000;$('appOcrDevice').value=c.ocr.device;$('appPollInterval').value=c.runtime.poll_interval_seconds;$('appReviewPruneInterval').value=c.runtime.review_prune_interval_seconds;$('appDryRun').value=String(c.runtime.dry_run);
+  $('appPaperlessUrl').value=c.connections.paperless_url;$('appOllamaUrl').value=c.connections.ollama_url;$('appLlmQueueTag').value=c.workflow.llm_queue_tag;$('appLlmErrorTag').value=c.workflow.llm_error_tag;$('appReviewTag').value=c.workflow.review_tag;$('appExtraExcludedTags').value=(c.workflow.extra_excluded_tags||[]).join(', ');$('appOcrLanguage').value=c.ocr.language;$('appOcrVersion').value=c.ocr.version;$('appOcrModelProfile').value=c.ocr.model_profile||'medium';$('appOcrMaxSidePixels').value=c.ocr.max_side_pixels||3000;$('appOcrRetryDelays').value=(c.ocr.retry_delays_seconds||[]).join(', ');$('appOcrDevice').value=c.ocr.device;$('appPollInterval').value=c.runtime.poll_interval_seconds;$('appReviewPruneInterval').value=c.runtime.review_prune_interval_seconds;$('appDryRun').value=String(c.runtime.dry_run);
   $('appConfigStatus').textContent=`v${c.version} · ${c.runtime.dry_run?'DRY RUN':'PRODUCTION'}`;$('appConfigStatus').style.color=c.runtime.dry_run?'var(--orange)':'var(--green)';
   $('appTokenStatus').textContent=tokenConfigured?'API token is configured in the deployment environment.':'API token is missing from the deployment environment.';$('appTokenStatus').className='status-box '+(tokenConfigured?'good':'bad');updateOverview();
 }
@@ -940,6 +955,30 @@ function renderHistory(items,id,restoreFn){
 }
 function renderAppHistory(items){renderHistory(items,'appHistoryList','restoreAppHistory')}
 function renderCorrHistory(items){renderHistory(items,'corrHistoryList','restoreCorrHistory')}
+function escapeHtml(value){return String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))}
+function humanDelay(seconds){seconds=Math.max(0,Math.round(Number(seconds)||0));if(seconds<60)return`${seconds}s`;if(seconds<3600)return`${Math.floor(seconds/60)}m ${seconds%60}s`;return`${Math.floor(seconds/3600)}h ${Math.floor((seconds%3600)/60)}m`}
+function renderOcrRecovery(payload){
+  const state=payload?.state||{status:'idle'};const failures=payload?.failures||[];const pill=$('ocrRecoveryPill');const retry=$('ocrRetryNowBtn');const summary=$('ocrRecoverySummary');
+  const displayStatus=state.status==='idle'&&failures.length?'failed':state.status;const labels={idle:'Ready',running:'OCR running',waiting:'Waiting to retry',failed:'Needs attention'};pill.textContent=labels[displayStatus]||displayStatus||'Ready';pill.className='pill '+(displayStatus==='idle'?'good':displayStatus==='failed'?'bad':displayStatus==='waiting'?'warn':'');
+  retry.style.display=state.status==='waiting'?'inline-block':'none';retry.dataset.requestId=state.request_id||'';retry.disabled=!!state.retry_now_requested;retry.textContent=state.retry_now_requested?'Retry requested':'Retry now';
+  if(state.status==='waiting'){
+    const next=state.next_retry_at?Math.max(0,(new Date(state.next_retry_at).getTime()-Date.now())/1000):state.retry_after_seconds;
+    summary.textContent=`${state.source||'OCR page'}${state.page_number?' · page '+state.page_number:''} · attempt ${state.attempt||'?'} / ${state.max_attempts||'?'} failed. ${state.retry_now_requested?'Immediate retry requested.':'Next retry in '+humanDelay(next)+'.'}
+${state.last_error||''}`;
+  }else if(state.status==='running'){
+    summary.textContent=`${state.source||'OCR page'}${state.page_number?' · page '+state.page_number:''} · attempt ${state.attempt||1} / ${state.max_attempts||1} is running.`;
+  }else if(state.status==='failed'){
+    summary.textContent=`Automatic OCR recovery stopped after a final failure.${state.source?'\n'+state.source+(state.page_number?' · page '+state.page_number:''):''}${state.last_error?'\n'+state.last_error:''}`;
+  }else if(failures.length){
+    summary.textContent=`OCR is currently idle. ${failures.length} final failure${failures.length===1?' needs':'s need'} review below.`;
+  }else{
+    summary.textContent='No OCR recovery action is needed. Transient failures are retried automatically according to the configured schedule.';
+  }
+  $('ocrFailureCount').textContent=String(failures.length);
+  $('ocrFailureList').innerHTML=failures.length?failures.map(f=>`<div class="failure-item"><div class="failure-head"><div><strong>${escapeHtml(f.source||'OCR page')}</strong>${f.page_number?` <span class="mini">· page ${f.page_number}</span>`:''}<div class="mini">${escapeHtml(f.failed_at||'')} · ${f.attempts||1}/${f.max_attempts||1} attempt(s)</div></div><button class="btn" onclick="dismissOcrFailure('${escapeHtml(f.id)}')">Dismiss</button></div><div class="failure-error">${escapeHtml(f.error||'Unknown OCR error')}</div></div>`).join(''):'<span class="mini">No final OCR failures recorded.</span>';
+}
+async function refreshOcrRecovery(){try{renderOcrRecovery(await api('/api/app/ocr/recovery'))}catch(e){$('ocrRecoveryPill').textContent='Unavailable';$('ocrRecoverySummary').textContent=e.message}}
+window.dismissOcrFailure=async id=>{try{await api('/api/app/ocr/failures/dismiss',{method:'POST',body:JSON.stringify({failure_id:id})});await refreshOcrRecovery()}catch(e){alert(e.message)}};
 
 async function init(){
   try{const s=await api('/api/state');classPromptPresets=s.presets||{};renderPromptPresetOptions('classPromptPreset',classPromptPresets);fill(s.config);$('placeholders').innerHTML=Object.entries(s.placeholders).map(([k,v])=>`<div class="placeholder-item"><code>{{${k}}}</code><span>${v}</span></div>`).join('');await loadHistory();$('topStatus').textContent='Control Center ready';$('topStatus').className='pill good'}
@@ -965,6 +1004,7 @@ $('previewBtn').onclick=()=>doPreview(false);$('testBtn').onclick=()=>doPreview(
 $('appValidateBtn').onclick=async()=>{try{const r=await api('/api/app/validate',{method:'POST',body:JSON.stringify({config:appDraft()})});setStatus('appSaveStatus',`Configuration valid · not saved yet · SHA ${r.config_sha256.slice(0,12)}`)}catch(e){setStatus('appSaveStatus',e.message,false)}};
 $('appSaveBtn').onclick=async()=>{try{const r=await api('/api/app/save',{method:'POST',body:JSON.stringify({config:appDraft()})});appFill(r.config,r.token_configured);setStatus('appSaveStatus',`Saved · AppConfig v${r.config.version}. Workers reload runtime settings automatically.`);renderAppHistory(r.history||[]);checkOverviewConnections(r.config)}catch(e){setStatus('appSaveStatus',e.message,false)}};
 $('appConnectionTestBtn').onclick=async()=>{setStatus('appConnectionStatus','Testing connections…');try{const r=await api('/api/app/connections/test',{method:'POST',body:JSON.stringify({config:appDraft()})});setStatus('appConnectionStatus',`Paperless: ${r.paperless.ok?'OK':'ERROR'}${r.paperless.detail?' · '+r.paperless.detail:''}\nOllama: ${r.ollama.ok?'OK':'ERROR'}${r.ollama.detail?' · '+r.ollama.detail:''}`,r.paperless.ok&&r.ollama.ok);applyConnectionResult(r)}catch(e){setStatus('appConnectionStatus',e.message,false)}};
+$('ocrRetryNowBtn').onclick=async()=>{const id=$('ocrRetryNowBtn').dataset.requestId;if(!id)return;try{await api('/api/app/ocr/retry-now',{method:'POST',body:JSON.stringify({request_id:id})});await refreshOcrRecovery()}catch(e){alert(e.message)}};
 async function refreshAppHistory(){const r=await api('/api/app/history');renderAppHistory(r.items||[])}
 $('appHistoryRefresh').onclick=()=>refreshAppHistory().catch(e=>setStatus('appSaveStatus',e.message,false));
 window.restoreAppHistory=async file=>{if(!confirm(`Restore these app settings? The selected state will be saved as a new current version; the current state remains in history.\n\nFile: ${file}`))return;try{const r=await api('/api/app/history/restore',{method:'POST',body:JSON.stringify({file})});appFill(r.config,r.token_configured);renderAppHistory(r.history||[]);setStatus('appSaveStatus',`Restored and saved as a new current version · v${r.config.version}`);checkOverviewConnections(r.config)}catch(e){alert(e.message)}};
@@ -1002,7 +1042,7 @@ let initialPage='overview';try{initialPage=localStorage.getItem('paperlessContro
 document.querySelectorAll('.info-btn').forEach(btn=>{btn.addEventListener('click',e=>{e.stopPropagation();document.querySelectorAll('.info-btn.open').forEach(x=>{if(x!==btn)x.classList.remove('open')});btn.classList.toggle('open')})});
 document.addEventListener('click',()=>document.querySelectorAll('.info-btn.open').forEach(x=>x.classList.remove('open')));
 
-init();loadCorrespondent();loadApp();
+init();loadCorrespondent();loadApp();refreshOcrRecovery();setInterval(refreshOcrRecovery,5000);
 </script>
 </body>
 </html>
@@ -1070,6 +1110,19 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.command == "GET" and path == "/api/app/history":
             return response(self, HTTPStatus.OK, {"items": list_app_history()})
+
+        if self.command == "GET" and path == "/api/app/ocr/recovery":
+            return response(self, HTTPStatus.OK, recovery_state_for_ui())
+
+        if self.command == "POST" and path == "/api/app/ocr/retry-now":
+            payload = body_json(self)
+            trigger = request_ocr_retry_now(payload.get("request_id", ""))
+            return response(self, HTTPStatus.OK, {"ok": True, "trigger": trigger})
+
+        if self.command == "POST" and path == "/api/app/ocr/failures/dismiss":
+            payload = body_json(self)
+            removed = dismiss_ocr_failure(payload.get("failure_id", ""))
+            return response(self, HTTPStatus.OK, {"ok": True, "removed": removed})
 
         if self.command == "POST" and path == "/api/app/validate":
             payload = body_json(self)
