@@ -15,8 +15,19 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 from app_config import OCR_MAX_SIDE_PIXELS_DEFAULT, load_config as load_app_config
+from ocr_recovery_state import (
+    consume_retry_now,
+    iso_after_seconds,
+    record_failure,
+    read_recovery_state,
+    recovery_control_state,
+    set_idle_state,
+    utc_now_iso,
+    write_recovery_state,
+)
 
 
 LOG = logging.getLogger("plai.ocr_service")
@@ -41,6 +52,25 @@ PP_OCRV6_MODEL_PROFILES = {
     "tiny": ("PP-OCRv6_tiny_det", "PP-OCRv6_tiny_rec"),
 }
 PP_OCRV6_MEDIUM_DET, PP_OCRV6_MEDIUM_REC = PP_OCRV6_MODEL_PROFILES["medium"]
+
+
+class RetryableOCRError(RuntimeError):
+    """An OCR failure that may succeed after the system has recovered."""
+
+
+_TRANSIENT_ERROR_MARKERS = (
+    "out of memory",
+    "memoryerror",
+    "cannot allocate memory",
+    "failed to allocate",
+    "std::bad_alloc",
+    "bad allocation",
+)
+
+
+def _is_transient_ocr_error_text(value: str) -> bool:
+    text = str(value or "").casefold()
+    return any(marker in text for marker in _TRANSIENT_ERROR_MARKERS)
 
 
 def _ppocrv6_model_names(profile: str) -> tuple[str, str]:
@@ -295,56 +325,68 @@ def _engine_process(conn: Any, ocr_config: dict[str, Any]) -> None:
     # Import Paddle only in the short-lived inference process. When this process
     # exits after the warm-session timeout, all Paddle allocations are returned
     # to the OS before Ollama is allowed to acquire the shared AI lock.
-    from paddleocr import PaddleOCR
+    try:
+        from paddleocr import PaddleOCR
 
-    language = ocr_config["language"]
-    version = ocr_config["version"]
-    model_profile = ocr_config.get("model_profile", "medium")
-    max_side_pixels = int(ocr_config.get("max_side_pixels", OCR_MAX_SIDE_PIXELS_DEFAULT))
-    device = ocr_config["device"]
-    started = time.monotonic()
-    cpu_threads = _effective_cpu_threads()
-    enable_hpi = _env_bool("OCR_ENABLE_HPI", False)
-    model_kwargs = {
-        "device": device,
-        "use_doc_orientation_classify": False,
-        "use_doc_unwarping": False,
-        "use_textline_orientation": False,
-        "enable_hpi": enable_hpi,
-        "enable_mkldnn": True,
-        "cpu_threads": cpu_threads,
-    }
-    detection_model = None
-    recognition_model = None
-    effective_model_profile = "upstream-default"
-
-    if version == "PP-OCRv6":
-        # Keep detection and recognition on the same explicit PP-OCRv6 tier.
-        detection_model, recognition_model = _ppocrv6_model_names(model_profile)
-        effective_model_profile = model_profile
-        model_kwargs.update(
-            text_detection_model_name=detection_model,
-            text_recognition_model_name=recognition_model,
-        )
-    else:
-        model_kwargs.update(lang=language, ocr_version=version)
-    model = PaddleOCR(**model_kwargs)
-    conn.send(
-        {
-            "type": "ready",
-            "load_seconds": round(time.monotonic() - started, 3),
-            "language": language,
-            "ocr_version": version,
-            "model_profile": effective_model_profile,
-            "max_side_pixels": max_side_pixels,
+        language = ocr_config["language"]
+        version = ocr_config["version"]
+        model_profile = ocr_config.get("model_profile", "medium")
+        max_side_pixels = int(ocr_config.get("max_side_pixels", OCR_MAX_SIDE_PIXELS_DEFAULT))
+        device = ocr_config["device"]
+        started = time.monotonic()
+        cpu_threads = _effective_cpu_threads()
+        enable_hpi = _env_bool("OCR_ENABLE_HPI", False)
+        model_kwargs = {
             "device": device,
-            "cpu_threads": cpu_threads,
-            "enable_mkldnn": True,
+            "use_doc_orientation_classify": False,
+            "use_doc_unwarping": False,
+            "use_textline_orientation": False,
             "enable_hpi": enable_hpi,
-            "text_detection_model": detection_model,
-            "text_recognition_model": recognition_model,
+            "enable_mkldnn": True,
+            "cpu_threads": cpu_threads,
         }
-    )
+        detection_model = None
+        recognition_model = None
+        effective_model_profile = "upstream-default"
+
+        if version == "PP-OCRv6":
+            # Keep detection and recognition on the same explicit PP-OCRv6 tier.
+            detection_model, recognition_model = _ppocrv6_model_names(model_profile)
+            effective_model_profile = model_profile
+            model_kwargs.update(
+                text_detection_model_name=detection_model,
+                text_recognition_model_name=recognition_model,
+            )
+        else:
+            model_kwargs.update(lang=language, ocr_version=version)
+        model = PaddleOCR(**model_kwargs)
+        conn.send(
+            {
+                "type": "ready",
+                "load_seconds": round(time.monotonic() - started, 3),
+                "language": language,
+                "ocr_version": version,
+                "model_profile": effective_model_profile,
+                "max_side_pixels": max_side_pixels,
+                "device": device,
+                "cpu_threads": cpu_threads,
+                "enable_mkldnn": True,
+                "enable_hpi": enable_hpi,
+                "text_detection_model": detection_model,
+                "text_recognition_model": recognition_model,
+            }
+        )
+    except Exception as exc:
+        try:
+            conn.send(
+                {
+                    "type": "startup_error",
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "retryable": _is_transient_ocr_error_text(f"{type(exc).__name__}: {exc}"),
+                }
+            )
+        finally:
+            return
 
     while True:
         request = conn.recv()
@@ -369,6 +411,9 @@ def _engine_process(conn: Any, ocr_config: dict[str, Any]) -> None:
                     "type": "error",
                     "request_id": request_id,
                     "error": f"{type(exc).__name__}: {exc}",
+                    "retryable": _is_transient_ocr_error_text(
+                        f"{type(exc).__name__}: {exc}"
+                    ),
                 }
             )
 
@@ -445,12 +490,23 @@ class PaddleSession:
         child_conn.close()
         try:
             if not parent_conn.poll(180):
-                raise RuntimeError("Timed out waiting for PaddleOCR model initialization")
-            ready = parent_conn.recv()
+                raise RetryableOCRError("Timed out waiting for PaddleOCR model initialization")
+            try:
+                ready = parent_conn.recv()
+            except (EOFError, OSError, ValueError) as exc:
+                raise RetryableOCRError(
+                    f"Paddle worker startup IPC failed ({type(exc).__name__}, exitcode={process.exitcode})"
+                ) from exc
+            if ready.get("type") == "startup_error":
+                message = str(ready.get("error") or "Paddle worker startup failed")
+                if ready.get("retryable") or _is_transient_ocr_error_text(message):
+                    raise RetryableOCRError(message)
+                raise RuntimeError(message)
             if ready.get("type") != "ready":
                 raise RuntimeError(f"Unexpected Paddle worker startup response: {ready!r}")
         except Exception:
-            process.terminate()
+            if process.is_alive():
+                process.terminate()
             process.join(timeout=10)
             parent_conn.close()
             self._release_global_lock()
@@ -510,7 +566,7 @@ class PaddleSession:
             f"({type(exc).__name__}, exitcode={exitcode})"
         )
         self._stop(reason)
-        raise RuntimeError(reason) from exc
+        raise RetryableOCRError(reason) from exc
 
     def ocr(self, image_path: Path) -> dict[str, Any]:
         with self._mutex:
@@ -567,7 +623,7 @@ class PaddleSession:
                 if not self._process.is_alive():
                     exitcode = self._process.exitcode
                     self._stop(f"Paddle worker exited unexpectedly ({exitcode})")
-                    raise RuntimeError(
+                    raise RetryableOCRError(
                         f"Paddle worker exited unexpectedly with code {exitcode}"
                     )
 
@@ -576,7 +632,11 @@ class PaddleSession:
                 self._stop("IPC protocol error")
                 raise RuntimeError("Paddle worker returned mismatched request ID")
             if response.get("type") == "error":
-                raise RuntimeError(response.get("error", "Paddle OCR failed"))
+                error = str(response.get("error", "Paddle OCR failed"))
+                if response.get("retryable") or _is_transient_ocr_error_text(error):
+                    self._stop(f"retryable Paddle error: {error}")
+                    raise RetryableOCRError(error)
+                raise RuntimeError(error)
             if response.get("type") != "result":
                 raise RuntimeError(f"Unexpected Paddle worker response: {response!r}")
 
@@ -633,11 +693,18 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args: Any) -> None:
         LOG.info("%s - %s", self.address_string(), fmt % args)
 
-    def _json(self, status: int, payload: dict[str, Any]) -> None:
+    def _json(
+        self,
+        status: int,
+        payload: dict[str, Any],
+        headers: dict[str, str] | None = None,
+    ) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
 
@@ -668,6 +735,8 @@ class Handler(BaseHTTPRequestHandler):
                 "ocr_version": cfg["version"],
                 "model_profile": model_profile,
                 "max_side_pixels": int(cfg.get("max_side_pixels", OCR_MAX_SIDE_PIXELS_DEFAULT)),
+                "retry_delays_seconds": list(cfg.get("retry_delays_seconds", [])),
+                "recovery": recovery_control_state(),
                 "device": cfg["device"],
                 "session_active": _session().session_active,
                 "session_age_seconds": _session().age_seconds,
@@ -722,10 +791,163 @@ class Handler(BaseHTTPRequestHandler):
                     tmp.write(chunk)
                     remaining -= len(chunk)
                 temp_path = Path(tmp.name)
-            payload = _session().ocr(temp_path)
+            configured_retry_delays = [int(x) for x in cfg.get("retry_delays_seconds", [])]
+            request_id = str(self.headers.get("X-PLAI-Request-ID", "") or uuid.uuid4().hex).strip()
+            try:
+                attempt = max(1, int(self.headers.get("X-PLAI-Attempt", "1")))
+            except ValueError:
+                attempt = 1
+            try:
+                page_number = int(self.headers.get("X-PLAI-Page-Number", "0")) or None
+            except ValueError:
+                page_number = None
+            source = unquote(self.headers.get("X-PLAI-Source", "")).strip()[:300] or "OCR page"
+
+            previous = read_recovery_state()
+            previous_delays = previous.get("retry_delays_seconds")
+            if (
+                attempt > 1
+                and previous.get("request_id") == request_id
+                and isinstance(previous_delays, list)
+            ):
+                retry_delays = [int(x) for x in previous_delays]
+            else:
+                retry_delays = configured_retry_delays
+            max_attempts = 1 + len(retry_delays)
+            if attempt > max_attempts:
+                self._json(
+                    400,
+                    {
+                        "error": "invalid_retry_attempt",
+                        "attempt": attempt,
+                        "max_attempts": max_attempts,
+                    },
+                )
+                return
+
+            consume_retry_now(request_id)
+            write_recovery_state(
+                {
+                    "status": "running",
+                    "request_id": request_id,
+                    "source": source,
+                    "page_number": page_number,
+                    "attempt": attempt,
+                    "max_attempts": max_attempts,
+                    "retry_delays_seconds": retry_delays,
+                }
+            )
+
+            try:
+                payload = _session().ocr(temp_path)
+            except RetryableOCRError as exc:
+                detail = f"{type(exc).__name__}: {exc}"
+                if attempt <= len(retry_delays):
+                    delay = retry_delays[attempt - 1]
+                    write_recovery_state(
+                        {
+                            "status": "waiting",
+                            "request_id": request_id,
+                            "source": source,
+                            "page_number": page_number,
+                            "attempt": attempt,
+                            "max_attempts": max_attempts,
+                            "retry_delays_seconds": retry_delays,
+                            "last_error": detail,
+                            "retry_after_seconds": delay,
+                            "next_retry_at": iso_after_seconds(delay),
+                        }
+                    )
+                    LOG.warning(
+                        "Transient OCR failure for %s page %s on attempt %d/%d; retry in %ds: %s",
+                        source,
+                        page_number,
+                        attempt,
+                        max_attempts,
+                        delay,
+                        detail,
+                    )
+                    self._json(
+                        503,
+                        {
+                            "error": "ocr_retryable",
+                            "detail": detail,
+                            "request_id": request_id,
+                            "attempt": attempt,
+                            "max_attempts": max_attempts,
+                            "retry_after_seconds": delay,
+                        },
+                        {"Retry-After": str(delay)},
+                    )
+                    return
+
+                failure = record_failure(
+                    request_id=request_id,
+                    source=source,
+                    page_number=page_number,
+                    attempts=attempt,
+                    max_attempts=max_attempts,
+                    error=detail,
+                    retryable=True,
+                    retry_delays_seconds=retry_delays,
+                )
+                write_recovery_state(
+                    {
+                        "status": "failed",
+                        "request_id": request_id,
+                        "source": source,
+                        "page_number": page_number,
+                        "attempt": attempt,
+                        "max_attempts": max_attempts,
+                        "retry_delays_seconds": retry_delays,
+                        "last_error": detail,
+                        "failure_id": failure["id"],
+                    }
+                )
+                LOG.error("OCR retries exhausted for %s page %s: %s", source, page_number, detail)
+                self._json(
+                    500,
+                    {
+                        "error": "ocr_retries_exhausted",
+                        "detail": detail,
+                        "attempts": attempt,
+                        "max_attempts": max_attempts,
+                    },
+                )
+                return
+            except Exception as exc:
+                detail = f"{type(exc).__name__}: {exc}"
+                failure = record_failure(
+                    request_id=request_id,
+                    source=source,
+                    page_number=page_number,
+                    attempts=attempt,
+                    max_attempts=max_attempts,
+                    error=detail,
+                    retryable=False,
+                    retry_delays_seconds=retry_delays,
+                )
+                write_recovery_state(
+                    {
+                        "status": "failed",
+                        "request_id": request_id,
+                        "source": source,
+                        "page_number": page_number,
+                        "attempt": attempt,
+                        "max_attempts": max_attempts,
+                        "retry_delays_seconds": retry_delays,
+                        "last_error": detail,
+                        "failure_id": failure["id"],
+                    }
+                )
+                LOG.exception("Non-retryable OCR request failed")
+                self._json(500, {"error": "ocr_failed", "detail": detail})
+                return
+
+            set_idle_state()
             self._json(200, payload)
         except Exception as exc:
-            LOG.exception("OCR request failed")
+            LOG.exception("OCR request failed before inference")
             self._json(500, {"error": "ocr_failed", "detail": f"{type(exc).__name__}: {exc}"})
         finally:
             if temp_path is not None:
@@ -738,6 +960,7 @@ def main() -> None:
         raise RuntimeError("OCR_SERVICE_TOKEN must be set")
     TMP_DIR.mkdir(parents=True, exist_ok=True)
     sync_integration_plugin()
+    set_idle_state()
     SESSION = PaddleSession()
     LOG.info("Starting PaddleOCR service on %s:%d", HOST, PORT)
     server = ThreadingHTTPServer((HOST, PORT), Handler)

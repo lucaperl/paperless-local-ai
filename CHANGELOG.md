@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 0.2.3 - 2026-08-22
+
+### Automatic OCR recovery
+
+- add bounded automatic retries for transient OCR failures with the default backoff **15 s → 1 min → 5 min → 10 min** after the initial attempt;
+- expose the retry schedule under **Control Center → App Settings → OCR** as a simple comma-separated list; each value adds one retry, an empty list disables retries, and existing 0.2.2 configurations receive the default schedule automatically;
+- keep deterministic authentication, language/configuration, malformed-input and ordinary Paddle errors fail-fast instead of repeatedly retrying failures that are unlikely to recover;
+- tear down a failed Paddle subprocess and release the shared `ai.lock` before every delayed retry so Ollama and other work are not blocked during backoff;
+- use a stateless 503/`Retry-After` protocol between the OCR service and OCRmyPDF bridge so long backoff periods do not keep one service-side HTTP request open;
+- recover from temporary OCR-service/network unavailability in the bridge with the same bounded schedule;
+- add a compact **OCR recovery** card to the Control Center with live Running/Waiting/Needs-attention state, **Retry now** while a retry is waiting, and bounded recent final-failure history with Dismiss;
+- keep final failures visible instead of silently requeueing forever; Paperless-ngx 3.0.5 has no supported generic retry action for an already failed initial consume task, so final recovery remains an explicit user action after the underlying cause is fixed.
+
+### Deployment
+
+- image-only update from 0.2.2; no port, mount, secret or container resource-limit changes are required.
+
 ## 0.2.2 - 2026-08-21
 
 ### OCR memory safety
