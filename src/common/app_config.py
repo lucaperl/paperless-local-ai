@@ -290,6 +290,9 @@ def list_history():
     for path in sorted(HISTORY_DIR.glob("app-config-v*.json"), reverse=True):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
+            runtime = data.get("runtime", {}) if isinstance(data.get("runtime"), dict) else {}
+            ocr = data.get("ocr", {}) if isinstance(data.get("ocr"), dict) else {}
+            profile = str(ocr.get("model_profile", "medium")).title()
             items.append(
                 {
                     "file": path.name,
@@ -298,6 +301,11 @@ def list_history():
                     "history_saved_at": data.get("history_saved_at"),
                     "history_source": data.get("history_source"),
                     "config_sha256": config_hash(data),
+                    "summary": (
+                        ("Metadata dry run" if runtime.get("dry_run") else "Metadata writes enabled")
+                        + f" · {ocr.get('version', 'PP-OCRv6')} {profile}"
+                        + f" · {ocr.get('max_side_pixels', OCR_MAX_SIDE_PIXELS_DEFAULT)} px"
+                    ),
                 }
             )
         except Exception:
