@@ -174,16 +174,27 @@ Runtime settings are loaded from `APP_DATA_DIR/config/app-config.json`.
 
 Deployment-owned values such as ports, mounts, HPI enablement, CPU/RAM/shared-memory limits and Paperless-side plugin environment require recreating/redeploying the affected containers.
 
+## History-assisted tagging does not reuse history
+
+A historical tag is reused only when the strict confidence gate passes. Check:
+
+- the document used as history has left the configured review tag and is not still in the classification queue/error state;
+- at least two reviewed neighbors support the same winning tag;
+- the nearest reviewed document has exactly one leaf content tag;
+- nearest similarity is at least 0.60 and weighted winner share is at least 0.50;
+- **Classification → Tagging → History health** is not reporting a refresh error.
+
+Use **Refresh history** after correcting historical tags if you want an immediate rebuild. A fallback to the LLM is expected when the archive does not provide a sufficiently strong and internally consistent historical match.
+
 ## New correspondent does not appear in native Suggestions
 
 Check:
 
-- **Automatic fallback** is on under Correspondent fallback;
-- fallback produced a genuinely new name;
+- the Classification result extracted a plausible new sender rather than resolving an existing correspondent or leaving it empty;
 - the document still has the review tag;
 - Paperless AI settings point at the suggestion bridge;
 - embeddings are disabled for this narrow bridge integration;
 - Paperless can reach the bridge;
 - bridge `/health` is healthy.
 
-The bridge deliberately fails closed on absent or ambiguous document matching.
+The bridge deliberately fails closed on absent or ambiguous document matching. There is no separate correspondent-only model call in v0.3.0.

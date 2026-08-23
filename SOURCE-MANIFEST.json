@@ -1,17 +1,18 @@
 {
-  "version": "0.2.4",
-  "created": "2026-08-22",
+  "version": "0.3.0",
+  "created": "2026-08-23",
   "source_files": {
     "src/common/app_config.py": "01ed2cfe2d5b2c5717d7f30e9fe1899f57106ffc1cb49f6bc58706b6a07090a9",
-    "src/core/correspondent_runtime.py": "341573a394e2f218d64a4b5b59e41754652b9ed627cd925bda5c09e06bfe4b36",
-    "src/core/doctor.py": "76bad19e439890559f605e337cb839cfa27c72a1f23fc7bde6fea61f6a07a3c8",
-    "src/core/prompt_runtime.py": "3b9365062fc7ef5fbd7d5548f4fb92932b20d07027738ae0e36d75131c0b03a2",
-    "src/core/prompt_ui.py": "7dc8349149ad616fb4b33984dcc2b65ace20099e640632b40592e964efa388b5",
+    "src/common/ocr_recovery_state.py": "5c33f95580a269572a8baf9c4e2958c7e7d101faac41dd622a5030e55f46b433",
+    "src/core/correspondent_resolver.py": "095c68846055a8adcbbfb1e2596a1752294926c58a5acf4d77e5cdd4899cbda6",
+    "src/core/doctor.py": "12cb1b43267c10d276d91f4146732c1e69ae85bab6f67e8da2a164f9d1d5eceb",
+    "src/core/history_runtime.py": "02b97ecad9f63b3937cc85e79c1fb84322f0587bd388b1d5b1cf752dce4c8de1",
+    "src/core/prompt_runtime.py": "4f18ddcb27a982477dcf7c146db3f9ebfc91decea51b493669c0de58b9b41f1b",
+    "src/core/prompt_ui.py": "895240731957155088666e86d26309ef1f91add5bc9d534b4dacbefcd8bd8a0b",
     "src/core/review_store.py": "208c4ba12d25f4a53a4353d1c84ff086cf30752ee2007b4dc4b764527ae51e95",
     "src/core/suggestion_bridge.py": "09461923ab9c72c662e16643d0e0f015cc817f4997aeb2c8bed686f93d9cc577",
-    "src/core/worker.py": "82a5c6395e3fab7f9c82d272d59f4da1ea0129e5f699864d04bb6e3a90ed55f2",
+    "src/core/worker.py": "3975a8e9525f1cbbe1b112d9949c7ebe5df10452a9759051400fb989c08e8964",
     "src/ocr/ocrmypdf_plai.py": "9a02361f15f931484fa20d96b958336cef155f6c74bd4384c361828faa569b57",
-    "src/ocr/service.py": "b96a5051f94092a90a2d61a4938c89d1589d53d106708864e25a842f7e3aa7b0",
-    "src/common/ocr_recovery_state.py": "5c33f95580a269572a8baf9c4e2958c7e7d101faac41dd622a5030e55f46b433"
+    "src/ocr/service.py": "b96a5051f94092a90a2d61a4938c89d1589d53d106708864e25a842f7e3aa7b0"
   }
 }
