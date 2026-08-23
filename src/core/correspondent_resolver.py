@@ -9,6 +9,12 @@ from typing import Any
 FUZZY_MATCH_THRESHOLD = 0.93
 FUZZY_MATCH_MARGIN = 0.04
 FUZZY_MIN_NORMALIZED_LENGTH = 8
+EXTENDED_MIN_EXISTING_TOKENS = 3
+EXTENDED_MIN_EXISTING_LENGTH = 16
+EXTENDED_MAX_EXTRA_TOKENS = 2
+LEGAL_FORM_TOKENS = {
+    "ag", "gbr", "gmbh", "inc", "kg", "kgaa", "llc", "llp", "ltd", "ohg", "plc", "se", "ug"
+}
 
 
 def normalize_correspondent_name(value: str | None) -> str:
@@ -39,14 +45,37 @@ def _plausible_candidate(candidate: str) -> bool:
     return any(ch.isalpha() for ch in candidate)
 
 
-def resolve_correspondent(candidate: str | None, existing: list[str]) -> dict[str, Any]:
-    """
-    Resolve one free-text sender/issuer extracted by the main LLM call.
+def _unique_extended_match(
+    normalized_candidate: str,
+    normalized_existing: list[tuple[str, str]],
+) -> str | None:
+    candidate_tokens = normalized_candidate.split()
+    matches: list[tuple[int, str]] = []
+    for name, normalized in normalized_existing:
+        existing_tokens = normalized.split()
+        extra = len(candidate_tokens) - len(existing_tokens)
+        if (
+            len(existing_tokens) < EXTENDED_MIN_EXISTING_TOKENS
+            or len(normalized) < EXTENDED_MIN_EXISTING_LENGTH
+            or extra < 1
+            or extra > EXTENDED_MAX_EXTRA_TOKENS
+            or candidate_tokens[: len(existing_tokens)] != existing_tokens
+        ):
+            continue
+        suffix = candidate_tokens[len(existing_tokens) :]
+        if any(token in LEGAL_FORM_TOKENS for token in suffix):
+            continue
+        matches.append((len(existing_tokens), name))
 
-    Exact normalized matches and deliberately conservative fuzzy matches are
-    safe to apply automatically. Other plausible names remain suggestions for
-    human review; they are never auto-created.
-    """
+    if not matches:
+        return None
+    longest = max(length for length, _name in matches)
+    winners = sorted({name for length, name in matches if length == longest})
+    return winners[0] if len(winners) == 1 else None
+
+
+def resolve_correspondent(candidate: str | None, existing: list[str]) -> dict[str, Any]:
+    """Resolve one free-text sender/issuer extracted by the main LLM call."""
     candidate = clean_candidate(candidate)
     if not _plausible_candidate(candidate):
         return {
@@ -78,18 +107,29 @@ def resolve_correspondent(candidate: str | None, existing: list[str]) -> dict[st
 
     scored = sorted(
         (
-            (
-                SequenceMatcher(None, normalized_candidate, normalized).ratio(),
-                name,
-            )
+            (SequenceMatcher(None, normalized_candidate, normalized).ratio(), name)
             for name, normalized in normalized_existing
         ),
         reverse=True,
     )
     best_score, best_name = scored[0] if scored else (0.0, "")
     runner_up_score = scored[1][0] if len(scored) > 1 else 0.0
-    margin = best_score - runner_up_score
 
+    extended_name = _unique_extended_match(normalized_candidate, normalized_existing)
+    if extended_name and best_name == extended_name:
+        extended_score = next((score for score, name in scored if name == extended_name), 0.0)
+        other_scores = [score for score, name in scored if name != extended_name]
+        extended_runner_up = max(other_scores, default=0.0)
+        return {
+            "extracted": candidate,
+            "status": "existing_extended",
+            "resolved": extended_name,
+            "suggestion": "",
+            "match_score": round(extended_score, 4),
+            "runner_up_score": round(extended_runner_up, 4) if other_scores else None,
+        }
+
+    margin = best_score - runner_up_score
     if (
         len(normalized_candidate) >= FUZZY_MIN_NORMALIZED_LENGTH
         and best_name

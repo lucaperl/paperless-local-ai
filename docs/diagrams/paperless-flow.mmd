@@ -8,12 +8,12 @@ flowchart TD
     C --> G
     G --> H[Document Added workflow · classification queue]:::paperless
     H --> I{Tagging strategy}:::local
-    I -- History-assisted --> J{High-confidence reviewed-history match?}:::local
-    J -- Yes --> K[Reuse established tag]:::local
-    J -- No --> L[LLM tag fallback + relevant reviewed examples]:::local
-    I -- LLM only --> M[LLM chooses tags directly]:::local
-    K --> N[One structured LLM request · title · type · date · sender]:::local
-    L --> O[One structured LLM request · title · type · date · sender · tags]:::local
+    I -- Hybrid tagging --> J{Similarity + neighbor agreement pass?}:::local
+    J -- Yes --> K[Fix reviewed tag locally]:::local
+    J -- No --> L[LLM fallback · Tag Guidance + reviewed examples]:::local
+    I -- LLM direct --> M[LLM chooses tags directly]:::local
+    K --> N[LLM · System + Base prompt · no tags schema]:::local
+    L --> O[LLM · System + Base + Tagging prompt]:::local
     M --> O
     N --> P[Local correspondent resolver]:::local
     O --> P
