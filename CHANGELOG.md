@@ -2,6 +2,54 @@
 
 ## Unreleased
 
+## 0.3.0 - 2026-08-23
+
+### History-assisted tagging
+
+- add **History-assisted** as the default tag strategy for compact local models while retaining **LLM only** for larger or more capable models;
+- build a read-only in-memory history index from finished Paperless documents that have left the configured review tag and are no longer in the classification queue/error state;
+- combine equal-weight word TF-IDF (1–2 grams) and `char_wb` TF-IDF (3–5 grams) over the full Paperless document text;
+- reuse a historical tag only when the nearest reviewed document has exactly one leaf content tag, similarity is at least **0.60**, the same tag wins the weighted top-five neighborhood, at least two neighbors support it and winner share is at least **0.50**;
+- fall back to the configured LLM when the strict history gate does not pass and include up to five relevant positive reviewed examples, with at most two examples per identical tag combination;
+- respect Paperless tag hierarchy by pruning automatically added parent tags when a selected child is present;
+- refresh history lazily, checking for relevant Paperless document/taxonomy changes at most every five minutes, with a manual **Refresh history** action in the Control Center.
+
+### Tag guidance and diagnostics
+
+- separate **Tagging strategy** from **Tag guidance** in the Control Center so first-time users can understand that they are independent;
+- generate one optional guidance field per current Paperless content tag and store guidance by stable Paperless tag ID;
+- use guidance only when the LLM is making the tag decision; high-confidence History-assisted matches ignore it;
+- add **History health** with reviewed-document count, represented tags, per-tag history depth and a retrospective leave-one-out **Estimated reusable history** metric;
+- add advisory **Potential tag inconsistencies** using complete-linkage groups at the calibrated 0.50 similarity threshold; diagnostics never modify historical Paperless metadata.
+
+### Correspondents
+
+- remove the separate correspondent-only LLM fallback and its Control Center/configuration surface;
+- make the main structured classification request extract the actual sender/issuer as free text;
+- resolve the extracted name locally with normalized exact matching and a deliberately conservative high-threshold fuzzy match;
+- apply safe existing matches directly, route plausible new names through the existing Paperless Document Suggestions bridge and never auto-create correspondents;
+- keep empty or unreliable sender extraction unresolved instead of forcing a nearest existing correspondent.
+
+### Control Center and documentation
+
+- redesign Classification around **Test → Tagging → Prompt → Output → Settings → History** and remove the separate Correspondent fallback page;
+- explain History-assisted vs LLM-only model recommendations directly in the UI and link to the new `docs/tagging.md` architecture/evaluation guide;
+- update README, architecture, configuration, installation, Paperless setup, compatibility, troubleshooting and TrueNAS documentation for the single-call metadata flow.
+
+### Reference evaluation
+
+- direct `qwen3.5:4b` fallback baseline: **18/43** exact over the full fallback set (18/38 successful model calls; five technical failures);
+- tag guidance plus relevant reviewed examples: **33/43** exact;
+- strict historical route: **89/89** routed documents exact in retrospective leave-one-out testing, covering 89 of 132 reviewed documents at the selected threshold;
+- evaluated hybrid: **122/132 (92.4%)** exact retrospectively on the reference archive;
+- these are archive-specific retrospective measurements, not accuracy guarantees; the held-family evaluation is strongly concentrated in work-related documents.
+
+### Runtime and deployment
+
+- add `scikit-learn==1.9.0` to the core image for local TF-IDF/nearest-neighbor history indexing and complete-linkage diagnostics;
+- no Compose service, port, mount, secret or Paperless OCR integration changes are required from v0.2.4;
+- existing classification configuration files migrate in place: missing tagging settings default to `history_assisted` with empty per-tag guidance; the old correspondent configuration file is no longer read.
+
 ## 0.2.4 - 2026-08-22
 
 ### Control Center UX

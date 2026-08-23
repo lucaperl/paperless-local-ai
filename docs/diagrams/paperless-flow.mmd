@@ -1,45 +1,29 @@
-%%{init: {
-  "theme": "base",
-  "themeVariables": {
-    "fontSize": "20px"
-  },
-  "flowchart": {
-    "nodeSpacing": 18,
-    "rankSpacing": 28,
-    "padding": 5,
-    "curve": "linear"
-  }
-}}%%
-
-flowchart TB
-    A["Paperless import"] --> B{"OCR needed?"}
-
-    B -->|No| N["Use existing PDF text"]
-    B -->|Yes| O["PaddleOCR · PP-OCRv6<br/>Medium / Small / Tiny · HPI / OpenVINO"]
-
-    N --> P["Searchable document in Paperless"]
+flowchart TD
+    A[Paperless import]:::paperless --> B{Page needs OCR?}:::paperless
+    B -- No --> C[Keep native text path]:::paperless
+    B -- Yes --> D[OCRmyPDF rasterizes page]:::paperless
+    D --> E[paperless-local-ai OCR plugin]:::local
+    E --> F[PaddleOCR · PP-OCRv6]:::local
+    F --> G[Searchable Paperless archive / content]:::paperless
+    C --> G
+    G --> H[Document Added workflow · classification queue]:::paperless
+    H --> I{Tagging strategy}:::local
+    I -- History-assisted --> J{High-confidence reviewed-history match?}:::local
+    J -- Yes --> K[Reuse established tag]:::local
+    J -- No --> L[LLM tag fallback + relevant reviewed examples]:::local
+    I -- LLM only --> M[LLM chooses tags directly]:::local
+    K --> N[One structured LLM request · title · type · date · sender]:::local
+    L --> O[One structured LLM request · title · type · date · sender · tags]:::local
+    M --> O
+    N --> P[Local correspondent resolver]:::local
     O --> P
+    P --> Q{Sender resolution}:::local
+    Q -- Existing safe match --> R[Apply existing correspondent]:::local
+    Q -- Plausible new sender --> S[Paperless Document Suggestions]:::paperless
+    Q -- Empty / unreliable --> T[Leave correspondent empty]:::local
+    R --> U[Apply metadata + review]:::paperless
+    S --> U
+    T --> U
 
-    P --> D["Automatic metadata classification<br/>one LLM request per document<br/><br/>title · document type · date · tags · correspondent"]
-
-    D --> C{"Existing correspondent matched?"}
-
-    C -->|Yes| W["Write metadata to Paperless"]
-    C -->|No| E{"Correspondent fallback enabled?"}
-
-    E -->|No| W
-    E -->|Yes| F["Correspondent-only LLM request"]
-
-    F -->|Existing or no reliable correspondent| W
-    F -->|New correspondent| S["Paperless Suggestions"]
-
-    W --> R["Human review in Paperless"]
-    S --> R
-
-    classDef paperless fill:#eef5ff,stroke:#4c78a8,color:#111;
-    classDef local fill:#e9f9f1,stroke:#238763,color:#111;
-    classDef fallback fill:#f5edff,stroke:#7b55a1,color:#111;
-
-    class A,B,N,P,W,R paperless;
-    class O,D,C local;
-    class E,F,S fallback;
+    classDef paperless fill:#173A5E,stroke:#6EA8D9,color:#FFFFFF,stroke-width:2px;
+    classDef local fill:#174D3B,stroke:#66C59A,color:#FFFFFF,stroke-width:2px;
