@@ -18,6 +18,7 @@ Compatibility claims are intentionally narrow: an environment is listed as teste
 | CPU acceleration | **PaddleX HPI / OpenVINO** |
 | Ollama reference | **0.32.11** |
 | Ollama reference model | **qwen3.5:4b** |
+| scikit-learn | **1.9.0** |
 
 ## Paperless / OCRmyPDF versions
 
@@ -39,10 +40,12 @@ PP-OCRv6 Tiny does not support Japanese; configuration validation rejects that c
 
 OCR language is configured separately. The service accepts common aliases from Paperless/Tesseract and maps them to the configured PP-OCRv6 language code, but rejects an actual language mismatch.
 
-## LLM models and prompts
+## LLM models, tagging and prompts
 
-Classification and Correspondent fallback can use installed Ollama models selected independently in the Control Center.
+Classification uses one installed Ollama model selected in the Control Center. Title, document type, date and sender/issuer use the same structured request. Tags use either the default **History-assisted** strategy or **LLM only**.
 
-Classification and Correspondent fallback include English and German prompt presets and support custom prompt text.
+History-assisted tagging uses local scikit-learn TF-IDF/nearest-neighbor retrieval over finished reviewed Paperless documents. It is the recommended strategy for the `qwen3.5:4b` reference model; LLM-only remains available for larger or more capable models.
+
+Classification includes English and German prompt presets, custom prompt text and optional per-tag LLM guidance.
 
 ARM64 is not currently claimed as supported.

@@ -129,10 +129,10 @@ In the Control Center:
 2. review the LLM queue/error/review tag names;
 3. review OCR language/version/model profile/max image side/device;
 4. review polling and Dry Run;
-5. review Classification;
-6. optionally configure Correspondent fallback.
+5. review Classification model/prompt settings;
+6. open **Classification → Tagging**, keep **History-assisted** for compact models unless you intentionally want LLM-only tag decisions, and add optional Tag guidance where your taxonomy needs explanation.
 
-The default model is `qwen3.5:4b`. Any selected model must already exist in Ollama.
+The default model is `qwen3.5:4b`. Any selected model must already exist in Ollama. History-assisted is the recommended tag strategy for the 4B reference model; see [Tagging](tagging.md) for the rationale, confidence gate and evaluation.
 
 ## 6. Configure Paperless workflow/tags
 

@@ -126,7 +126,7 @@ On successful normal metadata write-back:
 
 Because content-tag assignment is replacement-based, use Dry Run and one test document before enabling metadata automation on an existing archive.
 
-If the optional correspondent fallback finds an exact existing correspondent, it can be applied automatically. A genuinely new correspondent is exposed through **Paperless Suggestions** and is never auto-created.
+The main classification request extracts the actual sender/issuer as free text. `paperless-local-ai` resolves safe existing matches locally. A genuinely new correspondent is exposed through **Paperless Suggestions** and is never auto-created; there is no separate correspondent-only LLM stage.
 
 ## 6. Optional native new-correspondent review
 
@@ -155,7 +155,7 @@ LLM output language:       empty
 LLM API key:               empty
 ```
 
-The bridge does not run another LLM. For supported Paperless classification-suggestion requests, it preserves Paperless' classic suggestions and adds only a uniquely matched, still-open correspondent candidate.
+The bridge does not run an LLM. The primary classification request has already extracted the sender; for supported Paperless classification-suggestion requests, the bridge preserves Paperless' classic suggestions and adds only a uniquely matched, still-open new-correspondent candidate.
 
 The bridge is intentionally narrow and is not a replacement backend for Paperless chat/RAG or other general AI use.
 

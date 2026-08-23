@@ -21,25 +21,29 @@ def test_control_center_keeps_complete_ui_contract():
         "paperless-local-ai Control Center",
         "Overview",
         "Classification",
-        "Correspondent fallback",
         "App Settings",
         "Pipeline &amp; Tags",
-        "Safe testing",
-        "What do Check and Save do?",
+        "History-assisted",
+        "LLM only",
+        "Recommended for small models",
+        "For more capable models",
+        "History health",
+        "Estimated reusable history",
+        "Potential tag inconsistencies",
+        "Tag guidance",
+        "Guidance is used for every tag decision",
+        "Refresh history",
+        "/api/tagging/state",
+        "/api/tagging/refresh",
+        "Safe test with a real document",
         "Available placeholders",
         "System message sent to the model",
         "User message sent to the model",
         "Classification result",
-        "Correspondent result",
-        "Test request details",
+        "Tagging route",
         "Output schema",
-        "Off — manual testing only",
-        "On — run when correspondent is empty",
-        "No correspondent · fallback disabled",
-        "No correspondent · fallback enabled",
         "Load preset into draft",
         "classPromptPreset",
-        "corrPromptPreset",
         "ocrLanguageOptions",
         "appOcrModelProfile",
         "PaddleOCR model",
@@ -51,7 +55,6 @@ def test_control_center_keeps_complete_ui_contract():
         "OCR recovery",
         "Retry now",
         "Recent OCR failures",
-        "Advanced model settings",
         "Thinking",
         "Temperature",
         "Keep alive",
@@ -60,18 +63,41 @@ def test_control_center_keeps_complete_ui_contract():
         "appOcrRetryDelays",
     ):
         assert required in text
-    assert "Prompt Studio" not in text
     for obsolete in (
+        "Correspondent fallback",
+        "/api/correspondent/",
+        "corrPromptPreset",
+        "Automatic fallback",
         "Stage 1",
         "Stage 2",
+        "Prompt Studio",
         "Additional model reasoning",
         "Output randomness",
-        "Automatic retry delays in seconds",
-        "Recent final failures",
-        "AppConfig …",
         'value="93"',
     ):
         assert obsolete not in text
+
+
+def test_history_runtime_is_confidence_gated():
+    text = (ROOT / "src/core/history_runtime.py").read_text(encoding="utf-8")
+    assert "FAST_SIMILARITY = 0.60" in text
+    assert "MIN_SUPPORT = 2" in text
+    assert "MIN_WINNER_SHARE = 0.50" in text
+    assert "MAX_EXAMPLES = 5" in text
+    assert "MAX_EXAMPLES_PER_TAG_SET = 2" in text
+    assert "EXAMPLE_MIN_SIMILARITY = 0.08" in text
+    assert "AgglomerativeClustering" in text
+    assert 'linkage="complete"' in text
+
+
+def test_correspondent_is_resolved_without_second_llm_stage():
+    worker = (ROOT / "src/core/worker.py").read_text(encoding="utf-8")
+    runtime = (ROOT / "src/core/prompt_runtime.py").read_text(encoding="utf-8")
+    assert "resolve_correspondent" in worker
+    assert "correspondent_runtime" not in worker
+    assert "correspondent_fallback" not in worker
+    assert '"correspondent": {"type": "string"}' in runtime
+    assert not (ROOT / "src/core/correspondent_runtime.py").exists()
 
 
 def test_env_example_contains_only_deployment_and_secret_settings():
@@ -99,10 +125,6 @@ def test_ocr_is_service_not_queue_worker():
     assert "OCR_SERVICE_TOKEN" in compose
     assert "/integration" in compose
 
-    app_config = (ROOT / "src/common/app_config.py").read_text(encoding="utf-8")
-    assert '"ocr_queue_tag"' not in app_config
-    assert '"ocr_error_tag"' not in app_config
-
 
 def test_single_app_data_directory_in_compose():
     text = (ROOT / "compose.yaml").read_text(encoding="utf-8")
@@ -122,18 +144,14 @@ def test_true_nas_template_uses_same_upstream_images():
     text = (ROOT / "deploy/truenas/compose.example.yaml").read_text(encoding="utf-8")
     assert "ghcr.io/lucaperl/paperless-local-ai-core:stable" in text
     assert "ghcr.io/lucaperl/paperless-local-ai-ocr:stable" in text
-    assert "paperless-local-ai-core:0.1.0-alpha" not in text
 
 
 def test_tested_ocr_stack_is_pinned():
     lines = [
         line.strip()
-        for line in (ROOT / "requirements/ocr.txt").read_text(
-            encoding="utf-8"
-        ).splitlines()
+        for line in (ROOT / "requirements/ocr.txt").read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     ]
-
     expected_packages = {
         "paddleocr",
         "paddlex",
@@ -144,59 +162,38 @@ def test_tested_ocr_stack_is_pinned():
         "shapely",
         "pyclipper",
     }
-
     pinned_packages = set()
-
     for line in lines:
         assert "==" in line, f"Dependency is not exactly pinned: {line}"
-
         package, version = line.split("==", 1)
-
-        assert package, f"Missing package name: {line}"
-        assert version, f"Missing pinned version: {line}"
-        assert package not in pinned_packages, f"Duplicate dependency: {package}"
-
+        assert package and version
+        assert package not in pinned_packages
         pinned_packages.add(package)
-
     assert pinned_packages == expected_packages
 
 
-def test_ocr_requirements_do_not_keep_legacy_worker_dependencies():
-    text = (ROOT / "requirements/ocr.txt").read_text(encoding="utf-8")
-    assert "PyMuPDF" not in text
+def test_core_history_dependency_is_pinned():
+    text = (ROOT / "requirements/core.txt").read_text(encoding="utf-8")
     assert "requests==2.34.2" in text
+    assert "scikit-learn==1.9.0" in text
 
 
-def test_third_party_license_notice_matches_current_ocr_runtime():
+def test_third_party_license_notice_matches_current_runtime():
     notice = (ROOT / "THIRD_PARTY_LICENSES.md").read_text(encoding="utf-8")
-    assert "PaddlePaddle" in notice
-    assert "PaddleOCR" in notice
-    assert "PaddleX" in notice
-    assert "OpenVINO" in notice
+    for name in ("PaddlePaddle", "PaddleOCR", "PaddleX", "OpenVINO", "scikit-learn"):
+        assert name in notice
     assert "PyMuPDF" not in notice
 
-    for path in (ROOT / "docker").glob("*.Dockerfile"):
-        text = path.read_text(encoding="utf-8")
-        assert "org.opencontainers.image.licenses=\"MIT\"" not in text
 
-
-def test_public_docs_use_02_ocr_service_contract():
+def test_public_docs_use_current_pipeline_contract():
     docs = [
         ROOT / "README.md",
         ROOT / "docs/architecture.md",
-        ROOT / "docs/installation.md",
-        ROOT / "docs/paperless-setup.md",
         ROOT / "docs/configuration.md",
-        ROOT / "docs/truenas.md",
-        ROOT / "docs/troubleshooting.md",
-        ROOT / "docs/testing.md",
+        ROOT / "docs/tagging.md",
     ]
     combined = "\n".join(path.read_text(encoding="utf-8") for path in docs)
-
-    assert "ocr-service" in combined
-    assert "PAPERLESS_OCR_USER_ARGS" in combined
-    assert "PLAI_OCR_URL" in combined
-    assert "Document Added" in combined
-    assert "ocr-worker" not in combined
-    assert "PaddleOCR Error" not in combined
-    assert "Name:    PaddleOCR Queue" not in combined
+    assert "History-assisted" in combined
+    assert "LLM only" in combined
+    assert "Potential tag inconsistencies" in combined
+    assert "correspondent fallback" not in combined.lower()

@@ -4,7 +4,7 @@
 
 The OCR image directly uses PaddlePaddle, PaddleOCR and PaddleX; PaddleOCR/PaddleX also require `requests`, which is explicitly pinned in the OCR image. The HPI CPU installation also brings in optimized inference/tooling dependencies selected by PaddleX, including OpenVINO/ONNX-related components. These projects and their transitive dependencies retain their respective upstream licenses and notices.
 
-The core image uses Python packages including `requests`, likewise under their upstream licenses.
+The core image directly uses `requests` and **scikit-learn**. scikit-learn brings its scientific-Python runtime dependencies, including NumPy, SciPy, joblib and threadpoolctl. These packages retain their respective upstream licenses and notices.
 
 Base images and installed Python distributions retain their own license metadata/notices where provided upstream.
 

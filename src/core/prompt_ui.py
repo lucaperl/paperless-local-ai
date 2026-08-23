@@ -1,21 +1,30 @@
+from __future__ import annotations
+
 import json
 import os
 import traceback
-
-import requests
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
+
+import requests
 
 from app_config import (
     config_hash as app_config_hash,
     ensure_config as ensure_app_config,
     list_history as list_app_history,
+    load_config as load_app_config,
     restore_history as restore_app_history,
     save_config as save_app_config,
     validate_config as validate_app_config,
 )
-
+from correspondent_resolver import resolve_correspondent
+from history_runtime import HistoryIndex, request_history_refresh
+from ocr_recovery_state import (
+    dismiss_failure as dismiss_ocr_failure,
+    recovery_state_for_ui,
+    request_retry_now as request_ocr_retry_now,
+)
 from prompt_runtime import (
     PLACEHOLDERS,
     PROMPT_PRESETS,
@@ -25,41 +34,29 @@ from prompt_runtime import (
     ensure_config,
     list_history,
     load_config,
-    make_schema,
     performance_from_raw,
     prompt_hashes,
+    prune_parent_tag_names,
     render_prompts,
     restore_history,
     save_config,
     validate_config,
     validate_result,
 )
-from ocr_recovery_state import (
-    dismiss_failure as dismiss_ocr_failure,
-    recovery_state_for_ui,
-    request_retry_now as request_ocr_retry_now,
-)
 
-from correspondent_runtime import (
-    PLACEHOLDERS as CORRESPONDENT_PLACEHOLDERS,
-    PROMPT_PRESETS as CORRESPONDENT_PROMPT_PRESETS,
-    call_ollama as call_correspondent_ollama,
-    ensure_config as ensure_correspondent_config,
-    list_history as list_correspondent_history,
-    performance_from_raw as correspondent_performance_from_raw,
-    prompt_hashes as correspondent_prompt_hashes,
-    render_prompts as render_correspondent_prompts,
-    restore_history as restore_correspondent_history,
-    save_config as save_correspondent_config,
-    validate_config as validate_correspondent_config,
-    validate_result as validate_correspondent_result,
-)
 
 HOST = os.getenv("PROMPT_UI_HOST", "0.0.0.0")
 PORT = int(os.getenv("PROMPT_UI_PORT", "8080"))
-client = PaperlessClient()
 PAPERLESS_TOKEN = os.environ.get("PAPERLESS_TOKEN", "")
-OCR_SERVICE_INTERNAL_URL = os.getenv("OCR_SERVICE_INTERNAL_URL", "http://ocr-service:8082").rstrip("/")
+OCR_SERVICE_INTERNAL_URL = os.getenv(
+    "OCR_SERVICE_INTERNAL_URL", "http://ocr-service:8082"
+).rstrip("/")
+TAGGING_DOCS_URL = (
+    "https://github.com/lucaperl/paperless-local-ai/blob/main/docs/tagging.md"
+)
+
+client = PaperlessClient()
+history_index = HistoryIndex()
 
 
 HTML = r'''<!doctype html>
@@ -69,1042 +66,196 @@ HTML = r'''<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>paperless-local-ai Control Center</title>
 <style>
-:root{
-  color-scheme:dark;
-  --bg:#0a0f17;--sidebar:#0c131d;--panel:#121a26;--panel2:#0f1722;--line:#263448;--line2:#31435b;
-  --text:#f0f4f8;--muted:#93a2b7;--subtle:#66758a;--green:#55d483;--green-bg:#10271c;
-  --blue:#6ba8ff;--blue-bg:#10223c;--orange:#f6bd60;--red:#ff7d7d;--radius:12px;
-  --shadow:0 10px 30px rgba(0,0,0,.18)
-}
-*{box-sizing:border-box}
-html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font:14px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-button,input,textarea,select{font:inherit}button{cursor:pointer}code,textarea,input.mono,pre{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
-.app{min-height:100vh;display:grid;grid-template-columns:250px 1fr}
-.sidebar{position:sticky;top:0;height:100vh;background:linear-gradient(180deg,#0d1520,#0a111a);border-right:1px solid var(--line);padding:20px 14px;display:flex;flex-direction:column;gap:20px}
-.brand{padding:4px 8px 10px}.brand-title{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:750}
-.brand-mark{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#1e3350,#14243a);border:1px solid #36506e;display:grid;place-items:center;color:var(--blue);font-weight:900}
-.brand-sub{margin:5px 0 0 42px;color:var(--green);font-size:13px}
-.nav-group{display:grid;gap:5px}.nav-label{padding:0 10px 5px;color:var(--subtle);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
-.nav-btn{border:1px solid transparent;background:transparent;color:#ccd6e3;border-radius:9px;padding:10px 11px;text-align:left;display:flex;align-items:center;gap:10px}
-.nav-btn:hover{background:#111b28}.nav-btn.active{background:#173325;border-color:#27513b;color:#ecfff3}.nav-icon{width:18px;text-align:center;color:var(--muted)}.nav-btn.active .nav-icon{color:var(--green)}
-.sidebar-footer{margin-top:auto;padding:12px;border:1px solid var(--line);background:#0e1722;border-radius:10px}.status-line{display:flex;align-items:center;gap:8px}.dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 10px rgba(85,212,131,.45)}
-.mini{font-size:12px;color:var(--muted)}
-.main{min-width:0}.topbar{min-height:76px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 28px;background:rgba(11,17,26,.9);position:sticky;top:0;z-index:10;backdrop-filter:blur(10px)}
-.page-title{font-size:22px;font-weight:750}.page-subtitle{margin-top:2px;color:var(--muted)}.top-actions{display:flex;align-items:center;gap:10px}.pill{padding:7px 10px;border-radius:999px;border:1px solid var(--line);background:#101a27;color:var(--muted);font-size:12px}.pill.good{color:var(--green);border-color:#28563e;background:var(--green-bg)}
-.content{padding:24px 28px 48px;max-width:1560px;margin:auto}.page{display:none}.page.active{display:block}
-.hero-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:18px}.card{background:linear-gradient(180deg,#131c29,#101823);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
-.metric-card{padding:18px}.metric-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.metric-icon{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;background:#12253a;border:1px solid #203b5a;color:var(--blue);font-size:18px}.metric-card.good .metric-icon{background:#123022;border-color:#28563e;color:var(--green)}
-.metric-title{font-size:15px;font-weight:700;margin-top:3px}.metric-value{font-size:14px;margin-top:10px}.metric-detail{margin-top:4px;color:var(--muted);font-size:12px}.good-text{color:var(--green)}.warn-text{color:var(--orange)}
-.section-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}.section{padding:18px}.section h2{font-size:16px;margin:0}.section p{color:var(--muted);margin:5px 0 0}
-.kv{display:grid;grid-template-columns:1fr auto;gap:10px;padding:10px 0;border-bottom:1px solid #202c3d}.kv:last-child{border-bottom:0}.kv span:first-child{color:var(--muted)}
-.flow{display:grid;gap:0;margin-top:18px}.flow-row{display:grid;grid-template-columns:32px 1fr;gap:12px;position:relative}.flow-row:not(:last-child)::before{content:"";position:absolute;left:15px;top:31px;bottom:-7px;width:2px;background:#29405b}
-.flow-dot{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#12253a;border:1px solid #2a4c70;color:var(--blue);font-size:12px;z-index:1}.flow-row.good .flow-dot{background:#123022;border-color:#28563e;color:var(--green)}
-.flow-copy{padding:5px 0 18px}.flow-title{font-weight:650}.flow-desc{color:var(--muted);font-size:12px;margin-top:2px}
-.page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px}.page-head h1{font-size:22px;margin:0}.page-head p{margin:4px 0 0;color:var(--muted);max-width:950px}
-.config-badge{padding:8px 10px;border-radius:9px;background:#111b28;border:1px solid var(--line);color:var(--blue);font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;white-space:nowrap}
-.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}.btn{border:1px solid var(--line2);background:#182434;color:var(--text);padding:9px 13px;border-radius:8px}.btn:hover{background:#1d2b3e}.btn.primary{background:#2460aa;border-color:#3275c6}.btn.good{background:#173925;border-color:#2a6742;color:#eafff0}.toolbar-status{margin-left:auto;color:var(--muted);font-size:12px}
-.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0;border-bottom:1px solid var(--line);padding-bottom:9px}.tab{border:1px solid transparent;background:transparent;color:var(--muted);padding:8px 11px;border-radius:8px}.tab:hover{background:#121c29;color:var(--text)}.tab.active{background:#1a2a3e;border-color:#2c425d;color:var(--text)}
-.tab-page{display:none}.tab-page.active{display:block}.panel{padding:18px}.panel + .panel{margin-top:14px}
-.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.form-grid.three{grid-template-columns:repeat(3,1fr)}.field label{display:block;color:#b7c2d1;margin-bottom:6px;font-size:12px}.field-help{color:var(--muted);font-size:11px;margin-top:5px}
-input,textarea,select{width:100%;border:1px solid var(--line);background:#0b121b;color:var(--text);border-radius:8px;padding:9px 10px;outline:none}input:focus,textarea:focus,select:focus{border-color:#4b77a8;box-shadow:0 0 0 3px rgba(75,119,168,.14)}
-textarea{min-height:250px;resize:vertical;line-height:1.45}.split{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.preview{background:#091019;border:1px solid var(--line);border-radius:8px;padding:12px;min-height:180px;white-space:pre-wrap;overflow:auto;font-size:12px;color:#ced8e4}
-.test-row{display:grid;grid-template-columns:220px auto auto 1fr;gap:10px;align-items:end}.result{margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.history-item{display:grid;grid-template-columns:90px 1fr 180px auto;gap:10px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line)}.history-item:last-child{border-bottom:0}.badge{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--blue)}
-.connection-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}.connection{padding:16px}.connection h3{margin:0 0 10px}.connection-status{margin-top:12px;color:var(--green);display:flex;align-items:center;gap:8px}
-.placeholder-grid{display:grid;grid-template-columns:repeat(2,minmax(260px,1fr));gap:8px;margin-top:10px}.placeholder-item{background:#0d1520;border:1px solid var(--line);border-radius:8px;padding:10px}.placeholder-item code{display:block;color:var(--blue);font-size:12px;margin-bottom:4px}.placeholder-item span{color:var(--muted);font-size:11px}
-.section-help{border:1px solid var(--line);background:#0e1722;border-radius:9px;margin:0 0 14px;overflow:hidden}.section-help summary{cursor:pointer;list-style:none;padding:10px 12px;color:#c5d1df;font-size:12px;font-weight:650;display:flex;align-items:center;gap:8px}.section-help summary::-webkit-details-marker{display:none}.section-help summary::before{content:"i";display:grid;place-items:center;width:18px;height:18px;border-radius:50%;border:1px solid #3a4d66;color:#9fb3ca;font-size:11px}.section-help[open] summary{border-bottom:1px solid var(--line)}.section-help .help-body{padding:11px 12px;color:var(--muted);font-size:12px;line-height:1.55}
-.action-note{display:flex;gap:9px;align-items:flex-start;margin:10px 0 14px;padding:10px 12px;border-radius:9px;border:1px solid #35506d;background:#101b29;color:#cbd8e6;font-size:12px}.action-note strong{color:#fff}
-.info-btn{display:inline-grid;place-items:center;width:18px;height:18px;margin-left:6px;padding:0;border-radius:50%;border:1px solid #3a4d66;background:#111b28;color:#9fb3ca;font-size:11px;font-weight:700;vertical-align:middle;cursor:help;position:relative}
-.info-btn:hover,.info-btn:focus{color:#fff;border-color:#5d7fa8;outline:none;background:#172538}.info-btn[data-tip]::after{content:attr(data-tip);position:absolute;left:50%;bottom:calc(100% + 10px);transform:translateX(-50%);width:min(360px,75vw);padding:9px 10px;border-radius:8px;background:#07101a;border:1px solid #334861;color:#d9e2ec;font-size:11px;font-weight:400;line-height:1.4;text-align:left;white-space:normal;box-shadow:0 12px 26px rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:.12s;z-index:50}
-.info-btn[data-tip]::before{content:"";position:absolute;left:50%;bottom:calc(100% + 4px);transform:translateX(-50%);border:6px solid transparent;border-top-color:#334861;opacity:0;transition:.12s;z-index:51}.info-btn:hover::after,.info-btn:focus::after,.info-btn.open::after,.info-btn:hover::before,.info-btn:focus::before,.info-btn.open::before{opacity:1}
-.status-box{padding:9px 11px;border-radius:8px;background:#111b28;border:1px solid var(--line);color:var(--muted);white-space:pre-wrap}.status-box.good{color:var(--green)}
-.pill.warn{color:var(--orange);border-color:#6a5127;background:#261d0f}.pill.bad{color:var(--red);border-color:#653638;background:#2b1517}
-.ocr-recovery-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.ocr-recovery-actions{display:flex;align-items:center;gap:9px}.failure-item{padding:11px 0;border-bottom:1px solid var(--line)}.failure-item:last-child{border-bottom:0}.failure-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.failure-error{margin-top:5px;color:var(--muted);font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}
-.result .primary-result{grid-column:1/-1;order:-1}.result-summary{padding:12px;border:1px solid var(--line);border-radius:9px;background:#0d1520}.result-state{font-weight:700;margin-bottom:10px}.result-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.result-field{padding:8px 9px;border:1px solid #263448;border-radius:8px;background:#0b121b}.result-field span{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}.result-field strong{overflow-wrap:anywhere}.advanced-settings{margin-top:14px}.advanced-settings .help-body{color:var(--text)}
-@media(max-width:760px){.result-fields{grid-template-columns:1fr}}
-.mock-note{margin-top:18px;color:var(--subtle);font-size:11px;text-align:right}
-@media(max-width:1100px){.app{grid-template-columns:210px 1fr}.hero-grid{grid-template-columns:1fr 1fr}.section-grid,.split,.result{grid-template-columns:1fr}.form-grid.three{grid-template-columns:1fr 1fr}}
-@media(max-width:760px){.app{display:block}.sidebar{position:static;height:auto}.nav-group{grid-template-columns:repeat(2,minmax(0,1fr))}.nav-label{grid-column:1/-1}.sidebar-footer{display:none}.topbar{position:static;padding:14px 16px}.content{padding:18px 16px 36px}.hero-grid,.form-grid,.form-grid.three,.connection-row{grid-template-columns:1fr}.test-row{grid-template-columns:1fr}.toolbar-status{margin-left:0;width:100%}.placeholder-grid{grid-template-columns:1fr}}
-
-.pipeline-shell{margin-top:14px}
-.pipeline-group{position:relative;margin:0 0 16px}
-.pipeline-group-label{
-  display:inline-flex;align-items:center;gap:8px;padding:7px 11px;border-radius:8px;
-  font-weight:700;font-size:12px;margin:0 0 8px;border:1px solid var(--line2)
-}
-.pipeline-group-label.paperless{background:#122033;color:#9fc7ff;border-color:#2d4b6c}
-.pipeline-group-label.local{background:#113127;color:#77e6bd;border-color:#25614c}
-.pipeline-legend{display:flex;gap:14px;flex-wrap:wrap;margin:10px 0 14px;color:var(--muted);font-size:11px}
-.pipeline-legend span{display:inline-flex;align-items:center;gap:6px}
-.pipeline-legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
-.pipeline-legend .paperless{background:#355b80}
-.pipeline-legend .local{background:#2d7b67}
-.pipeline-legend .fallback{background:#7f62a8}
-.pipeline-main{display:grid;gap:0}
-.pipeline-step{display:grid;grid-template-columns:34px 1fr;gap:10px;position:relative}
-.pipeline-step:not(:last-child)::before{
-  content:"";position:absolute;left:16px;top:34px;bottom:-6px;width:2px;background:#29405b
-}
-.pipeline-step.paperless:not(:last-child)::before{background:#355b80}
-.pipeline-step.local:not(:last-child)::before{background:#2d7b67}
-.pipeline-num{
-  width:34px;height:34px;border-radius:50%;display:grid;place-items:center;z-index:1;
-  border:1px solid #36506e;background:#16263a;color:#a9cbf5;font-size:12px
-}
-.pipeline-step.local .pipeline-num{background:#12362b;border-color:#2a735f;color:#74e3bc}
-.pipeline-copy{padding:4px 0 16px}
-.pipeline-title{font-weight:700}
-.pipeline-desc{margin-top:3px;color:var(--muted);font-size:12px}
-.pipeline-branch-wrap{
-  margin:2px 0 16px 44px;display:grid;grid-template-columns:minmax(260px,.9fr) minmax(360px,1.3fr);
-  gap:14px;align-items:stretch
-}
-.pipeline-decision{
-  border:1px dashed #7b5aa6;background:#151323;border-radius:10px;padding:12px 14px;
-  display:flex;align-items:center;justify-content:center;text-align:center;color:#c5b2e3;font-size:12px
-}
-.pipeline-fallback{
-  border:1px solid #6d4a8d;background:linear-gradient(180deg,#181326,#12101d);
-  border-radius:10px;padding:14px
-}
-.pipeline-fallback-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
-.pipeline-fallback-title{font-weight:750;color:#d9b5ff}
-.pipeline-fallback-badge{
-  font-size:11px;color:#ffc76b;background:#2a2011;border:1px solid #664a19;border-radius:999px;padding:4px 7px;white-space:nowrap
-}
-.pipeline-fallback-desc{color:var(--muted);font-size:12px;margin-bottom:10px}
-.pipeline-outcome{display:grid;grid-template-columns:1fr auto;gap:12px;padding:8px 9px;border:1px solid #302a41;border-radius:8px;background:#10101a;margin-top:6px;font-size:11px}
-.pipeline-outcome strong{color:#e9edf3}
-.pipeline-outcome .ok{color:#63d98b}.pipeline-outcome .review{color:#f1bd62}.pipeline-outcome .empty{color:#ef8c8c}
-.pipeline-return{
-  display:flex;align-items:center;gap:8px;margin:3px 0 10px;color:#8eb8e9;font-size:12px;font-weight:700
-}
-.pipeline-return::before{content:"↩";font-size:16px}
-@media(max-width:980px){.pipeline-branch-wrap{grid-template-columns:1fr;margin-left:44px}}
-
-
-.pipeline-branch{
-  position:relative;
-  margin:0 0 18px 44px;
-  display:grid;
-  grid-template-columns:minmax(0,1fr) minmax(380px,1.15fr);
-  gap:18px;
-  align-items:start;
-}
-.pipeline-branch::before{
-  content:"";
-  position:absolute;
-  left:-27px;
-  top:-18px;
-  width:27px;
-  height:2px;
-  background:#2d7b67;
-}
-.pipeline-main-path{
-  position:relative;
-  min-height:164px;
-  padding:14px 14px 14px 20px;
-  border:1px dashed #31584d;
-  border-radius:10px;
-  background:#0f1b18;
-}
-.pipeline-main-path::before{
-  content:"";
-  position:absolute;
-  left:18px;
-  top:-18px;
-  bottom:-18px;
-  width:2px;
-  background:#2d7b67;
-}
-.pipeline-main-path-label{
-  position:relative;
-  z-index:1;
-  display:inline-flex;
-  align-items:center;
-  gap:7px;
-  padding:5px 8px;
-  border-radius:999px;
-  background:#133629;
-  border:1px solid #2f6c58;
-  color:#8be6c5;
-  font-size:11px;
-  font-weight:700;
-}
-.pipeline-main-path-copy{
-  position:relative;
-  z-index:1;
-  margin-top:12px;
-  color:var(--muted);
-  font-size:12px;
-  max-width:330px;
-}
-.pipeline-fallback-path{
-  position:relative;
-}
-.pipeline-fallback-path::before{
-  content:"";
-  position:absolute;
-  left:-18px;
-  top:28px;
-  width:18px;
-  height:2px;
-  background:#7f62a8;
-}
-.pipeline-fallback-path::after{
-  content:"";
-  position:absolute;
-  left:-18px;
-  top:-18px;
-  width:2px;
-  height:47px;
-  background:#7f62a8;
-}
-.pipeline-fallback{
-  margin:0;
-}
-.pipeline-merge{
-  position:relative;
-  height:24px;
-  margin:0 0 0 44px;
-}
-.pipeline-merge::before{
-  content:"";
-  position:absolute;
-  left:18px;
-  top:-18px;
-  width:2px;
-  height:42px;
-  background:#2d7b67;
-}
-.pipeline-merge::after{
-  content:"";
-  position:absolute;
-  right:calc(38.5% - 10px);
-  top:-18px;
-  width:calc(61.5% - 52px);
-  height:2px;
-  background:#7f62a8;
-}
-.pipeline-return-group{
-  margin-top:2px;
-  padding-top:2px;
-  border-top:1px solid rgba(53,91,128,.22);
-}
-@media(max-width:980px){
-  .pipeline-branch{grid-template-columns:1fr;margin-left:44px}
-  .pipeline-main-path{min-height:auto}
-  .pipeline-fallback-path::before,.pipeline-fallback-path::after,.pipeline-merge::after{display:none}
-}
-
-
-.branch-choice{
-  margin:2px 0 18px 44px;
-}
-.branch-choice-head{
-  display:flex;align-items:center;gap:8px;margin-bottom:10px;color:var(--muted);font-size:11px;
-}
-.branch-choice-head::before{
-  content:"";width:24px;height:2px;background:#2d7b67;border-radius:2px
-}
-.branch-grid{
-  display:grid;
-  grid-template-columns:minmax(260px,.9fr) minmax(420px,1.3fr);
-  gap:14px;
-  align-items:stretch
-}
-.branch-card{
-  border-radius:10px;
-  padding:14px;
-  min-width:0
-}
-.branch-card.main{
-  border:1px solid #2f6c58;
-  background:linear-gradient(180deg,#10251d,#0d1a15);
-}
-.branch-card.fallback{
-  border:1px solid #6d4a8d;
-  background:linear-gradient(180deg,#181326,#12101d);
-}
-.branch-card-head{
-  display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px
-}
-.branch-label{
-  display:inline-flex;align-items:center;gap:6px;padding:5px 8px;border-radius:999px;font-size:11px;font-weight:700
-}
-.branch-label.main{
-  color:#8be6c5;background:#133629;border:1px solid #2f6c58
-}
-.branch-label.fallback{
-  color:#d9b5ff;background:#241633;border:1px solid #6d4a8d
-}
-.branch-badge{
-  font-size:11px;color:#ffc76b;background:#2a2011;border:1px solid #664a19;border-radius:999px;padding:4px 7px;white-space:nowrap
-}
-.branch-copy{color:var(--muted);font-size:12px;line-height:1.5}
-.branch-outcomes{display:grid;gap:6px;margin-top:10px}
-.branch-outcome{
-  display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;
-  padding:8px 9px;border:1px solid #302a41;border-radius:8px;background:#10101a;font-size:11px
-}
-.branch-outcome strong{color:#e9edf3}
-.branch-outcome .ok{color:#63d98b}.branch-outcome .review{color:#f1bd62}.branch-outcome .empty{color:#ef8c8c}
-.branch-merge{
-  display:flex;align-items:center;justify-content:center;gap:8px;
-  margin:12px 0 4px;color:#9db0c6;font-size:11px
-}
-.branch-merge::before,.branch-merge::after{
-  content:"";height:1px;background:#33475f;flex:1
-}
-.branch-merge-pill{
-  padding:5px 9px;border-radius:999px;border:1px solid #33475f;background:#101923;color:#b8c6d6;white-space:nowrap
-}
-@media(max-width:980px){
-  .branch-grid{grid-template-columns:1fr}
-  .branch-choice{margin-left:44px}
-}
-
-
-.trigger-rule{
-  margin:2px 0 10px 44px;
-  padding:9px 11px;
-  border-radius:9px;
-  border:1px solid #33475f;
-  background:#0e1722;
-  color:#c7d3df;
-  font-size:12px;
-}
-.trigger-rule strong{color:#fff}
-.branch-card.bypass{
-  border:1px solid #455366;
-  background:linear-gradient(180deg,#141b24,#10161e);
-}
-.branch-label.bypass{
-  color:#c1cbd8;background:#1a222d;border:1px solid #455366
-}
-.branch-grid.three{
-  grid-template-columns:minmax(220px,.8fr) minmax(260px,.9fr) minmax(420px,1.35fr);
-}
-@media(max-width:1200px){
-  .branch-grid.three{grid-template-columns:1fr 1fr}
-  .branch-card.fallback{grid-column:1/-1}
-}
-@media(max-width:820px){
-  .branch-grid.three{grid-template-columns:1fr}
-  .branch-card.fallback{grid-column:auto}
-}
-
-
-.metric-card.bad .metric-icon{background:#351a1e;border-color:#6b2f38;color:var(--red)}
-.bad-text{color:var(--red)!important}.pill.bad{color:var(--red);border-color:#6b2f38;background:#271216}.pill.warn{color:var(--orange);border-color:#634b20;background:#241c10}
-.status-box.good{color:var(--green);border-color:#28563e}.status-box.bad{color:var(--red);border-color:#6b2f38}
-pre.preview{margin:0;min-height:180px;max-height:620px}
+:root{color-scheme:dark;--bg:#0a0f17;--side:#0c131d;--panel:#121a26;--panel2:#0f1722;--line:#263448;--line2:#31435b;--text:#f0f4f8;--muted:#93a2b7;--sub:#66758a;--green:#55d483;--blue:#6ba8ff;--orange:#f6bd60;--red:#ff7d7d;--radius:12px;--shadow:0 10px 30px rgba(0,0,0,.18)}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font:14px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,input,textarea,select{font:inherit}button{cursor:pointer}code,pre,textarea,input.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}a{color:#8fbdff}
+.app{min-height:100vh;display:grid;grid-template-columns:250px 1fr}.sidebar{position:sticky;top:0;height:100vh;background:linear-gradient(180deg,#0d1520,#0a111a);border-right:1px solid var(--line);padding:20px 14px;display:flex;flex-direction:column;gap:20px}.brand{padding:4px 8px 10px}.brand-title{display:flex;align-items:center;gap:10px;font-size:17px;font-weight:750}.brand-mark{width:32px;height:32px;border-radius:9px;background:#14243a;border:1px solid #36506e;display:grid;place-items:center;color:var(--blue);font-weight:900}.brand-sub{margin:5px 0 0 42px;color:var(--green);font-size:13px}.nav-group{display:grid;gap:5px}.nav-label{padding:0 10px 5px;color:var(--sub);font-size:11px;text-transform:uppercase;letter-spacing:.08em}.nav-btn{border:1px solid transparent;background:transparent;color:#ccd6e3;border-radius:9px;padding:10px 11px;text-align:left;display:flex;align-items:center;gap:10px}.nav-btn:hover{background:#111b28}.nav-btn.active{background:#173325;border-color:#27513b;color:#ecfff3}.sidebar-footer{margin-top:auto;padding:12px;border:1px solid var(--line);background:#0e1722;border-radius:10px}.status-line{display:flex;align-items:center;gap:8px}.dot{width:8px;height:8px;border-radius:50%;background:var(--green)}.mini{font-size:12px;color:var(--muted)}
+.main{min-width:0}.topbar{min-height:76px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 28px;background:rgba(11,17,26,.9);position:sticky;top:0;z-index:10;backdrop-filter:blur(10px)}.page-title{font-size:22px;font-weight:750}.page-subtitle{margin-top:2px;color:var(--muted)}.top-actions{display:flex;gap:10px}.pill{padding:7px 10px;border-radius:999px;border:1px solid var(--line);background:#101a27;color:var(--muted);font-size:12px}.pill.good{color:var(--green);border-color:#28563e;background:#10271c}.pill.warn{color:var(--orange);border-color:#6a5127;background:#261d0f}.pill.bad{color:var(--red);border-color:#653638;background:#2b1517}
+.content{padding:24px 28px 48px;max-width:1560px;margin:auto}.page{display:none}.page.active{display:block}.page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px}.page-head h1{font-size:22px;margin:0}.page-head p{margin:4px 0 0;color:var(--muted);max-width:980px}.config-badge{padding:8px 10px;border-radius:9px;background:#111b28;border:1px solid var(--line);color:var(--blue);font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;white-space:nowrap}
+.card{background:linear-gradient(180deg,#131c29,#101823);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}.panel{padding:18px}.panel+.panel{margin-top:14px}.hero-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:18px}.metric-card{padding:18px}.metric-title{font-size:15px;font-weight:700}.metric-value{font-size:14px;margin-top:10px}.metric-detail{margin-top:4px;color:var(--muted);font-size:12px}.good-text{color:var(--green)!important}.warn-text{color:var(--orange)!important}.bad-text{color:var(--red)!important}.section-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}.section{padding:18px}.section h2,.panel h2,.panel h3{margin-top:0}.section p,.panel>p{color:var(--muted)}.kv{display:grid;grid-template-columns:1fr auto;gap:10px;padding:10px 0;border-bottom:1px solid #202c3d}.kv:last-child{border-bottom:0}.kv span:first-child{color:var(--muted)}
+.flow{display:grid;gap:0;margin-top:16px}.flow-row{display:grid;grid-template-columns:32px 1fr;gap:12px;position:relative}.flow-row:not(:last-child)::before{content:"";position:absolute;left:15px;top:31px;bottom:-7px;width:2px;background:#29405b}.flow-dot{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#12253a;border:1px solid #2a4c70;color:var(--blue);font-size:12px;z-index:1}.flow-row.local .flow-dot{background:#123022;border-color:#28563e;color:var(--green)}.flow-copy{padding:5px 0 18px}.flow-title{font-weight:650}.flow-desc{color:var(--muted);font-size:12px;margin-top:2px}
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}.btn{border:1px solid var(--line2);background:#182434;color:var(--text);padding:9px 13px;border-radius:8px}.btn:hover{background:#1d2b3e}.btn.primary{background:#2460aa;border-color:#3275c6}.btn.good{background:#173925;border-color:#2a6742;color:#eafff0}.toolbar-status{margin-left:auto;color:var(--muted);font-size:12px}.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0;border-bottom:1px solid var(--line);padding-bottom:9px}.tab{border:1px solid transparent;background:transparent;color:var(--muted);padding:8px 11px;border-radius:8px}.tab:hover{background:#121c29;color:var(--text)}.tab.active{background:#1a2a3e;border-color:#2c425d;color:var(--text)}.tab-page{display:none}.tab-page.active{display:block}
+.section-help{border:1px solid var(--line);background:#0e1722;border-radius:9px;margin:0 0 14px;overflow:hidden}.section-help summary{cursor:pointer;list-style:none;padding:10px 12px;color:#c5d1df;font-size:12px;font-weight:650}.section-help summary::-webkit-details-marker{display:none}.section-help[open] summary{border-bottom:1px solid var(--line)}.help-body{padding:11px 12px;color:var(--muted);font-size:12px;line-height:1.55}.action-note{display:flex;gap:9px;align-items:flex-start;margin:10px 0 14px;padding:10px 12px;border-radius:9px;border:1px solid #35506d;background:#101b29;color:#cbd8e6;font-size:12px}.action-note strong{color:#fff}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.form-grid.three{grid-template-columns:repeat(3,1fr)}.field label{display:block;color:#b7c2d1;margin-bottom:6px;font-size:12px}.field-help{color:var(--muted);font-size:11px;margin-top:5px}input,textarea,select{width:100%;border:1px solid var(--line);background:#0b121b;color:var(--text);border-radius:8px;padding:9px 10px;outline:none}input:focus,textarea:focus,select:focus{border-color:#4b77a8;box-shadow:0 0 0 3px rgba(75,119,168,.14)}textarea{min-height:230px;resize:vertical;line-height:1.45}.split{display:grid;grid-template-columns:1fr 1fr;gap:14px}.test-row{display:grid;grid-template-columns:220px auto auto 1fr;gap:10px;align-items:end}.result{margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:14px}.primary-result{grid-column:1/-1}.preview{background:#091019;border:1px solid var(--line);border-radius:8px;padding:12px;min-height:180px;max-height:620px;white-space:pre-wrap;overflow:auto;font-size:12px;color:#ced8e4}.status-box{padding:9px 11px;border-radius:8px;background:#111b28;border:1px solid var(--line);color:var(--muted);white-space:pre-wrap}.status-box.good{color:var(--green);border-color:#28563e}.status-box.bad{color:var(--red);border-color:#6b2f38}.result-summary{padding:12px;border:1px solid var(--line);border-radius:9px;background:#0d1520}.result-state{font-weight:700;margin-bottom:10px}.result-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.result-field{padding:8px 9px;border:1px solid #263448;border-radius:8px;background:#0b121b}.result-field span{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}.history-item{display:grid;grid-template-columns:90px 1fr 180px auto;gap:10px;align-items:center;padding:11px 0;border-bottom:1px solid #202c3d}.connection-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}.connection{padding:16px}.placeholder-grid{display:grid;grid-template-columns:repeat(2,minmax(260px,1fr));gap:8px;margin-top:10px}.placeholder-item{background:#0d1520;border:1px solid var(--line);border-radius:8px;padding:10px}.placeholder-item code{display:block;color:var(--blue);font-size:12px;margin-bottom:4px}.placeholder-item span{color:var(--muted);font-size:11px}
+.strategy-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.strategy-card{display:block;border:1px solid var(--line2);background:#0d1520;border-radius:11px;padding:16px;cursor:pointer;position:relative}.strategy-card:has(input:checked){border-color:#4f8bd1;background:#10223a;box-shadow:0 0 0 2px rgba(107,168,255,.08)}.strategy-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.strategy-title{display:flex;align-items:center;gap:9px;font-weight:750}.strategy-title input{width:auto}.strategy-copy{margin-top:9px;color:var(--muted);font-size:12px;line-height:1.55}.strategy-best{margin-top:9px;color:#cbd8e6;font-size:12px}.badge-rec{padding:4px 7px;border-radius:999px;border:1px solid #28563e;color:var(--green);background:#10271c;font-size:10px;font-weight:700;white-space:nowrap}.badge-model{padding:4px 7px;border-radius:999px;border:1px solid #3a4d66;color:#b7c8da;background:#111b28;font-size:10px;font-weight:700;white-space:nowrap}
+.health-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px}.health-metric{padding:12px;background:#0d1520;border:1px solid var(--line);border-radius:9px}.health-metric span{display:block;color:var(--muted);font-size:11px}.health-metric strong{display:block;font-size:18px;margin-top:4px}.tag-table{width:100%;border-collapse:collapse;margin-top:8px}.tag-table th,.tag-table td{text-align:left;padding:8px;border-bottom:1px solid #202c3d;font-size:12px}.tag-table th{color:var(--muted);font-weight:600}.guidance-list{display:grid;gap:8px}.guidance-item{border:1px solid var(--line);border-radius:9px;background:#0d1520;overflow:hidden}.guidance-item summary{cursor:pointer;padding:11px 12px;display:flex;align-items:center;justify-content:space-between;gap:12px}.guidance-item .guidance-body{padding:0 12px 12px}.guidance-item textarea{min-height:100px}.guidance-state{color:var(--muted);font-size:11px}.inconsistency{padding:11px 0;border-bottom:1px solid #202c3d}.inconsistency:last-child{border-bottom:0}.inconsistency-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.tag-chip{padding:3px 7px;border-radius:999px;border:1px solid #3a4d66;background:#111b28;color:#c9d4e0;font-size:10px}.doc-list{margin:8px 0 0;padding-left:20px;color:var(--muted);font-size:11px}.separate-note{border-left:3px solid #4c6f99;padding:9px 11px;background:#0d1722;color:#b9c8d8;font-size:12px;margin:10px 0 14px}
+.failure-item{padding:11px 0;border-bottom:1px solid #202c3d}.failure-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+@media(max-width:1100px){.app{grid-template-columns:210px 1fr}.hero-grid,.health-grid{grid-template-columns:1fr 1fr}.section-grid,.split,.result,.strategy-grid{grid-template-columns:1fr}.form-grid.three{grid-template-columns:1fr 1fr}}
+@media(max-width:760px){.app{display:block}.sidebar{position:static;height:auto}.nav-group{grid-template-columns:repeat(3,minmax(0,1fr))}.nav-label{grid-column:1/-1}.sidebar-footer{display:none}.topbar{position:static;padding:14px 16px}.content{padding:18px 16px 36px}.hero-grid,.health-grid,.form-grid,.form-grid.three,.connection-row{grid-template-columns:1fr}.test-row{grid-template-columns:1fr}.toolbar-status{margin-left:0;width:100%}.placeholder-grid{grid-template-columns:1fr}.result-fields{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <div class="app">
-  <aside class="sidebar">
-    <div class="brand">
-      <div class="brand-title"><div class="brand-mark">P</div><span>paperless-local-ai</span></div>
-      <div class="brand-sub">Control Center</div>
+<aside class="sidebar">
+  <div class="brand"><div class="brand-title"><div class="brand-mark">P</div><span>paperless-local-ai</span></div><div class="brand-sub">Control Center</div></div>
+  <div class="nav-group"><div class="nav-label">Control Center</div>
+    <button class="nav-btn active" data-page="overview">Overview</button>
+    <button class="nav-btn" data-page="app-settings">App Settings</button>
+    <button class="nav-btn" data-page="classification">Classification</button>
+  </div>
+  <div class="sidebar-footer"><div class="status-line"><span class="dot"></span><strong id="sidebarMode">Loading…</strong></div><div id="sidebarAppVersion" class="mini" style="margin-top:8px">Settings …</div><div id="sidebarModel" class="mini">Loading…</div></div>
+</aside>
+<main class="main">
+<header class="topbar"><div><div class="page-title" id="topTitle">Overview</div><div class="page-subtitle" id="topSubtitle">System overview and current configuration</div></div><div class="top-actions"><span id="topStatus" class="pill">Loading…</span><span id="topModeStatus" class="pill">Loading…</span></div></header>
+<div class="content">
+
+<section class="page active" id="page-overview">
+  <details class="section-help"><summary>About the Control Center</summary><div class="help-body">This is the normal configuration and diagnostics interface for paperless-local-ai. Configure connections, OCR, classification and tagging here, then use safe tests against existing Paperless documents before enabling metadata writes. Deployment secrets and container-level settings remain outside this UI.</div></details>
+  <div class="hero-grid">
+    <div id="overviewPaperlessCard" class="card metric-card"><div class="metric-title">Paperless-ngx</div><div id="overviewPaperlessStatus" class="metric-value">Checking…</div><div id="overviewPaperlessDetail" class="metric-detail">Loading…</div></div>
+    <div id="overviewOllamaCard" class="card metric-card"><div class="metric-title">Ollama</div><div id="overviewOllamaStatus" class="metric-value">Checking…</div><div id="overviewOllamaDetail" class="metric-detail">Loading…</div></div>
+    <div id="overviewOcrCard" class="card metric-card"><div class="metric-title">OCR</div><div id="overviewOcrStatus" class="metric-value">Loading…</div><div id="overviewOcrDetail" class="metric-detail">Loading…</div></div>
+    <div id="overviewTaggingCard" class="card metric-card"><div class="metric-title">Tagging</div><div id="overviewTaggingStatus" class="metric-value">Loading…</div><div id="overviewTaggingDetail" class="metric-detail">Loading…</div></div>
+  </div>
+  <div class="section-grid">
+    <div class="card section"><h2>Pipeline</h2><p>Paperless remains the document system of record. paperless-local-ai improves scanned-page OCR, then applies local metadata automation.</p>
+      <div class="flow">
+        <div class="flow-row"><div class="flow-dot">1</div><div class="flow-copy"><div class="flow-title">Paperless import</div><div class="flow-desc">Paperless consumes the original and decides through OCRmyPDF which pages actually need OCR.</div></div></div>
+        <div class="flow-row local"><div class="flow-dot">2</div><div class="flow-copy"><div class="flow-title">PaddleOCR for scanned pages</div><div class="flow-desc">Only pages that need OCR are sent to the local OCR service; native-text pages stay on Paperless' normal path.</div></div></div>
+        <div class="flow-row local"><div class="flow-dot">3</div><div class="flow-copy"><div class="flow-title">Tag routing</div><div class="flow-desc">History-assisted mode first checks reviewed Paperless documents for a high-confidence tag match. Otherwise the LLM decides tags; LLM-only mode always lets the model decide.</div></div></div>
+        <div class="flow-row local"><div class="flow-dot">4</div><div class="flow-copy"><div class="flow-title">One structured LLM request</div><div class="flow-desc">The model returns title, document type, date and the actual sender/issuer. It also returns tags whenever the selected tagging route needs an LLM decision.</div></div></div>
+        <div class="flow-row local"><div class="flow-dot">5</div><div class="flow-copy"><div class="flow-title">Local sender resolution</div><div class="flow-desc">The extracted sender is matched conservatively to existing Paperless correspondents. A genuinely new name is sent to Paperless Document Suggestions for review; no second LLM call is needed.</div></div></div>
+        <div class="flow-row"><div class="flow-dot">6</div><div class="flow-copy"><div class="flow-title">Review in Paperless</div><div class="flow-desc">Validated metadata is written to the same document. The configured review tag remains the boundary between unreviewed documents and trusted tagging history.</div></div></div>
+      </div>
     </div>
-    <div class="nav-group">
-      <div class="nav-label">Control Center</div>
-      <button class="nav-btn active" data-page="overview"><span class="nav-icon">◫</span>Overview</button>
-      <button class="nav-btn" data-page="app-settings"><span class="nav-icon">⚙</span>App Settings</button>
-      <button class="nav-btn" data-page="classification"><span class="nav-icon">◎</span>Classification</button>
-      <button class="nav-btn" data-page="correspondent"><span class="nav-icon">↪</span>Correspondent fallback</button>
+    <div class="card section"><h2>Current configuration</h2><p>The settings most likely to matter during normal operation.</p><div style="margin-top:12px">
+      <div class="kv"><span>Metadata writes</span><strong id="overviewMetadataWrites">Loading…</strong></div>
+      <div class="kv"><span>Classification model</span><span id="overviewClassification">Loading…</span></div>
+      <div class="kv"><span>Context window</span><span id="overviewContext">Loading…</span></div>
+      <div class="kv"><span>Tagging strategy</span><span id="overviewTaggingConfig">Loading…</span></div>
+      <div class="kv"><span>PaddleOCR model</span><span id="overviewOcrConfig">Loading…</span></div>
+      <div class="kv"><span>OCR image dimension</span><span id="overviewOcrImageSize">Loading…</span></div>
+    </div></div>
+  </div>
+</section>
+
+<section class="page" id="page-classification">
+  <div class="page-head"><div><h1>Document classification</h1><p>One local LLM request determines normal document metadata. Tagging is routed separately so small local models do not have to make every taxonomy decision themselves. Sender extraction is free text and is resolved against existing Paperless correspondents after the model call.</p></div><div id="classConfigStatus" class="config-badge">Loading…</div></div>
+  <div class="toolbar"><button id="validateBtn" class="btn">Check configuration</button><button id="saveBtn" class="btn primary">Save changes</button><span id="saveStatus" class="toolbar-status">Saved configuration loaded.</span></div>
+  <details class="section-help"><summary>What do Check and Save do?</summary><div class="help-body"><strong>Check configuration</strong> validates the visible draft without saving. <strong>Save changes</strong> creates a new version used by the next automatic classification job. No restart is required.</div></details>
+  <div class="tabs" data-tabs="classification">
+    <button class="tab active" data-tab="class-test">Test</button><button class="tab" data-tab="class-tagging">Tagging</button><button class="tab" data-tab="class-prompt">Prompt</button><button class="tab" data-tab="class-output">Output &amp; allowed values</button><button class="tab" data-tab="class-settings">Settings</button><button class="tab" data-tab="class-history">History</button>
+  </div>
+
+  <div class="tab-page active" id="class-test">
+    <div class="action-note"><span>i</span><div><strong>Safe test with a real document.</strong> Preview shows the exact routing decision and prompts without calling Ollama. Run model test additionally performs the real structured request. Neither action changes the selected Paperless document or creates a correspondent suggestion.</div></div>
+    <div class="card panel"><div class="test-row"><div class="field"><label>Paperless document ID</label><input id="docId" class="mono" type="number" min="1" placeholder="e.g. 123"></div><button id="previewBtn" class="btn">Preview prompts</button><button id="testBtn" class="btn primary">Run model test</button><div class="mini">OCR and LLM inference share one resource lock. A test waits if another heavy AI task is active.</div></div><div id="testStatus" class="status-box" style="margin-top:12px">Ready for prompt preview or model test.</div></div>
+    <div class="result">
+      <div class="card panel primary-result"><h3>Classification result</h3><p class="mini">Shows the final result after history routing and local correspondent resolution. Raw details remain below.</p><div id="classificationResultHuman" class="result-summary"><span class="mini">Run a model test to see the classification result.</span></div></div>
+      <div class="card panel"><h3>Tagging route</h3><p class="mini">Explains whether the tag came from reviewed history or from the LLM.</p><pre id="taggingPreview" class="preview"></pre></div>
+      <div class="card panel"><h3>Request details</h3><pre id="previewMeta" class="preview"></pre></div>
+      <div class="card panel"><h3>System message sent to the model</h3><pre id="systemPreview" class="preview"></pre></div>
+      <div class="card panel"><h3>User message sent to the model</h3><pre id="userPreview" class="preview"></pre></div>
+      <div class="card panel" style="grid-column:1/-1"><details class="section-help" style="margin:0"><summary>Technical model result</summary><div class="help-body"><pre id="testResult" class="preview"></pre></div></details></div>
     </div>
-    <div class="sidebar-footer">
-      <div class="status-line"><span class="dot"></span><strong id="sidebarMode">Loading…</strong></div>
-      <div id="sidebarAppVersion" class="mini" style="margin-top:8px">Settings …</div><div id="sidebarModel" class="mini">Loading…</div>
+  </div>
+
+  <div class="tab-page" id="class-tagging">
+    <details class="section-help"><summary>How tagging works</summary><div class="help-body">Tagging has two independent concepts. <strong>Tagging strategy</strong> decides whether reviewed Paperless history may route a tag before the LLM. <strong>Tag guidance</strong> describes what each tag means to the LLM. Guidance never changes a high-confidence history match. <a href="__TAGGING_DOCS_URL__" target="_blank" rel="noreferrer">Read the tagging design and evaluation on GitHub.</a></div></details>
+
+    <div class="card panel"><h3>Tagging strategy</h3><p class="mini">Choose who should make tag decisions. This affects tags only; title, document type, date and sender still use the configured LLM.</p>
+      <div class="strategy-grid">
+        <label class="strategy-card"><div class="strategy-head"><div class="strategy-title"><input type="radio" name="taggingMode" value="history_assisted"><span>History-assisted</span></div><span class="badge-rec">Recommended for small models</span></div><div class="strategy-copy">Strong matches against already reviewed Paperless documents reuse the established tag. Unfamiliar documents fall back to the LLM, which also receives relevant reviewed examples.</div><div class="strategy-best"><strong>Best fit:</strong> 4B-class and other compact local models, especially CPU-focused setups.</div></label>
+        <label class="strategy-card"><div class="strategy-head"><div class="strategy-title"><input type="radio" name="taggingMode" value="llm_only"><span>LLM only</span></div><span class="badge-model">For more capable models</span></div><div class="strategy-copy">The configured LLM chooses tags directly for every document. Reviewed history is not used for routing or few-shot examples.</div><div class="strategy-best"><strong>Best fit:</strong> larger or more capable models, or users who explicitly prefer model-only tag decisions.</div></label>
+      </div>
+      <div class="separate-note"><strong>Why is History-assisted the default?</strong> In the reference evaluation, 4B-class models understood document topics reasonably well but did not map that understanding to a personal tag taxonomy consistently enough across recurring and semantically similar document types. Reviewed history adds a deterministic high-confidence path while keeping an LLM fallback for unfamiliar documents. <a href="__TAGGING_DOCS_URL__#why-history-assisted-is-the-default" target="_blank" rel="noreferrer">Details and evaluation</a>.</div>
     </div>
-  </aside>
 
-  <main class="main">
-    <header class="topbar">
-      <div><div class="page-title" id="topTitle">Overview</div><div class="page-subtitle" id="topSubtitle">System overview and current configuration</div></div>
-      <div class="top-actions"><span id="topStatus" class="pill">Loading…</span><span id="topModeStatus" class="pill">Loading…</span></div>
-    </header>
-
-    <div class="content">
-      <section class="page active" id="page-overview">
-        <details class="section-help">
-          <summary>About the Control Center</summary>
-          <div class="help-body">Configure connections, workflow tags, OCR and model settings, then run safe tests against real Paperless documents before enabling metadata writes. Deployment-only values and secrets remain in the deployment configuration.</div>
-        </details>
-        <div class="hero-grid">
-          <div id="overviewPaperlessCard" class="card metric-card"><div class="metric-top"><div><div class="metric-title">Paperless-ngx</div><div id="overviewPaperlessStatus" class="metric-value">Checking…</div></div><div class="metric-icon">P</div></div><div id="overviewPaperlessDetail" class="metric-detail">Loading…</div></div>
-          <div id="overviewOllamaCard" class="card metric-card"><div class="metric-top"><div><div class="metric-title">Ollama</div><div id="overviewOllamaStatus" class="metric-value">Checking…</div></div><div class="metric-icon">O</div></div><div id="overviewOllamaDetail" class="metric-detail">Loading…</div></div>
-          <div id="overviewOcrCard" class="card metric-card"><div class="metric-top"><div><div class="metric-title">OCR</div><div id="overviewOcrStatus" class="metric-value">Loading…</div></div><div class="metric-icon">OCR</div></div><div id="overviewOcrDetail" class="metric-detail">Loading…</div></div>
-          <div id="overviewCorrCard" class="card metric-card"><div class="metric-top"><div><div class="metric-title">Correspondent fallback</div><div id="overviewCorrStatus" class="metric-value">Loading…</div></div><div class="metric-icon">↪</div></div><div id="overviewCorrDetail" class="metric-detail">Loading…</div></div>
-        </div>
-        <div class="section-grid">
-          <div class="card section">
-            <h2>Pipeline</h2>
-            <p><strong>paperless-local-ai extends Paperless import and review:</strong> Paperless/OCRmyPDF keeps usable native text, delegates only pages that need OCR to local PaddleOCR, then queues completed documents for local metadata classification.</p>
-            <div class="pipeline-legend">
-              <span><i class="paperless"></i>Paperless-ngx / OCRmyPDF</span>
-              <span><i class="local"></i>paperless-local-ai</span>
-              <span><i class="fallback"></i>optional Correspondent fallback</span>
-            </div>
-
-            <div class="pipeline-shell">
-              <div class="pipeline-group">
-                <div class="pipeline-group-label paperless">Paperless-ngx</div>
-                <div class="pipeline-main">
-                  <div class="pipeline-step paperless">
-                    <div class="pipeline-num">1</div>
-                    <div class="pipeline-copy">
-                      <div class="pipeline-title">Paperless import</div>
-                      <div class="pipeline-desc">Paperless consumes the original document and runs its normal parser/OCRmyPDF path.</div>
-                    </div>
-                  </div>
-                  <div class="pipeline-step paperless">
-                    <div class="pipeline-num">2</div>
-                    <div class="pipeline-copy">
-                      <div class="pipeline-title">OCR decision in Paperless / OCRmyPDF</div>
-                      <div class="pipeline-desc">Native-text pages stay on the normal Paperless path. Only pages that need OCR are delegated to paperless-local-ai.</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="pipeline-group">
-                <div class="pipeline-group-label local">paperless-local-ai</div>
-                <div class="pipeline-main">
-                  <div class="pipeline-step local">
-                    <div class="pipeline-num">3</div>
-                    <div class="pipeline-copy">
-                      <div class="pipeline-title">PaddleOCR for scanned pages</div>
-                      <div class="pipeline-desc">Pages that need OCR are processed by the selected PaddleOCR model, then searchable text is returned to Paperless/OCRmyPDF.</div>
-                    </div>
-                  </div>
-
-                  <div class="pipeline-step local">
-                    <div class="pipeline-num">4</div>
-                    <div class="pipeline-copy">
-                      <div class="pipeline-title">Automatic metadata classification</div>
-                      <div class="pipeline-desc">After Paperless adds the document and assigns the classification queue tag, one LLM request with structured JSON output determines title, document type, date, tags and an existing correspondent.</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="trigger-rule">
-                  <strong>What happens after classification?</strong>
-                  The Correspondent fallback is considered only when Classification returns <strong>no correspondent</strong>. It runs only when automatic fallback is enabled under Correspondent fallback → Settings.
-                </div>
-
-                <div class="branch-choice">
-                  <div class="branch-choice-head">Classification result</div>
-
-                  <div class="branch-grid three">
-                    <div class="branch-card main">
-                      <div class="branch-card-head">
-                        <div class="branch-label main">Existing correspondent returned</div>
-                      </div>
-                      <div class="branch-copy">
-                        The primary classification matched one of the correspondents already present in Paperless.
-                        That correspondent is applied together with the other metadata.
-                      </div>
-                    </div>
-
-                    <div class="branch-card bypass">
-                      <div class="branch-card-head">
-                        <div class="branch-label bypass">No correspondent · fallback disabled</div>
-                      </div>
-                      <div class="branch-copy">
-                        No additional LLM call runs. The other metadata is applied and the correspondent remains empty.
-                      </div>
-                    </div>
-
-                    <div class="branch-card fallback">
-                      <div class="branch-card-head">
-                        <div class="branch-label fallback">No correspondent · fallback enabled</div>
-                        <div class="branch-badge">run correspondent fallback</div>
-                      </div>
-                      <div class="branch-copy">
-                        A separate correspondent-only LLM call runs with its own prompt and settings. It receives the document text plus the current Paperless correspondent list.
-                      </div>
-
-                      <div class="branch-outcomes">
-                        <div class="branch-outcome">
-                          <strong>Existing correspondent</strong>
-                          <span class="ok">apply automatically</span>
-                        </div>
-                        <div class="branch-outcome">
-                          <strong>New correspondent</strong>
-                          <span class="review">Document Suggestions</span>
-                        </div>
-                        <div class="branch-outcome">
-                          <strong>No reliable correspondent</strong>
-                          <span class="empty">left empty</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="branch-merge">
-                    <span class="branch-merge-pill">all paths continue to metadata update ↓</span>
-                  </div>
-                </div>
-
-                <div class="pipeline-main">
-                  <div class="pipeline-step local">
-                    <div class="pipeline-num">5</div>
-                    <div class="pipeline-copy">
-                      <div class="pipeline-title">Apply metadata to Paperless</div>
-                      <div class="pipeline-desc">Metadata is applied to the same Paperless document; processing tags move it into the normal review state.</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="pipeline-return-group">
-                <div class="pipeline-group">
-                  <div class="pipeline-group-label paperless">Paperless-ngx</div>
-                  <div class="pipeline-main">
-                    <div class="pipeline-step paperless">
-                      <div class="pipeline-num">6</div>
-                      <div class="pipeline-copy">
-                        <div class="pipeline-title">Review in Paperless</div>
-                        <div class="pipeline-desc">The normal Paperless workflow continues. Any proposed new correspondent is shown through Paperless Document Suggestions for human review.</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="card section">
-            <h2>Current configuration</h2><p>The settings most likely to matter during normal operation.</p>
-            <div style="margin-top:12px">
-              <div class="kv"><span>Metadata writes</span><strong id="overviewMetadataWrites">Loading…</strong></div><div class="kv"><span>Classification model</span><span id="overviewClassification">Loading…</span></div><div class="kv"><span>Context window</span><span id="overviewContext">Loading…</span></div><div class="kv"><span>PaddleOCR model</span><span id="overviewOcrConfig">Loading…</span></div><div class="kv"><span>OCR image dimension</span><span id="overviewOcrImageSize">Loading…</span></div><div class="kv"><span>Correspondent fallback</span><span id="overviewCorrConfig">Loading…</span></div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="page" id="page-classification">
-        <div class="page-head">
-          <div><h1>Document classification</h1><p>Classification runs for every document picked up by automatic metadata processing. One LLM request with structured JSON output determines title, document type, an existing Paperless correspondent, tags and document date. Valid results are applied directly to Paperless. If the correspondent remains empty, the optional Correspondent fallback can run afterwards.</p></div>
-          <div id="classConfigStatus" class="config-badge">Loading…</div>
-        </div>
-        <div class="toolbar">
-          <button id="validateBtn" class="btn">Check configuration</button>
-          <button id="saveBtn" class="btn primary">Save changes</button>
-          <span id="saveStatus" class="toolbar-status">Saved configuration loaded.</span>
-        </div>
-        <details class="section-help">
-          <summary>What do Check and Save do?</summary>
-          <div class="help-body"><strong>Check configuration</strong> is optional and checks required fields, placeholders and values without saving. <strong>Save changes</strong> creates a new version that is used from the next production classification job. No restart is required.</div>
-        </details>
-
-        <div class="tabs" data-tabs="classification">
-          <button class="tab" data-tab="class-prompt">Prompt</button><button class="tab active" data-tab="class-test">Test</button><button class="tab" data-tab="class-output">Output &amp; allowed values</button><button class="tab" data-tab="class-settings">Settings</button><button class="tab" data-tab="class-history">History</button>
-        </div>
-
-        <div class="tab-page" id="class-prompt">
-          <details class="section-help"><summary>What is edited here?</summary><div class="help-body">The system prompt contains the general classification rules. The classification prompt contains the task for one document. Placeholders such as <code>{{DOCUMENT_TEXT}}</code> are replaced with data from the selected Paperless document immediately before the model call.</div></details>
-          <div class="card panel" style="margin-bottom:14px"><div class="form-grid" style="align-items:end">
-            <div class="field"><label>Prompt preset <button type="button" class="info-btn" data-tip="Built-in starting points for the prompt text. Loading a preset changes only the visible draft; it does not save or activate anything automatically.">i</button></label><select id="classPromptPreset"></select></div>
-            <div><button id="classLoadPresetBtn" class="btn">Load preset into draft</button><div class="field-help">Replaces the two visible prompt fields only. Review or edit them, then save to activate.</div></div>
-          </div></div>
-          <div class="split">
-            <div class="card panel">
-              <div class="field"><label>System prompt <button type="button" class="info-btn" data-tip="Applied to every classification run and defines role, safety rules and general output requirements. Document-specific content belongs in the classification prompt; {{DOCUMENT_TEXT}} must remain there.">i</button></label>
-              <textarea id="systemPrompt"></textarea></div>
-            </div>
-            <div class="card panel">
-              <div class="field"><label>Classification prompt <button type="button" class="info-btn" data-tip="Task for one document. It defines how title, document type, existing correspondent, tags and date are determined. The rendered prompt is sent to Ollama as the user message.">i</button></label>
-              <textarea id="classificationTemplate"></textarea></div>
-            </div>
-          </div>
-          <div class="card panel" style="margin-top:14px">
-            <h3 style="margin-top:0">Available placeholders</h3>
-            <p class="mini">At runtime, the Control Center replaces each placeholder with the current value from the test or production document. <code>_JSON</code> variants provide a correctly formatted JSON list; <code>_LINES</code> provides the same values one per line. <code>{{DOCUMENT_TEXT}}</code> is required and must not be removed.</p>
-            <div id="placeholders" class="placeholder-grid"></div>
-          </div>
-        </div>
-
-        <div class="tab-page active" id="class-test">
-          <div class="action-note"><span>ⓘ</span><div><strong>Safe test with a real document.</strong> Select an existing Paperless document by ID. <strong>Preview prompts</strong> loads the document and current Paperless metadata values and shows what would be sent to the model without calling it. <strong>Run model test</strong> additionally performs a real Ollama request. Both use the currently visible, even unsaved draft and never modify the Paperless document.</div></div>
-          <div class="card panel">
-            <div class="test-row">
-              <div class="field"><label>Paperless document ID <button type="button" class="info-btn" data-tip="Numeric document ID from Paperless, for example from the document URL or API.">i</button></label><input id="docId" class="mono" type="number" min="1" placeholder="e.g. 123"></div>
-              <button id="previewBtn" class="btn">Preview prompts</button>
-              <button id="testBtn" class="btn primary">Run model test</button>
-              <div class="mini">OCR and LLM inference run one at a time to avoid competing for the same CPU and RAM. If another AI task is active, the test waits.</div>
-            </div>
-            <div id="testStatus" class="status-box" style="margin-top:12px">Ready for prompt preview or model test.</div>
-          </div>
-          <div class="result">
-            <div class="card panel"><h3 style="margin-top:0">System message sent to the model</h3><p class="mini">Exact rendered system prompt for this test.</p><pre id="systemPreview" class="preview"></pre></div>
-            <div class="card panel"><h3 style="margin-top:0">User message sent to the model</h3><p class="mini">Exact rendered classification prompt including substituted placeholders.</p><pre id="userPreview" class="preview"></pre></div>
-            <div class="card panel primary-result"><h3 style="margin-top:0">Classification result</h3><p class="mini">Filled only by <strong>Run model test</strong>. The normal view shows the metadata result; raw response/validation/performance data stays under Technical details.</p><div id="classificationResultHuman" class="result-summary"><span class="mini">Run a model test to see the classification result.</span></div><details class="section-help" style="margin:10px 0 0"><summary>Technical details</summary><div class="help-body"><pre id="testResult" class="preview"></pre></div></details></div>
-            <div class="card panel"><h3 style="margin-top:0">Test request details</h3><p class="mini">Technical details about the rendered request, such as configuration version and amount of document text used.</p><pre id="previewMeta" class="preview"></pre></div>
-          </div>
-        </div>
-
-        <div class="tab-page" id="class-output">
-          <details class="section-help"><summary>What is shown here?</summary><div class="help-body">The output schema is the JSON contract the model response must satisfy. Allowed Paperless values are loaded by the most recent preview or model test. Classification can use only current list values for document type, correspondent and tags.</div></details>
-          <div class="split">
-            <div class="card panel"><h3 style="margin-top:0">Output schema</h3><p class="mini">Defines fields, data types and allowed values for the model response. It is generated automatically from the current configuration.</p><pre id="schemaPreview" class="preview"></pre></div>
-            <div class="card panel"><h3 style="margin-top:0">Currently allowed Paperless values</h3><p class="mini">Document types, correspondents and tags loaded from Paperless during the latest preview or model test. Workflow tags such as <code>Inbox</code> or <code>LLM</code> are excluded.</p><pre id="taxonomyPreview" class="preview"></pre></div>
-          </div>
-        </div>
-
-        <div class="tab-page" id="class-settings">
-          <details class="section-help"><summary>About these settings</summary><div class="help-body">These settings control Classification only. Changes are used by automatic classification after <strong>Save changes</strong>. They do not install or modify Ollama models.</div></details>
-          <div class="card panel"><h3 style="margin-top:0">Model and document input</h3><div class="form-grid three">
-            <div class="field"><label>Ollama model <button type="button" class="info-btn" data-tip="Exact name of a model already installed in Ollama, for example qwen3.5:4b. The Control Center does not download or install models.">i</button></label><input id="model"></div>
-            <div class="field"><label>Context window <button type="button" class="info-btn" data-tip="Maximum context window provided to the model, in tokens. Larger values allow more prompt/document text but use more memory and may be slower. Ollama parameter: num_ctx.">i</button></label><input id="numCtx" type="number"></div>
-            <div class="field"><label>Document text limit <button type="button" class="info-btn" data-tip="Maximum number of characters from Paperless document content included in the prompt. Shorter documents are used in full; longer documents are truncated.">i</button></label><input id="contentLimit" type="number"></div>
-            <div class="field"><label>Maximum tags returned by the model <button type="button" class="info-btn" data-tip="Limits how many Paperless tags the model may return. Workflow/review tags do not count.">i</button></label><input id="maxTags" type="number" min="1" max="10"></div>
-          </div></div>
-          <details class="section-help advanced-settings"><summary>Advanced model settings</summary><div class="help-body"><div class="form-grid three">
-            <div class="field"><label>Maximum output tokens <button type="button" class="info-btn" data-tip="Maximum number of tokens Ollama may generate for the JSON response. Too small a value can truncate the result. Ollama parameter: num_predict.">i</button></label><input id="numPredict" type="number"></div>
-            <div class="field"><label>Temperature <button type="button" class="info-btn" data-tip="Sampling temperature. 0 is recommended for reproducible metadata; higher values make responses more variable.">i</button></label><input id="temperature" type="number" min="0" max="2" step="0.05"></div>
-            <div class="field"><label>Thinking <button type="button" class="info-btn" data-tip="Enables the model's thinking mode before the final response. It can use additional tokens and processing time, and not every model supports it. Ollama parameter: think.">i</button></label><select id="think"><option value="false">Off</option><option value="true">On</option></select></div>
-            <div class="field"><label>Keep alive <button type="button" class="info-btn" data-tip="How long Ollama keeps the model loaded after the request. 0 unloads it immediately; for example 5m keeps it loaded for five minutes. Ollama parameter: keep_alive.">i</button></label><input id="keepAlive"></div>
-            <div class="field"><label>Text kept from beginning <button type="button" class="info-btn" data-tip="Used only when document text exceeds the configured limit. 0.75 keeps 75% of the retained text from the beginning and 25% from the end.">i</button></label><input id="headRatio" type="number" min="0.5" max="0.95" step="0.05"></div>
-            <div class="field"><label>Request timeout <button type="button" class="info-btn" data-tip="Maximum number of seconds the worker waits for the Ollama request before treating it as failed.">i</button></label><input id="ollamaTimeout" type="number"></div>
-          </div></div></details>
-        </div>
-
-        <div class="tab-page" id="class-history">
-          <details class="section-help"><summary>What is versioned?</summary><div class="help-body">Every save stores prompt and settings together as a new classification version. Restoring does not overwrite history: the selected older state becomes a new active version.</div></details>
-          <div class="card panel">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h3 style="margin:0">Saved versions</h3><button id="historyRefresh" class="btn">Reload history</button></div>
-            <p class="mini"><strong>Restore this version</strong> saves the selected state again as the current configuration. The currently active state remains in history as its own version.</p>
-            <div id="historyList"></div>
-          </div>
-        </div>
-      </section>
-
-      <section class="page" id="page-correspondent">
-        <div class="page-head">
-          <div><h1>Correspondent fallback</h1><p>This optional fallback runs only when Classification found no correspondent and <strong>Automatic fallback</strong> is enabled. It identifies only the correspondent. An unambiguous existing Paperless correspondent is applied automatically. A genuinely new name is never created automatically; it appears in Paperless Document Suggestions for confirmation. If no reliable name is found, nothing changes.</p></div>
-          <div id="corrConfigStatus" class="config-badge">Loading…</div>
-        </div>
-        <div class="toolbar"><button id="corrValidateBtn" class="btn">Check configuration</button><button id="corrSaveBtn" class="btn primary">Save changes</button><span id="corrSaveStatus" class="toolbar-status">Saved configuration loaded.</span></div>
-        <details class="section-help"><summary>What do Check and Save do?</summary><div class="help-body"><strong>Check configuration</strong> is optional and checks required fields, placeholders and values without saving. <strong>Save changes</strong> creates a new version. The <strong>Automatic fallback</strong> switch under Settings controls whether the fallback runs automatically.</div></details>
-
-        <div class="tabs" data-tabs="correspondent"><button class="tab" data-tab="corr-prompt">Prompt</button><button class="tab active" data-tab="corr-test">Test</button><button class="tab" data-tab="corr-settings">Settings</button><button class="tab" data-tab="corr-history">History</button></div>
-
-        <div class="tab-page" id="corr-prompt">
-          <details class="section-help"><summary>What is edited here?</summary><div class="help-body">These prompts belong only to the Correspondent fallback. They do not affect title, document type, tags or date from Classification. The fallback may suggest a new correspondent name, but it does not create one.</div></details>
-          <div class="card panel" style="margin-bottom:14px"><div class="form-grid" style="align-items:end">
-            <div class="field"><label>Prompt preset <button type="button" class="info-btn" data-tip="Built-in starting points for sender-identification prompt text. Loading a preset changes only the visible draft; it does not save or enable production use automatically.">i</button></label><select id="corrPromptPreset"></select></div>
-            <div><button id="corrLoadPresetBtn" class="btn">Load preset into draft</button><div class="field-help">Replaces the two visible prompt fields only. Review or edit them, then save to activate.</div></div>
-          </div></div>
-          <div class="split">
-            <div class="card panel"><div class="field"><label>System prompt <button type="button" class="info-btn" data-tip="General role and safety rules for sender identification. The document text belongs in the correspondent prompt.">i</button></label><textarea id="corrSystemPrompt"></textarea></div></div>
-            <div class="card panel"><div class="field"><label>Correspondent prompt <button type="button" class="info-btn" data-tip="Task for one document. The model response contains only correspondent: either a suitable existing/new sender name or an empty string when the sender cannot be determined reliably.">i</button></label><textarea id="corrPromptTemplate"></textarea></div></div>
-          </div>
-          <div class="card panel" style="margin-top:14px">
-            <h3 style="margin-top:0">Available placeholders</h3>
-            <p class="mini"><code>{{DOCUMENT_TEXT}}</code> is required. <code>{{CORRESPONDENTS_JSON}}</code> and <code>{{CORRESPONDENTS_LINES}}</code> provide existing Paperless correspondents as reference. This list is not a hard restriction for the fallback: if the actual sender does not yet exist, the model may suggest a new name.</p>
-            <div id="corrPlaceholders" class="placeholder-grid"></div>
-          </div>
-        </div>
-
-        <div class="tab-page active" id="corr-test">
-          <div class="action-note"><span>ⓘ</span><div><strong>Safe test with a real document.</strong> <strong>Preview prompts</strong> shows the exact Correspondent fallback input without calling the model. <strong>Run model test</strong> performs a real Ollama request. Neither Paperless metadata nor Document Suggestions are written. Testing works even when <strong>Automatic fallback</strong> is off.</div></div>
-          <div class="card panel">
-            <div class="test-row">
-              <div class="field"><label>Paperless document ID <button type="button" class="info-btn" data-tip="Numeric document ID from Paperless, for example from the document URL or API.">i</button></label><input id="corrDocId" type="number" min="1" placeholder="e.g. 123"></div>
-              <button id="corrPreviewBtn" class="btn">Preview prompts</button>
-              <button id="corrTestBtn" class="btn primary">Run model test</button>
-              <div class="mini">Preview and model test use the currently visible, even unsaved draft. OCR and LLM inference run one at a time to avoid competing for the same CPU and RAM.</div>
-            </div>
-            <div id="corrTestStatus" class="status-box" style="margin-top:12px">Ready for prompt preview or model test.</div>
-          </div>
-          <div class="result">
-            <div class="card panel"><h3 style="margin-top:0">System message sent to the model</h3><p class="mini">Exact rendered system prompt for this test.</p><pre id="corrSystemPreview" class="preview"></pre></div>
-            <div class="card panel"><h3 style="margin-top:0">User message sent to the model</h3><p class="mini">Exact rendered correspondent prompt including substituted placeholders.</p><pre id="corrUserPreview" class="preview"></pre></div>
-            <div class="card panel"><h3 style="margin-top:0">Output schema</h3><p class="mini">The Correspondent fallback may return only the <code>correspondent</code> field.</p><pre id="corrSchemaPreview" class="preview"></pre></div>
-            <div class="card panel primary-result"><h3 style="margin-top:0">Correspondent result</h3><p class="mini">Filled only by <strong>Run model test</strong>. The normal view shows whether the result matches an existing correspondent, proposes a new one or remains empty.</p><div id="correspondentResultHuman" class="result-summary"><span class="mini">Run a model test to see the correspondent result.</span></div><details class="section-help" style="margin:10px 0 0"><summary>Technical details</summary><div class="help-body"><pre id="corrTestResult" class="preview"></pre></div></details></div>
-            <div class="card panel" style="grid-column:1/-1"><h3 style="margin-top:0">Test request details</h3><p class="mini">Technical details about the rendered request, such as configuration version and amount of document text used.</p><pre id="corrPreviewMeta" class="preview"></pre></div>
-          </div>
-        </div>
-
-        <div class="tab-page" id="corr-settings">
-          <details class="section-help"><summary>About these settings</summary><div class="help-body">These settings control the Correspondent fallback only. Manual tests remain available whether automatic fallback is enabled or disabled.</div></details>
-          <div class="card panel"><h3 style="margin-top:0">Automatic fallback</h3>
-            <div class="field"><label>Automatic fallback <button type="button" class="info-btn" data-tip="When On, the fallback starts automatically only when Classification returned no correspondent. An exact existing Paperless correspondent is applied directly; a new name is shown through Document Suggestions for confirmation. Empty or uncertain results change nothing. This switch does not affect manual tests.">i</button></label><select id="corrEnabled"><option value="false">Off — manual testing only</option><option value="true">On — run when correspondent is empty</option></select></div>
-          </div>
-          <div class="card panel"><h3 style="margin-top:0">Model and document input</h3><div class="form-grid three">
-            <div class="field"><label>Ollama model <button type="button" class="info-btn" data-tip="Exact name of a model already installed in Ollama. The Control Center does not download or install models.">i</button></label><input id="corrModel"></div>
-            <div class="field"><label>Context window <button type="button" class="info-btn" data-tip="Maximum context window for the fallback request, in tokens. Larger values use more memory and may be slower. Ollama parameter: num_ctx.">i</button></label><input id="corrNumCtx" type="number"></div>
-            <div class="field"><label>Document text limit <button type="button" class="info-btn" data-tip="Maximum number of characters from Paperless document content included in the correspondent prompt. Shorter documents are used in full.">i</button></label><input id="corrContentLimit" type="number"></div>
-          </div></div>
-          <details class="section-help advanced-settings"><summary>Advanced model settings</summary><div class="help-body"><div class="form-grid three">
-            <div class="field"><label>Maximum output tokens <button type="button" class="info-btn" data-tip="Maximum number of tokens Ollama may generate for the short JSON response. Ollama parameter: num_predict.">i</button></label><input id="corrNumPredict" type="number"></div>
-            <div class="field"><label>Temperature <button type="button" class="info-btn" data-tip="Sampling temperature. 0 is recommended for reproducible correspondent names; higher values make responses more variable.">i</button></label><input id="corrTemperature" type="number" min="0" max="2" step="0.05"></div>
-            <div class="field"><label>Thinking <button type="button" class="info-btn" data-tip="Enables the model's thinking mode before the final response. It can use additional tokens and processing time, and not every model supports it. Ollama parameter: think.">i</button></label><select id="corrThink"><option value="false">Off</option><option value="true">On</option></select></div>
-            <div class="field"><label>Keep alive <button type="button" class="info-btn" data-tip="How long Ollama keeps the model loaded after the request. 0 unloads it immediately; for example 5m keeps it loaded for five minutes. Ollama parameter: keep_alive.">i</button></label><input id="corrKeepAlive"></div>
-            <div class="field"><label>Text kept from beginning <button type="button" class="info-btn" data-tip="Used only when document text exceeds the configured limit. 0.75 keeps 75% of the retained text from the beginning and 25% from the end.">i</button></label><input id="corrHeadRatio" type="number" min="0.5" max="0.95" step="0.05"></div>
-            <div class="field"><label>Request timeout <button type="button" class="info-btn" data-tip="Maximum number of seconds the worker waits for the fallback Ollama request before treating it as failed.">i</button></label><input id="corrTimeout" type="number"></div>
-          </div></div></details>
-        </div>
-
-        <div class="tab-page" id="corr-history">
-          <details class="section-help"><summary>What is versioned?</summary><div class="help-body">Prompt, automatic-fallback switch and settings are versioned together, separately from Classification. Restoring saves the selected older state as a new current version; existing history is preserved.</div></details>
-          <div class="card panel">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h3 style="margin:0">Saved versions</h3><button id="corrHistoryRefresh" class="btn">Reload history</button></div>
-            <p class="mini"><strong>Restore this version</strong> saves the selected state again as the current correspondent configuration. The currently active state remains in history as its own version.</p>
-            <div id="corrHistoryList"></div>
-          </div>
-        </div>
-      </section>
-
-      <section class="page" id="page-app-settings">
-        <div class="page-head">
-          <div><h1>App Settings</h1><p>Configure Paperless and Ollama connections, workflow tags, OCR and runtime behavior. Settings are versioned and loaded automatically; ports, volumes, resource limits and secrets remain deployment settings.</p></div>
-          <div id="appConfigStatus" class="config-badge">Loading…</div>
-        </div>
-        <div class="toolbar"><button id="appValidateBtn" class="btn">Check configuration</button><button id="appSaveBtn" class="btn primary">Save changes</button><span id="appSaveStatus" class="toolbar-status">Saved configuration loaded.</span></div>
-        <details class="section-help"><summary>Safe testing</summary><div class="help-body">Test Paperless/Ollama connections with the current unsaved draft, preview prompts and run live model tests without changing the selected document. Use <strong>Dry run</strong> to validate automatic metadata processing without metadata writes. The Paperless API token is never shown in the browser or stored in JSON.</div></details>
-
-        <div class="tabs" data-tabs="app"><button class="tab active" data-tab="app-connections">Connections</button><button class="tab" data-tab="app-workflow">Pipeline &amp; Tags</button><button class="tab" data-tab="app-ocr">OCR</button><button class="tab" data-tab="app-runtime">Runtime</button><button class="tab" data-tab="app-history">History</button></div>
-
-        <div class="tab-page active" id="app-connections">
-          <details class="section-help"><summary>About connections</summary><div class="help-body">These URLs are shared by all components. The Paperless API token comes from the deployment environment and is only shown here as configured or missing.</div></details>
-          <div class="connection-row">
-            <div class="card connection">
-              <h3>Paperless-ngx</h3>
-              <div class="field"><label>Paperless URL <button type="button" class="info-btn" data-tip="Base URL of the Paperless instance, for example http://paperless:8000 or a reachable LAN address. No trailing slash is required.">i</button></label><input id="appPaperlessUrl" type="text"></div>
-              <div class="field" style="margin-top:12px"><label>API token <button type="button" class="info-btn" data-tip="The token is a secret and therefore remains in the deployment configuration or secret store. It is never returned by this web UI.">i</button></label><div id="appTokenStatus" class="status-box">Loading…</div></div>
-            </div>
-            <div class="card connection"><h3>Ollama</h3><div class="field"><label>Ollama URL <button type="button" class="info-btn" data-tip="Base URL of an existing Ollama instance. paperless-local-ai does not install or start Ollama.">i</button></label><input id="appOllamaUrl" type="text"></div></div>
-          </div>
-          <div class="card panel" style="margin-top:14px">
-            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button id="appConnectionTestBtn" class="btn good">Test connections with current draft</button><div id="appConnectionStatus" class="status-box" style="flex:1">Not tested yet.</div></div>
-            <p class="mini">Tests the currently visible draft without saving it: Paperless access with the configured token and Ollama reachability.</p>
-          </div>
-        </div>
-
-        <div class="tab-page" id="app-workflow">
-          <details class="section-help"><summary>Pipeline &amp; tags</summary><div class="help-body">OCR is now part of the Paperless import path through OCRmyPDF and does not use queue tags. These three tags control metadata processing and human review. If you change a name, the corresponding tag must already exist in Paperless.</div></details>
-          <div class="card panel"><div class="form-grid three">
-            <div class="field"><label>Classification queue tag <button type="button" class="info-btn" data-tip="Assign this tag from a Paperless Document Added workflow after import/OCR completes; the metadata worker then classifies the document.">i</button></label><input id="appLlmQueueTag"></div>
-            <div class="field"><label>Classification error tag <button type="button" class="info-btn" data-tip="Set when LLM classification fails.">i</button></label><input id="appLlmErrorTag"></div>
-            <div class="field"><label>Review tag <button type="button" class="info-btn" data-tip="Documents remain under this tag for human review. Persistent correspondent suggestions are removed once the document leaves review.">i</button></label><input id="appReviewTag"></div>
-            <div class="field"><label>Additional tags excluded from classification <button type="button" class="info-btn" data-tip="Comma-separated additional tags that are never offered to the model as classification tags, for example TODO. The three technical tags above are excluded automatically.">i</button></label><input id="appExtraExcludedTags"></div>
-          </div></div>
-        </div>
-
-        <div class="tab-page" id="app-ocr">
-          <details class="section-help"><summary>OCR behavior</summary><div class="help-body">These settings control scanned-page OCR. Most users can keep the defaults. <strong>Maximum OCR image dimension</strong> is the main OCR memory control: lower it when OCR is being killed or memory is tight. <strong>Automatic OCR retries</strong> handle temporary problems without user action. Changes apply to the next OCR session, and the original PDF is never modified.</div></details>
-          <div class="card panel"><div class="form-grid three">
-            <div class="field"><label>OCR language <button type="button" class="info-btn" data-tip="Language used by PaddleOCR for scanned pages. It must match the OCR language configured in Paperless/OCRmyPDF. It is independent of the Control Center and prompt language.">i</button></label><input id="appOcrLanguage" list="ocrLanguageOptions" autocomplete="off"><datalist id="ocrLanguageOptions">
-              <option value="af">Afrikaans</option><option value="az">Azerbaijani</option><option value="bs">Bosnian</option><option value="ca">Catalan</option><option value="ch">Chinese (Simplified)</option><option value="chinese_cht">Chinese (Traditional)</option><option value="cs">Czech</option><option value="cy">Welsh</option><option value="da">Danish</option><option value="de">German</option><option value="en">English</option><option value="es">Spanish</option><option value="et">Estonian</option><option value="eu">Basque</option><option value="fi">Finnish</option><option value="fr">French</option><option value="ga">Irish</option><option value="gl">Galician</option><option value="hr">Croatian</option><option value="hu">Hungarian</option><option value="id">Indonesian</option><option value="is">Icelandic</option><option value="it">Italian</option><option value="japan">Japanese</option><option value="ku">Kurdish</option><option value="la">Latin</option><option value="lb">Luxembourgish</option><option value="lt">Lithuanian</option><option value="lv">Latvian</option><option value="mi">Maori</option><option value="ms">Malay</option><option value="mt">Maltese</option><option value="nl">Dutch</option><option value="no">Norwegian</option><option value="oc">Occitan</option><option value="pl">Polish</option><option value="pt">Portuguese</option><option value="qu">Quechua</option><option value="rm">Romansh</option><option value="ro">Romanian</option><option value="rs_latin">Serbian (Latin)</option><option value="sk">Slovak</option><option value="sl">Slovenian</option><option value="sq">Albanian</option><option value="sv">Swedish</option><option value="sw">Swahili</option><option value="tl">Tagalog</option><option value="tr">Turkish</option><option value="uz">Uzbek</option><option value="vi">Vietnamese</option>
-            </datalist></div>
-            <input id="appOcrVersion" type="hidden">
-            <div class="field"><label>PaddleOCR model <button type="button" class="info-btn" data-tip="Selects matching PP-OCRv6 detection and recognition models. Medium prioritizes recognition quality; Small and Tiny reduce inference cost. Tiny does not support Japanese.">i</button></label><select id="appOcrModelProfile"><option value="medium">PP-OCRv6 Medium — Highest quality · Recommended</option><option value="small">PP-OCRv6 Small — Lower inference cost</option><option value="tiny">PP-OCRv6 Tiny — Lowest inference cost · Lower accuracy</option></select></div>
-            <div class="field"><label>Maximum OCR image dimension <button type="button" class="info-btn" data-tip="Maximum length of the longest side of the temporary image sent to PaddleOCR. Lower values reduce peak RAM use; higher values retain more source resolution. Supported range: 2000–4000 px. The original PDF is unchanged.">i</button></label><input id="appOcrMaxSidePixels" type="number" min="2000" max="4000" step="100"><div class="field-help">Measured PP-OCRv6 Medium OCR-service peaks: <strong>3000 px ≈ 4.4–4.7 GiB</strong>, 3200 px ≈ 4.9–5.1 GiB, 4000 px ≈ 6.5 GiB. 3000 px is the tested default; lower this first if OCR is memory-limited.</div></div>
-            <div class="field"><label>Inference device <button type="button" class="info-btn" data-tip="PaddleOCR inference device. The tested CPU-only setup uses cpu.">i</button></label><input id="appOcrDevice"></div>
-            <div class="field" style="grid-column:1/-1"><label>Automatic OCR retries <button type="button" class="info-btn" data-tip="If OCR is interrupted by a temporary problem, the same page can be retried automatically. Enter the delay before each retry in seconds, separated by commas. Each number adds one retry; leave empty to disable automatic retries.">i</button></label><input id="appOcrRetryDelays" class="mono" placeholder="15, 60, 300, 600"><div class="field-help">Default: <strong>15, 60, 300, 600</strong> means retry after 15 seconds, then 1 minute, 5 minutes and 10 minutes. Most users should keep this default. Invalid settings or input errors are not retried.</div></div>
-          </div></div>
-          <div class="card panel" style="margin-top:14px">
-            <div class="ocr-recovery-head"><div><h3 style="margin:0">OCR recovery</h3><p class="mini" style="margin:4px 0 0">Normally no action is needed. If OCR is interrupted, this shows whether the page will retry automatically or needs attention.</p></div><div class="ocr-recovery-actions"><span id="ocrRecoveryPill" class="pill">Loading…</span><button id="ocrRetryNowBtn" class="btn" style="display:none" title="Skip the remaining wait and start the next already-scheduled attempt. This does not increase the retry limit.">Retry now</button></div></div>
-            <div id="ocrRecoverySummary" class="status-box" style="margin-top:12px">Loading OCR recovery state…</div>
-            <details id="ocrRecoveryTechnical" class="section-help" style="display:none;margin:10px 0 0"><summary>Technical details</summary><div id="ocrRecoveryTechnicalText" class="help-body"></div></details>
-            <details id="ocrFailureDetails" class="section-help" style="margin:12px 0 0"><summary>Recent OCR failures (<span id="ocrFailureCount">0</span>)</summary><div class="help-body"><div class="mini" style="margin-bottom:8px">These jobs did not recover automatically. Paperless also shows the failed File Task. <strong>Dismiss</strong> only hides this Control Center notice; it does not retry, modify or delete the document. Fix the cause before submitting the source again.</div><div id="ocrFailureList"><span class="mini">No OCR failures recorded.</span></div></div></details>
-          </div>
-        </div>
-
-        <div class="tab-page" id="app-runtime">
-          <details class="section-help"><summary>Runtime behavior</summary><div class="help-body"><strong>Dry run</strong> is the main safety setting for automatic metadata processing. Worker timing is normally left at its defaults and is available below under Advanced worker settings.</div></details>
-          <div class="card panel"><h3 style="margin-top:0">Metadata writes</h3><div class="field"><label>Dry run (no metadata writes) <button type="button" class="info-btn" data-tip="When On, Classification still runs and is logged, but document metadata and persistent correspondent suggestions are not written. Workflow/error tags may still change. OCR is unaffected.">i</button></label><select id="appDryRun"><option value="false">Off — write metadata to Paperless</option><option value="true">On — do not write metadata</option></select></div></div>
-          <details class="section-help advanced-settings"><summary>Advanced worker settings</summary><div class="help-body"><div class="form-grid">
-            <div class="field"><label>Polling interval <button type="button" class="info-btn" data-tip="How often the metadata worker checks for queued documents. Minimum: 5 seconds.">i</button></label><input id="appPollInterval" type="number"><div class="field-help">Seconds</div></div>
-            <div class="field"><label>Review cleanup interval <button type="button" class="info-btn" data-tip="How often stale review records are removed after their document leaves the review tag. Default: 3600 seconds (once per hour).">i</button></label><input id="appReviewPruneInterval" type="number"><div class="field-help">Seconds</div></div>
-          </div></div></details>
-        </div>
-
-        <div class="tab-page" id="app-history">
-          <details class="section-help"><summary>Versioned app settings</summary><div class="help-body">Every save keeps the previous state in history. Restoring creates a new current version; existing history is preserved.</div></details>
-          <div class="card panel">
-            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h3 style="margin:0">Saved versions</h3><button id="appHistoryRefresh" class="btn">Reload history</button></div>
-            <div id="appHistoryList"></div>
-          </div>
-        </div>
-      </section>
-
+    <div class="card panel"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><h3 style="margin-bottom:4px">History health</h3><p class="mini" style="margin:0">Built from finished documents that have left your configured review tag; documents still in the classification queue or error state are also excluded. New and still-unreviewed documents are not trusted as examples. The index checks for changes at most every five minutes when it is used; no ML training job is required.</p></div><button id="taggingRefreshBtn" class="btn">Refresh history</button></div><div id="historyState" class="status-box" style="margin-top:12px">Loading history status…</div>
+      <div class="health-grid"><div class="health-metric"><span>Reviewed documents</span><strong id="historyDocs">—</strong></div><div class="health-metric"><span>Tags represented</span><strong id="historyTags">—</strong></div><div class="health-metric"><span>Estimated reusable history</span><strong id="historyReuse">—</strong></div><div class="health-metric"><span>Potential inconsistencies</span><strong id="historyIssues">—</strong></div></div>
+      <div class="mini" id="historyUpdated" style="margin-top:10px">Last updated: —</div>
+      <details class="section-help" style="margin-top:14px"><summary>Coverage by tag</summary><div class="help-body"><div id="historyTagTable">Loading…</div></div></details>
+      <details class="section-help"><summary>Potential tag inconsistencies</summary><div class="help-body"><p style="margin-top:0">Similar reviewed documents can legitimately use different tags. These groups are review hints, not automatic corrections. paperless-local-ai never changes historical tags from this diagnostic.</p><div id="historyInconsistencies">Loading…</div></div></details>
     </div>
-  </main>
-</div>
+
+    <div class="card panel"><h3>Tag guidance</h3><p class="mini">Optional descriptions for how <strong>the LLM</strong> should interpret each current Paperless tag. This is separate from History-assisted matching. Guidance is used for every tag decision in <strong>LLM only</strong> and only for LLM fallback documents in <strong>History-assisted</strong>. High-confidence history matches ignore these descriptions.</p><div class="separate-note">Fields are generated from your current Paperless tags and stored by tag ID, so a renamed tag keeps its guidance. Empty fields add nothing to the prompt.</div><div id="tagGuidanceList" class="guidance-list"><span class="mini">Loading Paperless tags…</span></div></div>
+  </div>
+
+  <div class="tab-page" id="class-prompt">
+    <details class="section-help"><summary>What is edited here?</summary><div class="help-body">These fields define the general model task. The application always appends authoritative runtime rules for sender extraction and the selected tagging route, so History-assisted routing and new-correspondent resolution cannot be disabled accidentally by an older custom prompt. Preview shows the exact final messages.</div></details>
+    <div class="card panel" style="margin-bottom:14px"><div class="form-grid" style="align-items:end"><div class="field"><label>Prompt preset</label><select id="classPromptPreset"></select></div><div><button id="classLoadPresetBtn" class="btn">Load preset into draft</button><div class="field-help">Replaces only the two visible prompt fields. Save to activate.</div></div></div></div>
+    <div class="split"><div class="card panel"><div class="field"><label>System prompt</label><textarea id="systemPrompt"></textarea></div></div><div class="card panel"><div class="field"><label>Classification prompt</label><textarea id="classificationTemplate"></textarea></div></div></div>
+    <div class="card panel" style="margin-top:14px"><h3>Available placeholders</h3><p class="mini"><code>{{DOCUMENT_TEXT}}</code> is required. Correspondent placeholders remain available as optional reference data, but correspondent output itself is free text and is resolved by the application after the model call.</p><div id="placeholders" class="placeholder-grid"></div></div>
+  </div>
+
+  <div class="tab-page" id="class-output">
+    <details class="section-help"><summary>What is shown here?</summary><div class="help-body">The structured schema is generated for each request. Document type and LLM-selected tags are constrained to current Paperless values. Correspondent is free text because the application resolves the extracted sender afterwards. A high-confidence History-assisted route constrains the LLM tags array to be empty because the tag is already known.</div></details>
+    <div class="split"><div class="card panel"><h3>Output schema</h3><pre id="schemaPreview" class="preview"></pre></div><div class="card panel"><h3>Current Paperless taxonomy</h3><pre id="taxonomyPreview" class="preview"></pre></div></div>
+  </div>
+
+  <div class="tab-page" id="class-settings">
+    <details class="section-help"><summary>About these settings</summary><div class="help-body">These settings control the one classification LLM request. The tagging strategy and per-tag guidance are configured separately under Tagging.</div></details>
+    <div class="card panel"><h3>Model and document input</h3><div class="form-grid three"><div class="field"><label>Ollama model</label><input id="model"><div class="field-help">Exact name of a model already installed in Ollama, e.g. qwen3.5:4b.</div></div><div class="field"><label>Context window</label><input id="numCtx" type="number"></div><div class="field"><label>Document text limit</label><input id="contentLimit" type="number"></div><div class="field"><label>Maximum LLM tags</label><input id="maxTags" type="number" min="1" max="10"><div class="field-help">Used only when the LLM is responsible for the tag decision.</div></div></div></div>
+    <details class="section-help" style="margin-top:14px"><summary>Advanced model settings</summary><div class="help-body"><div class="form-grid three"><div class="field"><label>Maximum output tokens</label><input id="numPredict" type="number"></div><div class="field"><label>Temperature</label><input id="temperature" type="number" min="0" max="2" step="0.05"></div><div class="field"><label>Thinking</label><select id="think"><option value="false">Off</option><option value="true">On</option></select></div><div class="field"><label>Keep alive</label><input id="keepAlive"></div><div class="field"><label>Text kept from beginning</label><input id="headRatio" type="number" min="0.5" max="0.95" step="0.05"></div><div class="field"><label>Request timeout</label><input id="ollamaTimeout" type="number"></div></div></div></details>
+  </div>
+
+  <div class="tab-page" id="class-history"><details class="section-help"><summary>What is versioned?</summary><div class="help-body">Prompts, model settings, tagging strategy and per-tag guidance are saved together. Restoring an older version creates a new current version; existing history remains intact.</div></details><div class="card panel"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h3 style="margin:0">Saved versions</h3><button id="historyRefresh" class="btn">Reload history</button></div><div id="historyList"></div></div></div>
+</section>
+
+<section class="page" id="page-app-settings">
+  <div class="page-head"><div><h1>App Settings</h1><p>Configure Paperless and Ollama connections, workflow tags, OCR and runtime behavior. Normal settings are versioned and hot-reloaded; ports, volumes, resource limits and secrets remain deployment settings.</p></div><div id="appConfigStatus" class="config-badge">Loading…</div></div>
+  <div class="toolbar"><button id="appValidateBtn" class="btn">Check configuration</button><button id="appSaveBtn" class="btn primary">Save changes</button><span id="appSaveStatus" class="toolbar-status">Saved configuration loaded.</span></div>
+  <div class="tabs" data-tabs="app"><button class="tab active" data-tab="app-connections">Connections</button><button class="tab" data-tab="app-workflow">Pipeline &amp; Tags</button><button class="tab" data-tab="app-ocr">OCR</button><button class="tab" data-tab="app-runtime">Runtime</button><button class="tab" data-tab="app-history">History</button></div>
+
+  <div class="tab-page active" id="app-connections"><details class="section-help"><summary>About connections</summary><div class="help-body">URLs must be reachable from the app containers. The Paperless token is a deployment secret and is never shown or stored in versioned UI configuration.</div></details><div class="connection-row"><div class="card connection"><h3>Paperless-ngx</h3><div class="field"><label>Paperless URL</label><input id="appPaperlessUrl"></div><div class="field" style="margin-top:12px"><label>API token</label><div id="appTokenStatus" class="status-box">Loading…</div></div></div><div class="card connection"><h3>Ollama</h3><div class="field"><label>Ollama URL</label><input id="appOllamaUrl"></div></div></div><div class="card panel" style="margin-top:14px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button id="appConnectionTestBtn" class="btn good">Test connections with current draft</button><div id="appConnectionStatus" class="status-box" style="flex:1">Not tested yet.</div></div></div></div>
+
+  <div class="tab-page" id="app-workflow"><details class="section-help"><summary>Pipeline &amp; tags</summary><div class="help-body">The classification queue starts metadata processing; the error tag marks failures; the review tag defines human review and, in History-assisted mode, the trust boundary. Trusted history excludes documents still carrying the review, queue or error tag.</div></details><div class="card panel"><div class="form-grid three"><div class="field"><label>Classification queue tag</label><input id="appLlmQueueTag"></div><div class="field"><label>Classification error tag</label><input id="appLlmErrorTag"></div><div class="field"><label>Review tag</label><input id="appReviewTag"><div class="field-help">Also defines which documents are excluded from trusted History-assisted examples.</div></div><div class="field"><label>Additional tags excluded from classification</label><input id="appExtraExcludedTags"><div class="field-help">Comma-separated, e.g. TODO.</div></div></div></div></div>
+
+  <div class="tab-page" id="app-ocr"><details class="section-help"><summary>OCR behavior</summary><div class="help-body">These settings affect scanned-page OCR only. The original PDF is never resized. Maximum OCR image dimension is the main memory control; automatic retries recover from temporary OCR process/service failures.</div></details><div class="card panel"><div class="form-grid three"><div class="field"><label>OCR language</label><input id="appOcrLanguage" list="ocrLanguageOptions"><datalist id="ocrLanguageOptions"><option value="de">German</option><option value="en">English</option><option value="it">Italian</option><option value="fr">French</option><option value="es">Spanish</option><option value="nl">Dutch</option><option value="pl">Polish</option><option value="pt">Portuguese</option><option value="japan">Japanese</option></datalist></div><input id="appOcrVersion" type="hidden"><div class="field"><label>PaddleOCR model</label><select id="appOcrModelProfile"><option value="medium">PP-OCRv6 Medium — Highest quality · Recommended</option><option value="small">PP-OCRv6 Small — Lower inference cost</option><option value="tiny">PP-OCRv6 Tiny — Lowest inference cost · Lower accuracy</option></select></div><div class="field"><label>Maximum OCR image dimension</label><input id="appOcrMaxSidePixels" type="number" min="2000" max="4000" step="100"><div class="field-help">Default 3000 px. Lower this first if OCR is memory-limited.</div></div><div class="field"><label>Inference device</label><input id="appOcrDevice"></div><div class="field" style="grid-column:1/-1"><label>Automatic OCR retries</label><input id="appOcrRetryDelays" class="mono" placeholder="15, 60, 300, 600"><div class="field-help">Delay before each retry in seconds. Empty disables automatic retries.</div></div></div></div>
+    <div class="card panel" style="margin-top:14px"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><h3 style="margin-bottom:4px">OCR recovery</h3><p class="mini" style="margin:0">Temporary failures normally recover without action.</p></div><div><span id="ocrRecoveryPill" class="pill">Loading…</span> <button id="ocrRetryNowBtn" class="btn" style="display:none">Retry now</button></div></div><div id="ocrRecoverySummary" class="status-box" style="margin-top:12px">Loading…</div><details id="ocrRecoveryTechnical" class="section-help" style="display:none;margin-top:10px"><summary>Technical details</summary><div id="ocrRecoveryTechnicalText" class="help-body"></div></details><details class="section-help" style="margin-top:12px"><summary>Recent OCR failures (<span id="ocrFailureCount">0</span>)</summary><div class="help-body"><div id="ocrFailureList">No OCR failures recorded.</div></div></details></div>
+  </div>
+
+  <div class="tab-page" id="app-runtime"><details class="section-help"><summary>Runtime behavior</summary><div class="help-body"><strong>Dry run</strong> is the main safety switch for automatic metadata processing. OCR remains part of Paperless import and is unaffected.</div></details><div class="card panel"><h3>Metadata writes</h3><div class="field"><label>Dry run (no metadata writes)</label><select id="appDryRun"><option value="false">Off — write metadata to Paperless</option><option value="true">On — do not write metadata</option></select></div></div><details class="section-help" style="margin-top:14px"><summary>Advanced worker settings</summary><div class="help-body"><div class="form-grid"><div class="field"><label>Polling interval</label><input id="appPollInterval" type="number"><div class="field-help">Seconds</div></div><div class="field"><label>Review cleanup interval</label><input id="appReviewPruneInterval" type="number"><div class="field-help">Seconds</div></div></div></div></details></div>
+
+  <div class="tab-page" id="app-history"><details class="section-help"><summary>Versioned app settings</summary><div class="help-body">Every save keeps the previous state in history. Restoring creates a new current version.</div></details><div class="card panel"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h3 style="margin:0">Saved versions</h3><button id="appHistoryRefresh" class="btn">Reload history</button></div><div id="appHistoryList"></div></div></div>
+</section>
+
+</div></main></div>
 <script>
-let currentConfig=null;
-let currentAppConfig=null;
-let currentCorrConfig=null;
-let classPromptPresets={};
-let corrPromptPresets={};
-const $=id=>document.getElementById(id);
-
-function renderPromptPresetOptions(selectId,presets){
-  const select=$(selectId);const entries=Object.entries(presets||{});
-  select.innerHTML='<option value="">Select a preset…</option>'+entries.map(([key,p])=>`<option value="${key}">${p.label||key}</option>`).join('');
-}
-function loadClassPromptPreset(){
-  const preset=classPromptPresets[$('classPromptPreset').value];if(!preset)return;
-  $('systemPrompt').value=preset.system_prompt;$('classificationTemplate').value=preset.classification_template;
-  setStatus('saveStatus',`${preset.label||'Prompt'} preset loaded into draft · not saved yet.`);
-}
-function loadCorrPromptPreset(){
-  const preset=corrPromptPresets[$('corrPromptPreset').value];if(!preset)return;
-  $('corrSystemPrompt').value=preset.system_prompt;$('corrPromptTemplate').value=preset.prompt_template;
-  setStatus('corrSaveStatus',`${preset.label||'Prompt'} preset loaded into draft · not saved yet.`);
-}
-
-const pageMeta={
-  overview:["Overview","System overview and current configuration"],
-  classification:["Classification","Automatic local LLM metadata assignment"],
-  correspondent:["Correspondent fallback","Optional correspondent identification"],
-  "app-settings":["App Settings","Shared connections, workflow, OCR and runtime settings"]
-};
-
-async function api(path,opts={}){
-  const r=await fetch(path,{headers:{'Content-Type':'application/json'},...opts});
-  const t=await r.text();
-  let data;
-  try{data=JSON.parse(t)}catch{data={error:t}}
-  if(!r.ok)throw new Error(data.error||`${r.status} ${r.statusText}`);
-  return data;
-}
-
-function setStatus(id,msg,ok=true){
-  const el=$(id);if(!el)return;
-  el.textContent=msg;
-  el.classList.remove('warn-text');
-  el.classList.toggle('good-text',ok);
-  el.classList.toggle('bad-text',!ok);
-  el.classList.toggle('good',ok&&el.classList.contains('status-box'));
-  el.classList.toggle('bad',!ok&&el.classList.contains('status-box'));
-}
-
-function draft(){return {version:currentConfig?.version||1,updated_at:currentConfig?.updated_at||null,system_prompt:$('systemPrompt').value,classification_template:$('classificationTemplate').value,model:$('model').value.trim(),num_ctx:Number($('numCtx').value),num_predict:Number($('numPredict').value),temperature:Number($('temperature').value),think:$('think').value==='true',keep_alive:/^-?\d+(\.\d+)?$/.test($('keepAlive').value.trim())?Number($('keepAlive').value):$('keepAlive').value,content_char_limit:Number($('contentLimit').value),content_head_ratio:Number($('headRatio').value),max_tags:Number($('maxTags').value),ollama_timeout_seconds:Number($('ollamaTimeout').value)}}
-function parseRetryDelays(value){const raw=value.trim();if(!raw)return[];const parts=raw.split(',').map(x=>x.trim());if(parts.some(x=>!/^\d+$/.test(x)))throw new Error('Automatic OCR retries must be whole-number seconds separated by commas, for example: 15, 60, 300, 600');return parts.map(Number)}
+let currentConfig=null,currentAppConfig=null,currentTaxonomy=[],currentHistoryStatus=null;let classPromptPresets={};
+const $=id=>document.getElementById(id);const esc=v=>String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+async function api(path,opts={}){const r=await fetch(path,{headers:{'Content-Type':'application/json'},...opts});const t=await r.text();let data;try{data=JSON.parse(t)}catch{data={error:t}}if(!r.ok)throw new Error(data.error||`${r.status} ${r.statusText}`);return data}
+function setStatus(id,msg,ok=true){const el=$(id);if(!el)return;el.textContent=msg;el.classList.toggle('good-text',ok);el.classList.toggle('bad-text',!ok);el.classList.toggle('good',ok&&el.classList.contains('status-box'));el.classList.toggle('bad',!ok&&el.classList.contains('status-box'))}
+function markUnsaved(id='saveStatus'){const el=$(id);if(el){el.textContent='Unsaved changes.';el.className='toolbar-status warn-text'}}
+function selectedTaggingMode(){return document.querySelector('input[name="taggingMode"]:checked')?.value||currentConfig?.tagging_mode||'history_assisted'}
+function tagGuidanceDraft(){const inputs=[...document.querySelectorAll('.tag-guidance-input')];if(!inputs.length)return {...(currentConfig?.tag_guidance||{})};const out={};inputs.forEach(el=>{const v=el.value.trim();if(v)out[el.dataset.tagId]=v});return out}
+function draft(){return {version:currentConfig?.version||1,updated_at:currentConfig?.updated_at||null,system_prompt:$('systemPrompt').value,classification_template:$('classificationTemplate').value,model:$('model').value.trim(),num_ctx:Number($('numCtx').value),num_predict:Number($('numPredict').value),temperature:Number($('temperature').value),think:$('think').value==='true',keep_alive:/^-?\d+(\.\d+)?$/.test($('keepAlive').value.trim())?Number($('keepAlive').value):$('keepAlive').value,content_char_limit:Number($('contentLimit').value),content_head_ratio:Number($('headRatio').value),max_tags:Number($('maxTags').value),ollama_timeout_seconds:Number($('ollamaTimeout').value),tagging_mode:selectedTaggingMode(),tag_guidance:tagGuidanceDraft()}}
+function parseRetryDelays(value){const raw=value.trim();if(!raw)return[];const parts=raw.split(',').map(x=>x.trim());if(parts.some(x=>!/^\d+$/.test(x)))throw new Error('Automatic OCR retries must be whole-number seconds separated by commas.');return parts.map(Number)}
 function appDraft(){return {version:currentAppConfig?.version||1,updated_at:currentAppConfig?.updated_at||null,connections:{paperless_url:$('appPaperlessUrl').value.trim(),ollama_url:$('appOllamaUrl').value.trim()},workflow:{llm_queue_tag:$('appLlmQueueTag').value.trim(),llm_error_tag:$('appLlmErrorTag').value.trim(),review_tag:$('appReviewTag').value.trim(),extra_excluded_tags:$('appExtraExcludedTags').value.split(',').map(x=>x.trim()).filter(Boolean)},ocr:{language:$('appOcrLanguage').value.trim(),version:$('appOcrVersion').value.trim(),model_profile:$('appOcrModelProfile').value,max_side_pixels:Number($('appOcrMaxSidePixels').value),retry_delays_seconds:parseRetryDelays($('appOcrRetryDelays').value),device:$('appOcrDevice').value.trim()},runtime:{poll_interval_seconds:Number($('appPollInterval').value),review_prune_interval_seconds:Number($('appReviewPruneInterval').value),dry_run:$('appDryRun').value==='true'}}}
-function corrDraft(){return {version:currentCorrConfig?.version||1,updated_at:currentCorrConfig?.updated_at||null,enabled:$('corrEnabled').value==='true',system_prompt:$('corrSystemPrompt').value,prompt_template:$('corrPromptTemplate').value,model:$('corrModel').value.trim(),num_ctx:Number($('corrNumCtx').value),num_predict:Number($('corrNumPredict').value),temperature:Number($('corrTemperature').value),think:$('corrThink').value==='true',keep_alive:/^-?\d+(\.\d+)?$/.test($('corrKeepAlive').value.trim())?Number($('corrKeepAlive').value):$('corrKeepAlive').value,content_char_limit:Number($('corrContentLimit').value),content_head_ratio:Number($('corrHeadRatio').value),ollama_timeout_seconds:Number($('corrTimeout').value)}}
-
-function updateOverview(){
-  if(currentAppConfig){
-    const dry=currentAppConfig.runtime.dry_run;
-    const metadataState=dry?'Metadata dry run':'Metadata writes enabled';
-    $('overviewMetadataWrites').textContent=dry?'Dry run':'Enabled';
-    $('overviewMetadataWrites').className=dry?'warn-text':'good-text';
-    $('topModeStatus').textContent=metadataState;
-    $('topModeStatus').className='pill '+(dry?'warn':'good');
-    $('sidebarMode').textContent=metadataState;
-    $('sidebarAppVersion').textContent=`Settings v${currentAppConfig.version}`;
-    $('overviewPaperlessDetail').textContent=currentAppConfig.connections.paperless_url;
-    $('overviewOllamaDetail').textContent=currentAppConfig.connections.ollama_url;
-    const ocrProfile=currentAppConfig.ocr.model_profile||'medium';const ocrProfileLabel=ocrProfile.charAt(0).toUpperCase()+ocrProfile.slice(1);
-    $('overviewOcrConfig').textContent=`${currentAppConfig.ocr.version} ${ocrProfileLabel}`;
-    $('overviewOcrImageSize').textContent=`${currentAppConfig.ocr.max_side_pixels||3000} px`;
-    $('overviewOcrDetail').textContent=`${currentAppConfig.ocr.version} ${ocrProfileLabel} · ${currentAppConfig.ocr.language} · ${currentAppConfig.ocr.device.toUpperCase()}`;
-  }
-  if(currentConfig){
-    $('overviewClassification').textContent=currentConfig.model;
-    $('overviewContext').textContent=`${currentConfig.num_ctx} tokens`;
-  }
-  if(currentCorrConfig){
-    $('overviewCorrStatus').textContent=currentCorrConfig.enabled?'Enabled':'Disabled';
-    $('overviewCorrStatus').className='metric-value '+(currentCorrConfig.enabled?'good-text':'');
-    $('overviewCorrCard').classList.toggle('good',currentCorrConfig.enabled);
-    $('overviewCorrDetail').textContent=`v${currentCorrConfig.version} · ${currentCorrConfig.model}`;
-    $('overviewCorrConfig').textContent=currentCorrConfig.enabled?'Enabled':'Disabled';
-  }
-  const model=currentConfig?.model||currentCorrConfig?.model;
-  const device=currentAppConfig?.ocr?.device;
-  if(model||device)$('sidebarModel').textContent=[model,device?.toUpperCase()].filter(Boolean).join(' · ');
-}
-
-function applyConnectionResult(r){
-  const items=[['paperless','overviewPaperlessCard','overviewPaperlessStatus','overviewPaperlessDetail'],['ollama','overviewOllamaCard','overviewOllamaStatus','overviewOllamaDetail']];
-  for(const [key,cardId,statusId,detailId] of items){
-    const result=r[key];const card=$(cardId);const status=$(statusId);
-    card.classList.toggle('good',!!result?.ok);card.classList.toggle('bad',!result?.ok);
-    status.textContent=result?.ok?'Connected':'Connection error';
-    status.className='metric-value '+(result?.ok?'good-text':'bad-text');
-    const base=key==='paperless'?currentAppConfig?.connections?.paperless_url:currentAppConfig?.connections?.ollama_url;
-    $(detailId).textContent=base||result?.detail||'';
-  }
-}
-async function checkOverviewConnections(config){
-  try{applyConnectionResult(await api('/api/app/connections/test',{method:'POST',body:JSON.stringify({config})}))}
-  catch(e){
-    for(const id of ['overviewPaperlessStatus','overviewOllamaStatus']){$(id).textContent='Check failed';$(id).className='metric-value bad-text'}
-  }
-}
-
-function renderOverviewOcrHealth(payload){
-  const card=$('overviewOcrCard');const status=$('overviewOcrStatus');
-  if(!payload?.ok){card.classList.remove('good');card.classList.add('bad');status.textContent='Unavailable';status.className='metric-value bad-text';return}
-  const recovery=payload.recovery||{};const state=recovery.state||{status:'idle'};const failures=recovery.failures||[];
-  const display=state.status==='idle'&&failures.length?'failed':state.status;
-  const labels={idle:'Ready',running:'OCR running',waiting:'Waiting to retry',failed:'Needs attention'};
-  status.textContent=labels[display]||'Ready';status.className='metric-value '+(display==='idle'?'good-text':display==='waiting'?'warn-text':display==='failed'?'bad-text':'');
-  card.classList.toggle('good',display==='idle');card.classList.toggle('bad',display==='failed');
-}
-async function refreshOverviewOcrHealth(){
-  try{renderOverviewOcrHealth(await api('/api/app/ocr/health'))}
-  catch(e){renderOverviewOcrHealth({ok:false,error:e.message})}
-}
-
-function fill(c){
-  currentConfig=c;
-  $('systemPrompt').value=c.system_prompt;$('classificationTemplate').value=c.classification_template;$('model').value=c.model;$('numCtx').value=c.num_ctx;$('numPredict').value=c.num_predict;$('temperature').value=c.temperature;$('think').value=String(c.think);$('keepAlive').value=c.keep_alive;$('contentLimit').value=c.content_char_limit;$('headRatio').value=c.content_head_ratio;$('maxTags').value=c.max_tags;$('ollamaTimeout').value=c.ollama_timeout_seconds;
-  $('classConfigStatus').textContent=`Active configuration · v${c.version} · ${c.model}`;updateOverview();
-}
-function appFill(c,tokenConfigured){
-  currentAppConfig=c;
-  $('appPaperlessUrl').value=c.connections.paperless_url;$('appOllamaUrl').value=c.connections.ollama_url;$('appLlmQueueTag').value=c.workflow.llm_queue_tag;$('appLlmErrorTag').value=c.workflow.llm_error_tag;$('appReviewTag').value=c.workflow.review_tag;$('appExtraExcludedTags').value=(c.workflow.extra_excluded_tags||[]).join(', ');$('appOcrLanguage').value=c.ocr.language;$('appOcrVersion').value=c.ocr.version;$('appOcrModelProfile').value=c.ocr.model_profile||'medium';$('appOcrMaxSidePixels').value=c.ocr.max_side_pixels||3000;$('appOcrRetryDelays').value=(c.ocr.retry_delays_seconds||[]).join(', ');$('appOcrDevice').value=c.ocr.device;$('appPollInterval').value=c.runtime.poll_interval_seconds;$('appReviewPruneInterval').value=c.runtime.review_prune_interval_seconds;$('appDryRun').value=String(c.runtime.dry_run);
-  $('appConfigStatus').textContent=`Settings v${c.version} · ${c.runtime.dry_run?'metadata dry run':'metadata writes enabled'}`;$('appConfigStatus').style.color=c.runtime.dry_run?'var(--orange)':'var(--green)';
-  $('appTokenStatus').textContent=tokenConfigured?'API token is configured in the deployment environment.':'API token is missing from the deployment environment.';$('appTokenStatus').className='status-box '+(tokenConfigured?'good':'bad');updateOverview();
-}
-function corrFill(c){
-  currentCorrConfig=c;
-  $('corrEnabled').value=String(c.enabled);$('corrSystemPrompt').value=c.system_prompt;$('corrPromptTemplate').value=c.prompt_template;$('corrModel').value=c.model;$('corrNumCtx').value=c.num_ctx;$('corrNumPredict').value=c.num_predict;$('corrTemperature').value=c.temperature;$('corrThink').value=String(c.think);$('corrKeepAlive').value=c.keep_alive;$('corrContentLimit').value=c.content_char_limit;$('corrHeadRatio').value=c.content_head_ratio;$('corrTimeout').value=c.ollama_timeout_seconds;
-  $('corrConfigStatus').textContent=`Automatic fallback ${c.enabled?'enabled':'disabled'} · v${c.version} · ${c.model}`;$('corrConfigStatus').style.color=c.enabled?'var(--green)':'var(--muted)';updateOverview();
-}
-
-function formatHistoryDate(value){if(!value)return'';const d=new Date(value);return Number.isNaN(d.getTime())?value:d.toLocaleString()}
-function renderHistory(items,id,restoreFn){
-  const el=$(id);
-  el.innerHTML=items.length?items.map(x=>`<div class="history-item"><span class="badge">v${x.version??'?'}</span><span>${escapeHtml(x.summary||'Saved configuration')}</span><span class="mini">${escapeHtml(formatHistoryDate(x.updated_at||''))}</span><button class="btn" onclick="${restoreFn}('${escapeHtml(x.file)}')">Restore</button></div>`).join(''):'<p class="mini">No older saved version yet.</p>';
-}
+function fill(c){currentConfig=c;$('systemPrompt').value=c.system_prompt;$('classificationTemplate').value=c.classification_template;$('model').value=c.model;$('numCtx').value=c.num_ctx;$('numPredict').value=c.num_predict;$('temperature').value=c.temperature;$('think').value=String(c.think);$('keepAlive').value=c.keep_alive;$('contentLimit').value=c.content_char_limit;$('headRatio').value=c.content_head_ratio;$('maxTags').value=c.max_tags;$('ollamaTimeout').value=c.ollama_timeout_seconds;document.querySelectorAll('input[name="taggingMode"]').forEach(x=>x.checked=x.value===(c.tagging_mode||'history_assisted'));$('classConfigStatus').textContent=`Active · v${c.version} · ${c.model}`;renderTagGuidance();updateOverview()}
+function appFill(c,tokenConfigured){currentAppConfig=c;$('appPaperlessUrl').value=c.connections.paperless_url;$('appOllamaUrl').value=c.connections.ollama_url;$('appLlmQueueTag').value=c.workflow.llm_queue_tag;$('appLlmErrorTag').value=c.workflow.llm_error_tag;$('appReviewTag').value=c.workflow.review_tag;$('appExtraExcludedTags').value=(c.workflow.extra_excluded_tags||[]).join(', ');$('appOcrLanguage').value=c.ocr.language;$('appOcrVersion').value=c.ocr.version;$('appOcrModelProfile').value=c.ocr.model_profile||'medium';$('appOcrMaxSidePixels').value=c.ocr.max_side_pixels||3000;$('appOcrRetryDelays').value=(c.ocr.retry_delays_seconds||[]).join(', ');$('appOcrDevice').value=c.ocr.device;$('appPollInterval').value=c.runtime.poll_interval_seconds;$('appReviewPruneInterval').value=c.runtime.review_prune_interval_seconds;$('appDryRun').value=String(c.runtime.dry_run);$('appConfigStatus').textContent=`Settings v${c.version} · ${c.runtime.dry_run?'metadata dry run':'metadata writes enabled'}`;$('appTokenStatus').textContent=tokenConfigured?'API token is configured in the deployment environment.':'API token is missing from the deployment environment.';$('appTokenStatus').className='status-box '+(tokenConfigured?'good':'bad');updateOverview()}
+function updateOverview(){if(currentAppConfig){const dry=currentAppConfig.runtime.dry_run;$('overviewMetadataWrites').textContent=dry?'Dry run':'Enabled';$('overviewMetadataWrites').className=dry?'warn-text':'good-text';$('topModeStatus').textContent=dry?'Metadata dry run':'Metadata writes enabled';$('topModeStatus').className='pill '+(dry?'warn':'good');$('sidebarMode').textContent=dry?'Metadata dry run':'Metadata writes enabled';$('sidebarAppVersion').textContent=`Settings v${currentAppConfig.version}`;$('overviewPaperlessDetail').textContent=currentAppConfig.connections.paperless_url;$('overviewOllamaDetail').textContent=currentAppConfig.connections.ollama_url;const p=currentAppConfig.ocr.model_profile||'medium';$('overviewOcrConfig').textContent=`${currentAppConfig.ocr.version} ${p[0].toUpperCase()+p.slice(1)}`;$('overviewOcrImageSize').textContent=`${currentAppConfig.ocr.max_side_pixels||3000} px`;$('overviewOcrDetail').textContent=`${currentAppConfig.ocr.version} ${p} · ${currentAppConfig.ocr.language} · ${currentAppConfig.ocr.device.toUpperCase()}`}
+if(currentConfig){$('overviewClassification').textContent=currentConfig.model;$('overviewContext').textContent=`${currentConfig.num_ctx} tokens`;const hist=currentConfig.tagging_mode==='history_assisted';const label=hist?'History-assisted':'LLM only';$('overviewTaggingConfig').textContent=label;$('overviewTaggingStatus').textContent=label;$('overviewTaggingStatus').className='metric-value '+(hist?'good-text':'');$('overviewTaggingDetail').textContent=hist?(currentHistoryStatus?`${currentHistoryStatus.reviewed_documents} reviewed docs · ${currentHistoryStatus.estimated_reuse_percent}% estimated reuse`:'Reviewed-history routing + LLM fallback'):'LLM decides every tag';$('sidebarModel').textContent=currentConfig.model}}
+function renderPromptPresetOptions(){const s=$('classPromptPreset');s.innerHTML='<option value="">Select a preset…</option>'+Object.entries(classPromptPresets||{}).map(([k,p])=>`<option value="${esc(k)}">${esc(p.label||k)}</option>`).join('')}
+function loadClassPromptPreset(){const p=classPromptPresets[$('classPromptPreset').value];if(!p)return;$('systemPrompt').value=p.system_prompt;$('classificationTemplate').value=p.classification_template;markUnsaved()}
+function renderTagGuidance(){const el=$('tagGuidanceList');if(!el)return;if(!currentTaxonomy.length){el.innerHTML='<span class="mini">No current Paperless tags loaded yet.</span>';return}const guidance=currentConfig?.tag_guidance||{};const names=Object.fromEntries(currentTaxonomy.map(t=>[t.id,t.name]));el.innerHTML=currentTaxonomy.map(t=>{const value=guidance[String(t.id)]||'';const parent=t.parent?` <span class="mini">· child of ${esc(names[t.parent]||'another tag')}</span>`:'';return `<details class="guidance-item"><summary><span><strong>${esc(t.name)}</strong>${parent}</span><span class="guidance-state">${value?'Guidance set':'Optional'}</span></summary><div class="guidance-body"><textarea class="tag-guidance-input" data-tag-id="${t.id}" placeholder="Describe when the LLM should use this tag and how it differs from similar tags…">${esc(value)}</textarea></div></details>`}).join('');el.querySelectorAll('.tag-guidance-input').forEach(x=>x.addEventListener('input',()=>markUnsaved()))}
+function renderHistoryHealth(h){currentHistoryStatus=h;const state=$('historyState');const strategy=selectedTaggingMode();if(h.status==='Error'){state.textContent=`History could not be refreshed: ${h.last_error||'unknown error'}`;state.className='status-box bad'}else{state.textContent=(strategy==='llm_only'?'History is not used by the current LLM-only strategy. ':'')+(h.status==='Ready'?'History index is ready. Strong matches can be reused in History-assisted mode.':'There is not enough reviewed history yet. History-assisted mode will fall back to the LLM.');state.className='status-box '+(h.status==='Ready'?'good':'')}
+$('historyDocs').textContent=h.reviewed_documents??0;$('historyTags').textContent=`${h.tags_represented??0} / ${h.eligible_tags??0}`;const sample=h.estimated_reuse_sample_size||0;$('historyReuse').textContent=sample?`${h.estimated_reuse_percent}%`:'—';$('historyIssues').textContent=h.potential_inconsistency_count??0;$('historyUpdated').textContent=`Last updated: ${h.last_updated?new Date(h.last_updated).toLocaleString():'not built'}${sample&&sample!==(h.reviewed_documents||0)?` · reuse estimate sampled from ${sample} documents`:''}`;
+const rows=h.per_tag||[];$('historyTagTable').innerHTML=rows.length?`<table class="tag-table"><thead><tr><th>Tag</th><th>Reviewed docs</th><th>History depth</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${r.count}</td><td>${esc(r.status)}</td></tr>`).join('')}</tbody></table>`:'<span class="mini">No reviewed tags yet.</span>';
+const issues=h.potential_inconsistencies||[];$('historyInconsistencies').innerHTML=issues.length?issues.map((g,i)=>`<div class="inconsistency"><strong>Group ${i+1} · ${g.documents} similar reviewed documents</strong><div class="inconsistency-tags">${(g.tag_sets||[]).map(s=>`<span class="tag-chip">${esc((s.tags||[]).join(' + ')||'No content tag')} · ${s.count}</span>`).join('')}</div><ul class="doc-list">${(g.examples||[]).slice(0,10).map(d=>`<li>ID ${d.id} · ${esc(d.title)} — ${esc((d.tags||[]).join(' + ')||'No content tag')}</li>`).join('')}</ul>${g.truncated?'<div class="mini">More documents are part of this group.</div>':''}</div>`).join(''):'<span class="mini">No potential inconsistencies detected by the current history diagnostic.</span>';updateOverview()}
+async function loadTagging(force=false){try{const r=await api(force?'/api/tagging/refresh':'/api/tagging/state',{method:force?'POST':'GET',body:force?'{}':undefined});currentTaxonomy=r.tags||[];renderTagGuidance();renderHistoryHealth(r.history||{});return r}catch(e){$('historyState').textContent=e.message;$('historyState').className='status-box bad';throw e}}
+function renderClassificationResult(r){const el=$('classificationResultHuman');const s=r?.suggestion||{};const errors=r?.validation_errors||[];const tags=Array.isArray(s.tags)?s.tags.join(', '):'—';const route=r?.tagging?.route||'—';const corr=r?.correspondent_resolution?.status||'—';el.innerHTML=`<div class="result-state ${errors.length?'bad-text':'good-text'}">${errors.length?'Validation failed':'Valid result'}</div><div class="result-fields"><div class="result-field"><span>Title</span><strong>${esc(s.title||'—')}</strong></div><div class="result-field"><span>Document type</span><strong>${esc(s.document_type||'—')}</strong></div><div class="result-field"><span>Correspondent</span><strong>${esc(s.correspondent||r?.correspondent_resolution?.suggestion||'—')}</strong><div class="mini">${esc(corr)}</div></div><div class="result-field"><span>Tags</span><strong>${esc(tags||'—')}</strong><div class="mini">${esc(route)}</div></div><div class="result-field"><span>Date</span><strong>${esc(s.created||'—')}</strong></div></div>${errors.length?`<div class="mini bad-text" style="margin-top:9px">${esc(errors.join(' · '))}</div>`:''}`}
+function formatHistoryDate(v){if(!v)return'';const d=new Date(v);return Number.isNaN(d.getTime())?v:d.toLocaleString()}
+function renderHistory(items,id,restoreFn){$(id).innerHTML=items.length?items.map(x=>`<div class="history-item"><span class="config-badge">v${x.version??'?'}</span><span>${esc(x.summary||'Saved configuration')}</span><span class="mini">${esc(formatHistoryDate(x.updated_at||''))}</span><button class="btn" onclick="${restoreFn}('${esc(x.file)}')">Restore</button></div>`).join(''):'<p class="mini">No older saved version yet.</p>'}
 function renderAppHistory(items){renderHistory(items,'appHistoryList','restoreAppHistory')}
-function renderCorrHistory(items){renderHistory(items,'corrHistoryList','restoreCorrHistory')}
-function escapeHtml(value){return String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))}
-function humanDelay(seconds){seconds=Math.max(0,Math.round(Number(seconds)||0));if(seconds<60)return`${seconds}s`;if(seconds<3600)return`${Math.floor(seconds/60)}m ${seconds%60}s`;return`${Math.floor(seconds/3600)}h ${Math.floor((seconds%3600)/60)}m`}
-function renderClassificationResult(r){
-  const el=$('classificationResultHuman');if(!el)return;
-  const s=r?.suggestion||{};const errors=r?.validation_errors||[];const tags=Array.isArray(s.tags)?s.tags.join(', '):'—';
-  el.innerHTML=`<div class="result-state ${errors.length?'bad-text':'good-text'}">${errors.length?'Validation failed':'Valid result'}</div><div class="result-fields"><div class="result-field"><span>Title</span><strong>${escapeHtml(s.title||'—')}</strong></div><div class="result-field"><span>Document type</span><strong>${escapeHtml(s.document_type||'—')}</strong></div><div class="result-field"><span>Correspondent</span><strong>${escapeHtml(s.correspondent||'—')}</strong></div><div class="result-field"><span>Tags</span><strong>${escapeHtml(tags||'—')}</strong></div><div class="result-field"><span>Date</span><strong>${escapeHtml(s.created||'—')}</strong></div></div>${errors.length?`<div class="mini bad-text" style="margin-top:9px">${escapeHtml(errors.join(' · '))}</div>`:''}`;
-}
-function renderCorrespondentResult(r){
-  const el=$('correspondentResultHuman');if(!el)return;
-  const errors=r?.validation_errors||[];const name=r?.suggestion?.correspondent||'';const kind=r?.candidate_type||(!name?'empty':'candidate');
-  let title='No reliable correspondent found';if(kind==='existing')title='Existing correspondent';else if(kind==='new')title='New correspondent suggestion';else if(name)title='Correspondent candidate';
-  el.innerHTML=`<div class="result-state ${errors.length?'bad-text':'good-text'}">${errors.length?'Validation failed':escapeHtml(title)}</div>${name?`<div class="result-field"><span>Correspondent</span><strong>${escapeHtml(name)}</strong></div>`:'<div class="mini">The fallback returned an empty correspondent.</div>'}${errors.length?`<div class="mini bad-text" style="margin-top:9px">${escapeHtml(errors.join(' · '))}</div>`:''}`;
-}
-function markUnsaved(statusId){const el=$(statusId);if(!el)return;el.textContent='Unsaved changes.';el.className='toolbar-status warn-text'}
-function ocrErrorGuidance(value){
-  const text=String(value||'').toLowerCase();
-  if(/out of memory|memoryerror|cannot allocate memory|failed to allocate|bad_alloc|bad allocation/.test(text))return 'This looks memory-related. Try lowering Maximum OCR image dimension.';
-  if(/ocr_language_mismatch|language mismatch/.test(text))return 'Check that the OCR language in Paperless and App Settings → OCR is the same.';
-  if(/unauthorized|401|403/.test(text))return 'Check that the OCR service token configured for Paperless matches paperless-local-ai.';
-  if(/connection refused|failed to establish|service unavailable|connectionerror|name or service not known|temporary failure in name resolution/.test(text))return 'Check that the OCR service is running and reachable.';
-  return '';
-}
-function renderOcrRecovery(payload){
-  const state=payload?.state||{status:'idle'};const failures=payload?.failures||[];const pill=$('ocrRecoveryPill');const retry=$('ocrRetryNowBtn');const summary=$('ocrRecoverySummary');const technical=$('ocrRecoveryTechnical');const technicalText=$('ocrRecoveryTechnicalText');
-  const displayStatus=state.status==='idle'&&failures.length?'failed':state.status;const labels={idle:'Ready',running:'OCR running',waiting:'Waiting to retry',failed:'Needs attention'};pill.textContent=labels[displayStatus]||displayStatus||'Ready';pill.className='pill '+(displayStatus==='idle'?'good':displayStatus==='failed'?'bad':displayStatus==='waiting'?'warn':'');
-  retry.style.display=state.status==='waiting'?'inline-block':'none';retry.dataset.requestId=state.request_id||'';retry.disabled=!!state.retry_now_requested;retry.textContent=state.retry_now_requested?'Retry requested':'Retry now';
-  const target=`${state.source||'OCR page'}${state.page_number?' · page '+state.page_number:''}`;const attempt=state.attempt||1;const maxAttempts=state.max_attempts||1;const hint=ocrErrorGuidance(state.last_error);
-  if(state.status==='waiting'){
-    const next=state.next_retry_at?Math.max(0,(new Date(state.next_retry_at).getTime()-Date.now())/1000):state.retry_after_seconds;
-    summary.textContent=state.retry_now_requested?`OCR was interrupted while processing ${target}. The next attempt has been requested. Attempt ${attempt} of ${maxAttempts} failed.`:`OCR was interrupted while processing ${target}. The same page will be tried again automatically in ${humanDelay(next)}. Attempt ${attempt} of ${maxAttempts} failed.`;
-  }else if(state.status==='running'){
-    summary.textContent=`OCR is processing ${target}. Attempt ${attempt} of ${maxAttempts}.`;
-  }else if(state.status==='failed'){
-    summary.textContent=`OCR could not finish ${target} after ${attempt} attempt${attempt===1?'':'s'}. Automatic retries have stopped.${hint?' '+hint:''}`;
-  }else if(failures.length){
-    summary.textContent=`OCR is ready, but ${failures.length} earlier OCR failure${failures.length===1?' needs':'s need'} attention below.`;
-  }else{
-    summary.textContent='OCR is ready. Temporary OCR problems are retried automatically. No action is needed.';
-  }
-  technical.style.display=state.last_error?'block':'none';technicalText.textContent=state.last_error||'';
-  $('ocrFailureCount').textContent=String(failures.length);
-  $('ocrFailureList').innerHTML=failures.length?failures.map(f=>{const guidance=ocrErrorGuidance(f.error);return `<div class="failure-item"><div class="failure-head"><div><strong>${escapeHtml(f.source||'OCR page')}</strong>${f.page_number?` <span class="mini">· page ${f.page_number}</span>`:''}<div class="mini">${escapeHtml(f.failed_at||'')} · ${f.attempts||1} of ${f.max_attempts||1} attempts</div></div><button class="btn" title="Hide this notice. This does not retry or delete anything." onclick="dismissOcrFailure('${escapeHtml(f.id)}')">Dismiss</button></div><div class="mini" style="margin-top:6px">${escapeHtml(guidance||'Automatic recovery could not complete this OCR job. Fix the underlying cause before trying the source again.')}</div><details class="section-help" style="margin:8px 0 0"><summary>Technical details</summary><div class="help-body failure-error">${escapeHtml(f.error||'Unknown OCR error')}</div></details></div>`}).join(''):'<span class="mini">No OCR failures recorded.</span>';
-}
-async function refreshOcrRecovery(){
-  try{
-    const health=await api('/api/app/ocr/health');renderOcrRecovery(health.recovery||{});
-    if(!health.ok){const pill=$('ocrRecoveryPill');const retry=$('ocrRetryNowBtn');const summary=$('ocrRecoverySummary');const technical=$('ocrRecoveryTechnical');const technicalText=$('ocrRecoveryTechnicalText');pill.textContent='Unavailable';pill.className='pill bad';retry.style.display='none';summary.textContent='The OCR service is unavailable. Check that it is running and reachable.';technical.style.display=health.error?'block':'none';technicalText.textContent=health.error||''}
-  }catch(e){$('ocrRecoveryPill').textContent='Unavailable';$('ocrRecoveryPill').className='pill bad';$('ocrRetryNowBtn').style.display='none';$('ocrRecoverySummary').textContent='The OCR service status could not be checked.';$('ocrRecoveryTechnical').style.display='block';$('ocrRecoveryTechnicalText').textContent=e.message}
-}
-window.dismissOcrFailure=async id=>{
-  if(!confirm('Dismiss this OCR failure notice?\n\nThis only hides the notice in the Control Center. It does not retry, modify or delete the document.'))return;
-  try{await api('/api/app/ocr/failures/dismiss',{method:'POST',body:JSON.stringify({failure_id:id})});await refreshOcrRecovery();await refreshOverviewOcrHealth()}catch(e){alert(e.message)}
-};
-
-async function init(){
-  try{const s=await api('/api/state');classPromptPresets=s.presets||{};renderPromptPresetOptions('classPromptPreset',classPromptPresets);fill(s.config);$('placeholders').innerHTML=Object.entries(s.placeholders).map(([k,v])=>`<div class="placeholder-item"><code>{{${k}}}</code><span>${v}</span></div>`).join('');await loadHistory();$('topStatus').textContent='Control Center ready';$('topStatus').className='pill good'}
-  catch(e){$('topStatus').textContent=e.message;$('topStatus').className='pill bad'}
-}
-async function loadApp(){
-  try{const r=await api('/api/app/state');appFill(r.config,r.token_configured);renderAppHistory(r.history||[]);checkOverviewConnections(r.config)}
-  catch(e){$('appConfigStatus').textContent='Error';$('appConfigStatus').style.color='var(--red)';setStatus('appSaveStatus',e.message,false)}
-}
-async function loadCorrespondent(){
-  try{const s=await api('/api/correspondent/state');corrPromptPresets=s.presets||{};renderPromptPresetOptions('corrPromptPreset',corrPromptPresets);corrFill(s.config);$('corrPlaceholders').innerHTML=Object.entries(s.placeholders).map(([k,v])=>`<div class="placeholder-item"><code>{{${k}}}</code><span>${v}</span></div>`).join('');renderCorrHistory(s.history||[])}
-  catch(e){$('corrConfigStatus').textContent='Error';$('corrConfigStatus').style.color='var(--red)';setStatus('corrSaveStatus',e.message,false)}
-}
-
-$('classLoadPresetBtn').onclick=loadClassPromptPreset;
-$('corrLoadPresetBtn').onclick=loadCorrPromptPreset;
-
-for(const id of ['systemPrompt','classificationTemplate','model','numCtx','numPredict','temperature','think','keepAlive','contentLimit','headRatio','maxTags','ollamaTimeout']){$(id)?.addEventListener('input',()=>markUnsaved('saveStatus'));$(id)?.addEventListener('change',()=>markUnsaved('saveStatus'))}
-for(const id of ['appPaperlessUrl','appOllamaUrl','appLlmQueueTag','appLlmErrorTag','appReviewTag','appExtraExcludedTags','appOcrLanguage','appOcrVersion','appOcrModelProfile','appOcrMaxSidePixels','appOcrRetryDelays','appOcrDevice','appPollInterval','appReviewPruneInterval','appDryRun']){$(id)?.addEventListener('input',()=>markUnsaved('appSaveStatus'));$(id)?.addEventListener('change',()=>markUnsaved('appSaveStatus'))}
-for(const id of ['corrEnabled','corrSystemPrompt','corrPromptTemplate','corrModel','corrNumCtx','corrNumPredict','corrTemperature','corrThink','corrKeepAlive','corrContentLimit','corrHeadRatio','corrTimeout']){$(id)?.addEventListener('input',()=>markUnsaved('corrSaveStatus'));$(id)?.addEventListener('change',()=>markUnsaved('corrSaveStatus'))}
-
-$('validateBtn').onclick=async()=>{try{const r=await api('/api/config/validate',{method:'POST',body:JSON.stringify({config:draft()})});setStatus('saveStatus','Configuration valid · not saved yet.')}catch(e){setStatus('saveStatus',e.message,false)}};
-$('saveBtn').onclick=async()=>{try{const r=await api('/api/config/save',{method:'POST',body:JSON.stringify({config:draft()})});fill(r.config);setStatus('saveStatus',`Saved and active from the next classification job · v${r.config.version}`);await loadHistory()}catch(e){setStatus('saveStatus',e.message,false)}};
-async function doPreview(run){const id=Number($('docId').value);if(!id){setStatus('testStatus','Enter a Paperless document ID.',false);return}setStatus('testStatus',run?'Model test running…':'Preparing prompts…');try{const r=await api(run?'/api/test':'/api/preview',{method:'POST',body:JSON.stringify({document_id:id,config:draft()})});$('systemPreview').textContent=r.rendered.system_prompt;$('userPreview').textContent=r.rendered.user_prompt;$('schemaPreview').textContent=JSON.stringify(r.rendered.schema,null,2);$('taxonomyPreview').textContent=JSON.stringify(r.taxonomy,null,2);$('previewMeta').textContent=JSON.stringify(r.meta,null,2);$('testResult').textContent=run?JSON.stringify({suggestion:r.suggestion,validation_errors:r.validation_errors,performance:r.performance},null,2):'';if(run)renderClassificationResult(r);setStatus('testStatus',run?'Model test complete · Paperless was not modified.':'Prompts previewed · the model was not called.')}catch(e){setStatus('testStatus',e.message,false)}}
-$('previewBtn').onclick=()=>doPreview(false);$('testBtn').onclick=()=>doPreview(true);
-
-$('appValidateBtn').onclick=async()=>{try{const r=await api('/api/app/validate',{method:'POST',body:JSON.stringify({config:appDraft()})});setStatus('appSaveStatus','Configuration valid · not saved yet.')}catch(e){setStatus('appSaveStatus',e.message,false)}};
-$('appSaveBtn').onclick=async()=>{try{const r=await api('/api/app/save',{method:'POST',body:JSON.stringify({config:appDraft()})});appFill(r.config,r.token_configured);setStatus('appSaveStatus',`Saved · Settings v${r.config.version} are active.`);renderAppHistory(r.history||[]);checkOverviewConnections(r.config)}catch(e){setStatus('appSaveStatus',e.message,false)}};
-$('appConnectionTestBtn').onclick=async()=>{setStatus('appConnectionStatus','Testing connections…');try{const r=await api('/api/app/connections/test',{method:'POST',body:JSON.stringify({config:appDraft()})});setStatus('appConnectionStatus',`Paperless: ${r.paperless.ok?'OK':'ERROR'}${r.paperless.detail?' · '+r.paperless.detail:''}\nOllama: ${r.ollama.ok?'OK':'ERROR'}${r.ollama.detail?' · '+r.ollama.detail:''}`,r.paperless.ok&&r.ollama.ok);applyConnectionResult(r)}catch(e){setStatus('appConnectionStatus',e.message,false)}};
-$('ocrRetryNowBtn').onclick=async()=>{const id=$('ocrRetryNowBtn').dataset.requestId;if(!id)return;try{await api('/api/app/ocr/retry-now',{method:'POST',body:JSON.stringify({request_id:id})});await refreshOcrRecovery()}catch(e){alert(e.message)}};
-async function refreshAppHistory(){const r=await api('/api/app/history');renderAppHistory(r.items||[])}
-$('appHistoryRefresh').onclick=()=>refreshAppHistory().catch(e=>setStatus('appSaveStatus',e.message,false));
-window.restoreAppHistory=async file=>{if(!confirm(`Restore these app settings? The selected state will be saved as a new current version; the current state remains in history.`))return;try{const r=await api('/api/app/history/restore',{method:'POST',body:JSON.stringify({file})});appFill(r.config,r.token_configured);renderAppHistory(r.history||[]);setStatus('appSaveStatus',`Restored and saved as a new current version · v${r.config.version}`);checkOverviewConnections(r.config)}catch(e){alert(e.message)}};
-
-$('corrValidateBtn').onclick=async()=>{try{const r=await api('/api/correspondent/validate',{method:'POST',body:JSON.stringify({config:corrDraft()})});setStatus('corrSaveStatus','Configuration valid · not saved yet.')}catch(e){setStatus('corrSaveStatus',e.message,false)}};
-$('corrSaveBtn').onclick=async()=>{try{const r=await api('/api/correspondent/save',{method:'POST',body:JSON.stringify({config:corrDraft()})});corrFill(r.config);setStatus('corrSaveStatus',`Saved as v${r.config.version} · automatic fallback ${r.config.enabled?'enabled':'disabled'}`);await refreshCorrHistory()}catch(e){setStatus('corrSaveStatus',e.message,false)}};
-async function corrPreview(run){const id=Number($('corrDocId').value);if(!id){setStatus('corrTestStatus','Enter a Paperless document ID.',false);return}setStatus('corrTestStatus',run?'Model test running…':'Preparing prompts…');try{const r=await api(run?'/api/correspondent/test':'/api/correspondent/preview',{method:'POST',body:JSON.stringify({document_id:id,config:corrDraft()})});$('corrSystemPreview').textContent=r.rendered.system_prompt;$('corrUserPreview').textContent=r.rendered.user_prompt;$('corrSchemaPreview').textContent=JSON.stringify(r.rendered.schema,null,2);$('corrPreviewMeta').textContent=JSON.stringify(r.meta,null,2);$('corrTestResult').textContent=run?JSON.stringify({suggestion:r.suggestion,validation_errors:r.validation_errors,performance:r.performance,candidate_type:r.candidate_type},null,2):'';if(run)renderCorrespondentResult(r);setStatus('corrTestStatus',run?'Model test complete · Paperless was not modified and no Document Suggestion was saved.':'Prompts previewed · the model was not called.')}catch(e){setStatus('corrTestStatus',e.message,false)}}
-$('corrPreviewBtn').onclick=()=>corrPreview(false);$('corrTestBtn').onclick=()=>corrPreview(true);
-async function refreshCorrHistory(){const s=await api('/api/correspondent/state');renderCorrHistory(s.history||[])}
-$('corrHistoryRefresh').onclick=()=>refreshCorrHistory().catch(e=>setStatus('corrSaveStatus',e.message,false));
-window.restoreCorrHistory=async file=>{if(!confirm(`Restore this correspondent version? The selected state will be saved as a new current version; the current state remains in history.`))return;try{const r=await api('/api/correspondent/history/restore',{method:'POST',body:JSON.stringify({file})});corrFill(r.config);setStatus('corrSaveStatus',`Restored and saved as a new current version · v${r.config.version}`);await refreshCorrHistory()}catch(e){alert(e.message)}};
-
-async function loadHistory(){try{const r=await api('/api/history');renderHistory(r.items||[],'historyList','restoreHistory')}catch(e){$('historyList').textContent=e.message}}
-window.restoreHistory=async file=>{if(!confirm(`Restore this classification version? The selected state will be saved as a new current version; the current state remains in history.`))return;try{const r=await api('/api/history/restore',{method:'POST',body:JSON.stringify({file})});fill(r.config);setStatus('saveStatus',`Restored and saved as a new current version · v${r.config.version}`);await loadHistory()}catch(e){alert(e.message)}};
-$('historyRefresh').onclick=loadHistory;
-
-function activatePage(page){
-  if(!pageMeta[page])page='overview';
-  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.page===page));
-  document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===`page-${page}`));
-  $('topTitle').textContent=pageMeta[page][0];$('topSubtitle').textContent=pageMeta[page][1];
-  try{localStorage.setItem('paperlessControlCenterPage',page)}catch{}
-}
-function activateTab(group,id){
-  const nav=document.querySelector(`.tabs[data-tabs="${group}"]`);const target=$(id);if(!nav||!target)return;
-  nav.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));
-  nav.closest('.page').querySelectorAll('.tab-page').forEach(x=>x.classList.toggle('active',x.id===id));
-  try{localStorage.setItem(`paperlessControlCenterTab:${group}`,id)}catch{}
-}
-document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>activatePage(b.dataset.page));
-document.querySelectorAll('.tabs .tab').forEach(b=>b.onclick=()=>activateTab(b.closest('.tabs').dataset.tabs,b.dataset.tab));
-for(const [group,fallback] of [['classification','class-test'],['correspondent','corr-test'],['app','app-connections']]){let tab=fallback;try{tab=localStorage.getItem(`paperlessControlCenterTab:${group}`)||fallback}catch{}activateTab(group,tab)}
-let initialPage='overview';try{initialPage=localStorage.getItem('paperlessControlCenterPage')||initialPage}catch{}activatePage(initialPage);
-
-document.querySelectorAll('.info-btn').forEach(btn=>{btn.addEventListener('click',e=>{e.stopPropagation();document.querySelectorAll('.info-btn.open').forEach(x=>{if(x!==btn)x.classList.remove('open')});btn.classList.toggle('open')})});
-document.addEventListener('click',()=>document.querySelectorAll('.info-btn.open').forEach(x=>x.classList.remove('open')));
-
-init();loadCorrespondent();loadApp();refreshOcrRecovery();refreshOverviewOcrHealth();setInterval(refreshOcrRecovery,5000);setInterval(refreshOverviewOcrHealth,5000);
+function ocrGuidance(v){const t=String(v||'').toLowerCase();if(/out of memory|cannot allocate|bad_alloc/.test(t))return 'This looks memory-related. Try lowering Maximum OCR image dimension.';if(/language mismatch/.test(t))return 'Check that Paperless and paperless-local-ai use the same OCR language.';return ''}
+function renderOcrRecovery(payload){const state=payload?.state||{status:'idle'},failures=payload?.failures||[],display=state.status==='idle'&&failures.length?'failed':state.status,labels={idle:'Ready',running:'OCR running',waiting:'Waiting to retry',failed:'Needs attention'},pill=$('ocrRecoveryPill'),retry=$('ocrRetryNowBtn');pill.textContent=labels[display]||display;pill.className='pill '+(display==='idle'?'good':display==='waiting'?'warn':display==='failed'?'bad':'');retry.style.display=state.status==='waiting'?'inline-block':'none';retry.dataset.requestId=state.request_id||'';retry.disabled=!!state.retry_now_requested;const hint=ocrGuidance(state.last_error);$('ocrRecoverySummary').textContent=state.status==='waiting'?`OCR was interrupted. Attempt ${state.attempt||1} of ${state.max_attempts||1} failed; the same page will retry automatically.`:state.status==='running'?`OCR is running. Attempt ${state.attempt||1} of ${state.max_attempts||1}.`:state.status==='failed'?`OCR could not recover automatically.${hint?' '+hint:''}`:failures.length?`OCR is ready, but ${failures.length} earlier failure${failures.length===1?' needs':'s need'} attention below.`:'OCR is ready. No action is needed.';$('ocrRecoveryTechnical').style.display=state.last_error?'block':'none';$('ocrRecoveryTechnicalText').textContent=state.last_error||'';$('ocrFailureCount').textContent=String(failures.length);$('ocrFailureList').innerHTML=failures.length?failures.map(f=>`<div class="failure-item"><div class="failure-head"><div><strong>${esc(f.source||'OCR page')}</strong><div class="mini">${esc(f.failed_at||'')} · ${f.attempts||1} attempts</div></div><button class="btn" onclick="dismissOcrFailure('${esc(f.id)}')">Dismiss</button></div><div class="mini" style="margin-top:6px">${esc(ocrGuidance(f.error)||'Automatic recovery could not complete this OCR job.')}</div></div>`).join(''):'<span class="mini">No OCR failures recorded.</span>'}
+async function refreshOcrRecovery(){try{const h=await api('/api/app/ocr/health');renderOcrRecovery(h.recovery||{});const status=$('overviewOcrStatus');if(h.ok){status.textContent='Ready';status.className='metric-value good-text'}else{status.textContent='Unavailable';status.className='metric-value bad-text'}}catch(e){$('overviewOcrStatus').textContent='Unavailable';$('overviewOcrStatus').className='metric-value bad-text'}}
+window.dismissOcrFailure=async id=>{if(!confirm('Dismiss this Control Center notice? This does not retry, modify or delete the document.'))return;await api('/api/app/ocr/failures/dismiss',{method:'POST',body:JSON.stringify({failure_id:id})});await refreshOcrRecovery()};
+function applyConnectionResult(r){for(const [key,statusId,detailId] of [['paperless','overviewPaperlessStatus','overviewPaperlessDetail'],['ollama','overviewOllamaStatus','overviewOllamaDetail']]){const result=r[key],status=$(statusId);status.textContent=result?.ok?'Connected':'Connection error';status.className='metric-value '+(result?.ok?'good-text':'bad-text');const base=key==='paperless'?currentAppConfig?.connections?.paperless_url:currentAppConfig?.connections?.ollama_url;$(detailId).textContent=base||result?.detail||''}}
+async function checkConnections(c){try{applyConnectionResult(await api('/api/app/connections/test',{method:'POST',body:JSON.stringify({config:c})}))}catch{}}
+async function init(){try{const s=await api('/api/state');classPromptPresets=s.presets||{};renderPromptPresetOptions();fill(s.config);$('placeholders').innerHTML=Object.entries(s.placeholders).map(([k,v])=>`<div class="placeholder-item"><code>{{${esc(k)}}}</code><span>${esc(v)}</span></div>`).join('');await loadHistory();await loadTagging();$('topStatus').textContent='Control Center ready';$('topStatus').className='pill good'}catch(e){$('topStatus').textContent=e.message;$('topStatus').className='pill bad'}}
+async function loadApp(){try{const r=await api('/api/app/state');appFill(r.config,r.token_configured);renderAppHistory(r.history||[]);checkConnections(r.config)}catch(e){setStatus('appSaveStatus',e.message,false)}}
+$('classLoadPresetBtn').onclick=loadClassPromptPreset;for(const id of ['systemPrompt','classificationTemplate','model','numCtx','numPredict','temperature','think','keepAlive','contentLimit','headRatio','maxTags','ollamaTimeout']){$(id)?.addEventListener('input',()=>markUnsaved());$(id)?.addEventListener('change',()=>markUnsaved())}document.querySelectorAll('input[name="taggingMode"]').forEach(x=>x.addEventListener('change',()=>{markUnsaved();if(currentHistoryStatus)renderHistoryHealth(currentHistoryStatus)}));
+for(const id of ['appPaperlessUrl','appOllamaUrl','appLlmQueueTag','appLlmErrorTag','appReviewTag','appExtraExcludedTags','appOcrLanguage','appOcrModelProfile','appOcrMaxSidePixels','appOcrRetryDelays','appOcrDevice','appPollInterval','appReviewPruneInterval','appDryRun']){$(id)?.addEventListener('input',()=>markUnsaved('appSaveStatus'));$(id)?.addEventListener('change',()=>markUnsaved('appSaveStatus'))}
+$('validateBtn').onclick=async()=>{try{await api('/api/config/validate',{method:'POST',body:JSON.stringify({config:draft()})});setStatus('saveStatus','Configuration valid · not saved yet.')}catch(e){setStatus('saveStatus',e.message,false)}};$('saveBtn').onclick=async()=>{try{const r=await api('/api/config/save',{method:'POST',body:JSON.stringify({config:draft()})});fill(r.config);setStatus('saveStatus',`Saved and active from the next classification job · v${r.config.version}`);await loadHistory();await loadTagging()}catch(e){setStatus('saveStatus',e.message,false)}};
+async function doPreview(run){const id=Number($('docId').value);if(!id){setStatus('testStatus','Enter a Paperless document ID.',false);return}setStatus('testStatus',run?'Model test running…':'Preparing routing and prompts…');try{const r=await api(run?'/api/test':'/api/preview',{method:'POST',body:JSON.stringify({document_id:id,config:draft()})});$('systemPreview').textContent=r.rendered.system_prompt;$('userPreview').textContent=r.rendered.user_prompt;$('schemaPreview').textContent=JSON.stringify(r.rendered.schema,null,2);$('taxonomyPreview').textContent=JSON.stringify(r.taxonomy,null,2);$('taggingPreview').textContent=JSON.stringify(r.tagging,null,2);$('previewMeta').textContent=JSON.stringify(r.meta,null,2);$('testResult').textContent=run?JSON.stringify({suggestion:r.suggestion,validation_errors:r.validation_errors,correspondent_resolution:r.correspondent_resolution,performance:r.performance},null,2):'';if(run)renderClassificationResult(r);setStatus('testStatus',run?'Model test complete · Paperless was not modified.':'Preview complete · the model was not called.')}catch(e){setStatus('testStatus',e.message,false)}}$('previewBtn').onclick=()=>doPreview(false);$('testBtn').onclick=()=>doPreview(true);$('taggingRefreshBtn').onclick=async()=>{setStatus('historyState','Refreshing reviewed history…');try{await loadTagging(true)}catch{}};
+$('appValidateBtn').onclick=async()=>{try{await api('/api/app/validate',{method:'POST',body:JSON.stringify({config:appDraft()})});setStatus('appSaveStatus','Configuration valid · not saved yet.')}catch(e){setStatus('appSaveStatus',e.message,false)}};$('appSaveBtn').onclick=async()=>{try{const r=await api('/api/app/save',{method:'POST',body:JSON.stringify({config:appDraft()})});appFill(r.config,r.token_configured);setStatus('appSaveStatus',`Saved · Settings v${r.config.version} are active.`);renderAppHistory(r.history||[]);checkConnections(r.config);await loadTagging(true)}catch(e){setStatus('appSaveStatus',e.message,false)}};$('appConnectionTestBtn').onclick=async()=>{setStatus('appConnectionStatus','Testing connections…');try{const r=await api('/api/app/connections/test',{method:'POST',body:JSON.stringify({config:appDraft()})});setStatus('appConnectionStatus',`Paperless: ${r.paperless.ok?'OK':'ERROR'}${r.paperless.detail?' · '+r.paperless.detail:''}\nOllama: ${r.ollama.ok?'OK':'ERROR'}${r.ollama.detail?' · '+r.ollama.detail:''}`,r.paperless.ok&&r.ollama.ok);applyConnectionResult(r)}catch(e){setStatus('appConnectionStatus',e.message,false)}};$('ocrRetryNowBtn').onclick=async()=>{const id=$('ocrRetryNowBtn').dataset.requestId;if(!id)return;await api('/api/app/ocr/retry-now',{method:'POST',body:JSON.stringify({request_id:id})});await refreshOcrRecovery()};
+async function loadHistory(){try{const r=await api('/api/history');renderHistory(r.items||[],'historyList','restoreHistory')}catch(e){$('historyList').textContent=e.message}}window.restoreHistory=async file=>{if(!confirm('Restore this classification version as a new current version?'))return;const r=await api('/api/history/restore',{method:'POST',body:JSON.stringify({file})});fill(r.config);await loadHistory();await loadTagging();setStatus('saveStatus',`Restored and saved as v${r.config.version}`)};$('historyRefresh').onclick=loadHistory;
+async function refreshAppHistory(){const r=await api('/api/app/history');renderAppHistory(r.items||[])}window.restoreAppHistory=async file=>{if(!confirm('Restore these app settings as a new current version?'))return;const r=await api('/api/app/history/restore',{method:'POST',body:JSON.stringify({file})});appFill(r.config,r.token_configured);renderAppHistory(r.history||[]);await loadTagging(true)};$('appHistoryRefresh').onclick=()=>refreshAppHistory().catch(e=>setStatus('appSaveStatus',e.message,false));
+const pageMeta={overview:['Overview','System overview and current configuration'],classification:['Classification','Local metadata and tag automation'],'app-settings':['App Settings','Connections, workflow, OCR and runtime']};function activatePage(page){if(!pageMeta[page])page='overview';document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.page===page));document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===`page-${page}`));$('topTitle').textContent=pageMeta[page][0];$('topSubtitle').textContent=pageMeta[page][1];try{localStorage.setItem('paperlessControlCenterPage',page)}catch{}}function activateTab(group,id){const nav=document.querySelector(`.tabs[data-tabs="${group}"]`),target=$(id);if(!nav||!target)return;nav.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));nav.closest('.page').querySelectorAll('.tab-page').forEach(x=>x.classList.toggle('active',x.id===id));try{localStorage.setItem(`paperlessControlCenterTab:${group}`,id)}catch{}}document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>activatePage(b.dataset.page));document.querySelectorAll('.tabs .tab').forEach(b=>b.onclick=()=>activateTab(b.closest('.tabs').dataset.tabs,b.dataset.tab));for(const [group,fallback] of [['classification','class-test'],['app','app-connections']]){let tab=fallback;try{tab=localStorage.getItem(`paperlessControlCenterTab:${group}`)||fallback}catch{}activateTab(group,tab)}let initialPage='overview';try{initialPage=localStorage.getItem('paperlessControlCenterPage')||initialPage}catch{}activatePage(initialPage);
+init();loadApp();refreshOcrRecovery();setInterval(refreshOcrRecovery,5000);
 </script>
-</body>
-</html>
-'''
+</body></html>'''.replace("__TAGGING_DOCS_URL__", TAGGING_DOCS_URL)
 
 
 def response(handler, status, data, content_type="application/json; charset=utf-8"):
@@ -1137,41 +288,96 @@ def draft_config(payload):
     return validate_config(cfg)
 
 
+def tagging_state(*, force=False):
+    cfg = load_config()
+    app_cfg = load_app_config()
+    tax = client.taxonomy()
+    workflow = app_cfg["workflow"]
+    history = history_index.refresh(
+        client,
+        tax,
+        [workflow["review_tag"], workflow["llm_queue_tag"], workflow["llm_error_tag"]],
+        force=force,
+    )
+    return {
+        "tagging_mode": cfg["tagging_mode"],
+        "tags": tax["tags"],
+        "tag_guidance": cfg.get("tag_guidance", {}),
+        "history": history,
+    }
+
+
 def preview_for(doc_id, config):
     tax = client.taxonomy()
     doc = client.document(doc_id)
-    rendered = render_prompts(doc, tax, config)
-    return tax, doc, rendered
+    app_cfg = load_app_config()
+    workflow = app_cfg["workflow"]
+    tagging = history_index.tagging_context(
+        client,
+        tax,
+        config,
+        [workflow["review_tag"], workflow["llm_queue_tag"], workflow["llm_error_tag"]],
+        doc,
+    )
+    rendered = render_prompts(doc, tax, config, tagging=tagging)
+    return tax, doc, tagging, rendered
+
+
+def finalize_model_result(result, tax, config, tagging, rendered):
+    errors = validate_result(
+        result,
+        tax,
+        config,
+        tags_enabled=rendered["tags_enabled"],
+    )
+    correspondent_resolution = {
+        "extracted": "",
+        "status": "skipped_main_invalid",
+        "resolved": "",
+        "suggestion": "",
+        "match_score": None,
+        "runner_up_score": None,
+    }
+    if not errors:
+        correspondent_resolution = resolve_correspondent(
+            result.get("correspondent", ""),
+            tax["correspondents"],
+        )
+        result["correspondent"] = correspondent_resolution["resolved"]
+        if tagging.get("route") == "history_match":
+            result["tags"] = [tagging["tag"]]
+        else:
+            result["tags"] = prune_parent_tag_names(result.get("tags", []), tax)
+    return errors, correspondent_resolution
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "paperless-local-ai-control-center/0.1"
+    server_version = "paperless-local-ai-control-center/0.3"
 
     def log_message(self, fmt, *args):
         print(f"[HTTP] {self.address_string()} {fmt % args}", flush=True)
 
     def _dispatch(self):
-        parsed = urlparse(self.path)
-        path = parsed.path
-
+        path = urlparse(self.path).path
         if self.command == "GET" and path == "/":
             return response(self, HTTPStatus.OK, HTML, "text/html; charset=utf-8")
 
         if self.command == "GET" and path == "/api/app/state":
             cfg = ensure_app_config()
-            return response(self, HTTPStatus.OK, {
-                "config": cfg,
-                "config_sha256": app_config_hash(cfg),
-                "history": list_app_history(),
-                "token_configured": bool(PAPERLESS_TOKEN),
-            })
-
+            return response(
+                self,
+                HTTPStatus.OK,
+                {
+                    "config": cfg,
+                    "config_sha256": app_config_hash(cfg),
+                    "history": list_app_history(),
+                    "token_configured": bool(PAPERLESS_TOKEN),
+                },
+            )
         if self.command == "GET" and path == "/api/app/history":
             return response(self, HTTPStatus.OK, {"items": list_app_history()})
-
         if self.command == "GET" and path == "/api/app/ocr/recovery":
             return response(self, HTTPStatus.OK, recovery_state_for_ui())
-
         if self.command == "GET" and path == "/api/app/ocr/health":
             result = {"ok": False, "health": None, "recovery": recovery_state_for_ui()}
             try:
@@ -1183,154 +389,137 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 result["error"] = f"{type(exc).__name__}: {exc}"
             return response(self, HTTPStatus.OK, result)
-
         if self.command == "POST" and path == "/api/app/ocr/retry-now":
             payload = body_json(self)
             trigger = request_ocr_retry_now(payload.get("request_id", ""))
             return response(self, HTTPStatus.OK, {"ok": True, "trigger": trigger})
-
         if self.command == "POST" and path == "/api/app/ocr/failures/dismiss":
             payload = body_json(self)
             removed = dismiss_ocr_failure(payload.get("failure_id", ""))
             return response(self, HTTPStatus.OK, {"ok": True, "removed": removed})
-
         if self.command == "POST" and path == "/api/app/validate":
             payload = body_json(self)
             cfg = validate_app_config(payload.get("config"))
-            return response(self, HTTPStatus.OK, {
-                "ok": True,
-                "config_sha256": app_config_hash(cfg),
-            })
-
+            return response(self, HTTPStatus.OK, {"ok": True, "config_sha256": app_config_hash(cfg)})
         if self.command == "POST" and path == "/api/app/save":
             payload = body_json(self)
             cfg = save_app_config(payload.get("config"), source="prompt-ui")
-            return response(self, HTTPStatus.OK, {
-                "ok": True,
-                "config": cfg,
-                "config_sha256": app_config_hash(cfg),
-                "history": list_app_history(),
-                "token_configured": bool(PAPERLESS_TOKEN),
-            })
-
+            request_history_refresh()
+            return response(
+                self,
+                HTTPStatus.OK,
+                {
+                    "ok": True,
+                    "config": cfg,
+                    "config_sha256": app_config_hash(cfg),
+                    "history": list_app_history(),
+                    "token_configured": bool(PAPERLESS_TOKEN),
+                },
+            )
         if self.command == "POST" and path == "/api/app/history/restore":
             payload = body_json(self)
             cfg = restore_app_history(payload.get("file", ""))
-            return response(self, HTTPStatus.OK, {
-                "ok": True,
-                "config": cfg,
-                "history": list_app_history(),
-                "token_configured": bool(PAPERLESS_TOKEN),
-            })
-
+            request_history_refresh()
+            return response(
+                self,
+                HTTPStatus.OK,
+                {
+                    "ok": True,
+                    "config": cfg,
+                    "history": list_app_history(),
+                    "token_configured": bool(PAPERLESS_TOKEN),
+                },
+            )
         if self.command == "POST" and path == "/api/app/connections/test":
             payload = body_json(self)
             cfg = validate_app_config(payload.get("config"))
-            paperless_url = cfg["connections"]["paperless_url"]
-            ollama_url = cfg["connections"]["ollama_url"]
-
             paperless_result = {"ok": False, "detail": ""}
             if not PAPERLESS_TOKEN:
-                paperless_result["detail"] = "PAPERLESS_TOKEN is missing from the deployment environment"
+                paperless_result["detail"] = "PAPERLESS_TOKEN is missing"
             else:
                 try:
                     r = requests.get(
-                        paperless_url + "/api/documents/",
+                        cfg["connections"]["paperless_url"] + "/api/documents/",
                         params={"page_size": 1},
-                        headers={
-                            "Authorization": f"Token {PAPERLESS_TOKEN}",
-                            "Accept": "application/json",
-                        },
+                        headers={"Authorization": f"Token {PAPERLESS_TOKEN}", "Accept": "application/json"},
                         timeout=20,
                     )
                     r.raise_for_status()
                     paperless_result = {"ok": True, "detail": f"HTTP {r.status_code}"}
                 except Exception as exc:
                     paperless_result["detail"] = f"{type(exc).__name__}: {exc}"
-
             ollama_result = {"ok": False, "detail": ""}
             try:
-                r = requests.get(ollama_url + "/api/tags", timeout=20)
+                r = requests.get(cfg["connections"]["ollama_url"] + "/api/tags", timeout=20)
                 r.raise_for_status()
-                payload = r.json()
-                count = len(payload.get("models", [])) if isinstance(payload, dict) else 0
-                ollama_result = {"ok": True, "detail": f"{count} model(s) found"}
+                data = r.json()
+                ollama_result = {"ok": True, "detail": f"{len(data.get('models', []))} model(s) found"}
             except Exception as exc:
                 ollama_result["detail"] = f"{type(exc).__name__}: {exc}"
-
-            return response(self, HTTPStatus.OK, {
-                "paperless": paperless_result,
-                "ollama": ollama_result,
-            })
+            return response(self, HTTPStatus.OK, {"paperless": paperless_result, "ollama": ollama_result})
 
         if self.command == "GET" and path == "/api/state":
             cfg = ensure_config()
-            return response(self, HTTPStatus.OK, {
-                "config": cfg,
-                "placeholders": PLACEHOLDERS,
-                "presets": PROMPT_PRESETS,
-                "hashes": prompt_hashes(cfg),
-                "connections": ensure_app_config()["connections"],
-            })
-
+            return response(
+                self,
+                HTTPStatus.OK,
+                {
+                    "config": cfg,
+                    "placeholders": PLACEHOLDERS,
+                    "presets": PROMPT_PRESETS,
+                    "hashes": prompt_hashes(cfg),
+                    "connections": ensure_app_config()["connections"],
+                },
+            )
         if self.command == "GET" and path == "/api/health":
             cfg = load_config()
-            return response(self, HTTPStatus.OK, {
-                "ok": True,
-                "config_version": cfg["version"],
-                "model": cfg["model"],
-            })
-
+            return response(
+                self,
+                HTTPStatus.OK,
+                {"ok": True, "config_version": cfg["version"], "model": cfg["model"], "tagging_mode": cfg["tagging_mode"]},
+            )
         if self.command == "GET" and path == "/api/history":
             return response(self, HTTPStatus.OK, {"items": list_history()})
-
+        if self.command == "GET" and path == "/api/tagging/state":
+            return response(self, HTTPStatus.OK, tagging_state(force=False))
+        if self.command == "POST" and path == "/api/tagging/refresh":
+            request_history_refresh()
+            return response(self, HTTPStatus.OK, tagging_state(force=True))
         if self.command == "POST" and path == "/api/config/validate":
             payload = body_json(self)
             cfg = validate_config(payload.get("config"))
-            return response(self, HTTPStatus.OK, {
-                "ok": True,
-                "config_sha256": prompt_hashes(cfg)["config_sha256"],
-            })
-
+            return response(self, HTTPStatus.OK, {"ok": True, "config_sha256": prompt_hashes(cfg)["config_sha256"]})
         if self.command == "POST" and path == "/api/config/save":
             payload = body_json(self)
             cfg = save_config(payload.get("config"), source="prompt-ui")
-            return response(self, HTTPStatus.OK, {
-                "ok": True,
-                "config": cfg,
-                "hashes": prompt_hashes(cfg),
-            })
-
+            return response(self, HTTPStatus.OK, {"ok": True, "config": cfg, "hashes": prompt_hashes(cfg)})
         if self.command == "POST" and path == "/api/history/restore":
             payload = body_json(self)
             cfg = restore_history(payload.get("file", ""))
             return response(self, HTTPStatus.OK, {"ok": True, "config": cfg})
-
         if self.command == "POST" and path in {"/api/preview", "/api/test"}:
             payload = body_json(self)
             doc_id = int(payload["document_id"])
             cfg = draft_config(payload)
-            tax, doc, rendered = preview_for(doc_id, cfg)
+            tax, doc, tagging, rendered = preview_for(doc_id, cfg)
             base = {
-                "document": {
-                    "id": doc.get("id"),
-                    "title": doc.get("title"),
-                    "created": doc.get("created"),
-                },
+                "document": {"id": doc.get("id"), "title": doc.get("title"), "created": doc.get("created")},
                 "rendered": {
                     "system_prompt": rendered["system_prompt"],
                     "user_prompt": rendered["user_prompt"],
                     "schema": rendered["schema"],
                 },
                 "taxonomy": {
-                    "tags": tax["content_tags"],
+                    "tags": tax["tags"],
                     "document_types": tax["document_types"],
-                    "correspondents": tax["correspondents"],
+                    "existing_correspondents": tax["correspondents"],
                 },
+                "tagging": tagging,
                 "meta": {
                     "config_version": cfg["version"],
                     "draft_config_sha256": prompt_hashes(cfg)["config_sha256"],
                     "model": cfg["model"],
+                    "tagging_mode": cfg["tagging_mode"],
                     "num_ctx": cfg["num_ctx"],
                     "num_predict": cfg["num_predict"],
                     "temperature": cfg["temperature"],
@@ -1342,121 +531,17 @@ class Handler(BaseHTTPRequestHandler):
             }
             if path == "/api/preview":
                 return response(self, HTTPStatus.OK, base)
-
             with ai_resource_lock("LLM-PROMPT-UI", doc_id):
                 result, raw, wall_duration, _payload = call_ollama(rendered, cfg)
-            errors = validate_result(result, tax, cfg)
-            base.update({
-                "suggestion": result,
-                "validation_errors": errors,
-                "performance": performance_from_raw(raw, wall_duration),
-            })
-            return response(self, HTTPStatus.OK, base)
-
-        if self.command == "GET" and path == "/api/correspondent/state":
-            cfg = ensure_correspondent_config()
-            return response(self, HTTPStatus.OK, {
-                "config": cfg,
-                "placeholders": CORRESPONDENT_PLACEHOLDERS,
-                "presets": CORRESPONDENT_PROMPT_PRESETS,
-                "hashes": correspondent_prompt_hashes(cfg),
-                "history": list_correspondent_history(),
-            })
-
-        if self.command == "POST" and path == "/api/correspondent/validate":
-            payload = body_json(self)
-            cfg = validate_correspondent_config(payload.get("config"))
-            return response(self, HTTPStatus.OK, {
-                "ok": True,
-                "config_sha256": correspondent_prompt_hashes(cfg)["config_sha256"],
-            })
-
-        if self.command == "POST" and path == "/api/correspondent/save":
-            payload = body_json(self)
-            cfg = save_correspondent_config(
-                payload.get("config"),
-                source="prompt-ui",
+            errors, correspondent_resolution = finalize_model_result(result, tax, cfg, tagging, rendered)
+            base.update(
+                {
+                    "suggestion": result,
+                    "validation_errors": errors,
+                    "correspondent_resolution": correspondent_resolution,
+                    "performance": performance_from_raw(raw, wall_duration),
+                }
             )
-            return response(self, HTTPStatus.OK, {
-                "ok": True,
-                "config": cfg,
-                "hashes": correspondent_prompt_hashes(cfg),
-            })
-
-        if self.command == "POST" and path == "/api/correspondent/history/restore":
-            payload = body_json(self)
-            cfg = restore_correspondent_history(payload.get("file", ""))
-            return response(self, HTTPStatus.OK, {
-                "ok": True,
-                "config": cfg,
-            })
-
-        if self.command == "POST" and path in {
-            "/api/correspondent/preview",
-            "/api/correspondent/test",
-        }:
-            payload = body_json(self)
-            doc_id = int(payload["document_id"])
-            cfg = validate_correspondent_config(payload.get("config"))
-            tax = client.taxonomy()
-            doc = client.document(doc_id)
-            rendered = render_correspondent_prompts(doc, tax, cfg)
-
-            base = {
-                "document": {
-                    "id": doc.get("id"),
-                    "title": doc.get("title"),
-                    "created": doc.get("created"),
-                },
-                "rendered": {
-                    "system_prompt": rendered["system_prompt"],
-                    "user_prompt": rendered["user_prompt"],
-                    "schema": rendered["schema"],
-                },
-                "meta": {
-                    "config_version": cfg["version"],
-                    "draft_config_sha256": correspondent_prompt_hashes(cfg)["config_sha256"],
-                    "enabled_in_draft": cfg["enabled"],
-                    "model": cfg["model"],
-                    "num_ctx": cfg["num_ctx"],
-                    "num_predict": cfg["num_predict"],
-                    "temperature": cfg["temperature"],
-                    "think": cfg["think"],
-                    "keep_alive": cfg["keep_alive"],
-                    "content_char_limit": cfg["content_char_limit"],
-                    "content_head_ratio": cfg["content_head_ratio"],
-                    "content_chars_used": rendered["content_chars_used"],
-                    "content_truncated": rendered["content_truncated"],
-                    "existing_correspondents": len(tax["correspondents"]),
-                },
-            }
-
-            if path == "/api/correspondent/preview":
-                return response(self, HTTPStatus.OK, base)
-
-            with ai_resource_lock("LLM-CORRESPONDENT-UI", doc_id):
-                result, raw, wall_duration, _payload = (
-                    call_correspondent_ollama(rendered, cfg)
-                )
-
-            errors = validate_correspondent_result(result)
-            candidate = result.get("correspondent", "") if isinstance(result, dict) else ""
-            candidate_type = (
-                "empty"
-                if not candidate
-                else "existing"
-                if candidate in tax["correspondents"]
-                else "new"
-            )
-            base.update({
-                "suggestion": result,
-                "candidate_type": candidate_type,
-                "validation_errors": errors,
-                "performance": correspondent_performance_from_raw(
-                    raw,
-                    wall_duration,
-                ),
-            })
             return response(self, HTTPStatus.OK, base)
 
         return response(self, HTTPStatus.NOT_FOUND, {"error": "Not found"})
@@ -1464,25 +549,25 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             self._dispatch()
-        except Exception as e:
+        except Exception as exc:
             traceback.print_exc()
-            response(self, HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"{type(e).__name__}: {e}"})
+            response(self, HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"{type(exc).__name__}: {exc}"})
 
     def do_POST(self):
         try:
             self._dispatch()
-        except (ValueError, KeyError, json.JSONDecodeError) as e:
-            response(self, HTTPStatus.BAD_REQUEST, {"error": f"{type(e).__name__}: {e}"})
-        except Exception as e:
+        except (ValueError, KeyError, json.JSONDecodeError) as exc:
+            response(self, HTTPStatus.BAD_REQUEST, {"error": f"{type(exc).__name__}: {exc}"})
+        except Exception as exc:
             traceback.print_exc()
-            response(self, HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"{type(e).__name__}: {e}"})
+            response(self, HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"{type(exc).__name__}: {exc}"})
 
 
 if __name__ == "__main__":
     app_cfg = ensure_app_config()
     cfg = ensure_config()
     print(
-        f"paperless-local-ai Control Center at http://{HOST}:{PORT} · Settings v{app_cfg['version']} · Classification v{cfg['version']}",
+        f"paperless-local-ai Control Center at http://{HOST}:{PORT} · Settings v{app_cfg['version']} · Classification v{cfg['version']} · Tagging {cfg['tagging_mode']}",
         flush=True,
     )
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()

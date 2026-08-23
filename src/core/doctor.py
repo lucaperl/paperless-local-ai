@@ -11,7 +11,6 @@ from app_config import load_config as load_app_config
 
 PAPERLESS_TOKEN = os.environ.get("PAPERLESS_TOKEN", "")
 CONFIG_FILE = Path("/config/prompt-config.json")
-CORR_CONFIG_FILE = Path("/config/correspondent-suggestion.json")
 
 
 def ok(msg):
@@ -28,21 +27,16 @@ def fail(msg):
 
 
 def configured_models():
-    out = set()
-    for path in (CONFIG_FILE, CORR_CONFIG_FILE):
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            continue
-        except Exception as exc:
-            warn(f"Config {path} is not readable: {exc}")
-            continue
+    try:
+        data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
         model = str(data.get("model", "")).strip()
         if model:
-            out.add(model)
-    if not out:
-        out.add("qwen3.5:4b")
-    return sorted(out)
+            return [model]
+    except FileNotFoundError:
+        pass
+    except Exception as exc:
+        warn(f"Config {CONFIG_FILE} is not readable: {exc}")
+    return ["qwen3.5:4b"]
 
 
 def main():
@@ -65,16 +59,13 @@ def main():
         return 1
 
     def paperless_get(path):
-        r = requests.get(
+        response = requests.get(
             paperless_url + path,
-            headers={
-                "Authorization": f"Token {PAPERLESS_TOKEN}",
-                "Accept": "application/json",
-            },
+            headers={"Authorization": f"Token {PAPERLESS_TOKEN}", "Accept": "application/json"},
             timeout=20,
         )
-        r.raise_for_status()
-        return r.json()
+        response.raise_for_status()
+        return response.json()
 
     try:
         data = paperless_get("/api/tags/?page_size=1000")
@@ -85,11 +76,7 @@ def main():
         return 1
 
     tag_names = {str(x.get("name", "")) for x in tags}
-    required = [
-        workflow["llm_queue_tag"],
-        workflow["llm_error_tag"],
-        workflow["review_tag"],
-    ]
+    required = [workflow["llm_queue_tag"], workflow["llm_error_tag"], workflow["review_tag"]]
     missing = [x for x in required if x not in tag_names]
     if missing:
         good &= fail("Missing Paperless tags: " + ", ".join(missing))
@@ -97,9 +84,9 @@ def main():
         ok("All required metadata/review tags are present")
 
     try:
-        r = requests.get(f"{ollama_url}/api/tags", timeout=20)
-        r.raise_for_status()
-        payload = r.json()
+        response = requests.get(f"{ollama_url}/api/tags", timeout=20)
+        response.raise_for_status()
+        payload = response.json()
         installed = {
             str(item.get("name", ""))
             for item in payload.get("models", [])
@@ -112,19 +99,18 @@ def main():
 
     wanted = configured_models()
     missing_models = [
-        model for model in wanted
-        if model not in installed
-        and not any(name.startswith(model + ":") for name in installed)
+        model
+        for model in wanted
+        if model not in installed and not any(name.startswith(model + ":") for name in installed)
     ]
     if missing_models:
         good &= fail("Missing Ollama models: " + ", ".join(missing_models))
     else:
-        ok("All currently configured Ollama models are present: " + ", ".join(wanted))
+        ok("Configured Ollama model is present: " + ", ".join(wanted))
 
     if good:
         print("\nREADY: Base requirements are satisfied.")
         return 0
-
     print("\nNOT READY: See the FAIL lines above.")
     return 1
 
