@@ -61,7 +61,7 @@ def test_control_center_keeps_complete_ui_contract():
         "For more capable models",
         "How Hybrid tagging works",
         "History health",
-        "Estimated reusable history",
+        "Retrospective history reuse",
         "History depth by tag",
         "Potential tag inconsistencies",
         "review hint, not an error detector",
@@ -69,7 +69,7 @@ def test_control_center_keeps_complete_ui_contract():
         "Tagging prompt",
         "taggingPrompt",
         "omitted entirely",
-        "Refresh history",
+        "Refresh reviewed history",
         "/api/tagging/state",
         "/api/tagging/refresh",
         "Safe test with a real document",
@@ -84,7 +84,7 @@ def test_control_center_keeps_complete_ui_contract():
         "ocrLanguageOptions",
         "appOcrModelProfile",
         "PaddleOCR model",
-        "Maximum OCR image dimension",
+        "Maximum OCR image side",
         "Automatic OCR retries",
         "OCR recovery",
         "Retry now",
@@ -93,6 +93,11 @@ def test_control_center_keeps_complete_ui_contract():
         "Temperature",
         "Keep alive",
         "Dry run (no metadata writes)",
+        "Document text limit (characters)",
+        "Classification settings",
+        "App settings",
+        "New sender candidate · not auto-created",
+        "PAPERLESS_SETUP_DOCS_URL",
         "/api/app/ocr/health",
         "appOcrRetryDelays",
     ):
@@ -109,11 +114,23 @@ def test_control_center_keeps_complete_ui_contract():
         "Prompt Studio",
         "Additional model reasoning",
         "Output randomness",
+        "The settings most likely to matter during normal operation.",
+        "Maximum OCR image dimension",
+        "Estimated reusable history",
     ):
         assert obsolete not in text
     doc_input = re.search(r'<input[^>]+id="docId"[^>]*>', text)
     assert doc_input is not None
     assert not re.search(r'\bvalue\s*=', doc_input.group(0))
+
+
+def test_control_center_docs_links_follow_built_app_version():
+    ui = (ROOT / "src/core/prompt_ui.py").read_text(encoding="utf-8")
+    dockerfile = (ROOT / "docker/core.Dockerfile").read_text(encoding="utf-8")
+    assert 'APP_VERSION = os.getenv("APP_VERSION", "dev")' in ui
+    assert 'DOCS_REF = "main" if APP_VERSION in {"dev", "main"}' in ui
+    assert 'PAPERLESS_SETUP_DOCS_URL' in ui
+    assert 'ENV APP_VERSION="${APP_VERSION}"' in dockerfile
 
 
 def test_history_runtime_is_confidence_gated():

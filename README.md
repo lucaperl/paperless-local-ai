@@ -7,7 +7,7 @@
 
 `paperless-local-ai` uses **PaddleOCR instead of Tesseract** for scanned pages that need OCR and applies Paperless metadata with a local Ollama model. It integrates into Paperless' OCRmyPDF import path, so Paperless stays the document system of record.
 
-Title, document type, date and sender/issuer are extracted in one structured LLM request. Content tags can use **Hybrid tagging**, which combines reviewed-document similarity with an LLM fallback, or **LLM direct**, where the model selects tags for every document. Sender names are resolved locally against existing Paperless correspondents; plausible new names are exposed through **Paperless Document Suggestions** and are never auto-created.
+Title, document type, date and sender/issuer are extracted in one structured LLM request. Content tags can use **Hybrid tagging**, which combines reviewed-document similarity with an LLM fallback, or **LLM direct**, where the model selects tags for every document. Sender names are resolved locally against existing Paperless correspondents. If the optional Paperless Suggestions integration is configured, plausible new names are exposed there for review; otherwise unmatched names remain for manual review. New correspondents are never auto-created.
 
 ## Highlights
 
@@ -15,8 +15,8 @@ Title, document type, date and sender/issuer are extracted in one structured LLM
 - **Hybrid tagging** — compares new documents with reviewed Paperless documents, reuses a tag only behind a strict similarity/agreement gate, and sends uncertain cases to the LLM with relevant reviewed examples and optional Tag Guidance.
 - **LLM direct** — lets a sufficiently capable local model choose tags directly from the Paperless taxonomy.
 - **Editable prompt composition** — System, Base classification and Tagging prompts are all editable. The Tagging prompt is sent only when the LLM actually has to choose tags.
-- **One normal LLM request per document** — title, type, date and sender/issuer are produced together; tags are included in the same request only on an LLM tag route.
-- **Paperless-native correspondent review** — local resolution applies safe existing matches and exposes plausible new senders through Document Suggestions.
+- **One LLM request per document** — title, type, date and sender/issuer are produced together; tags are included in the same request only on an LLM tag route.
+- **Optional Paperless-native correspondent review** — local resolution applies safe existing matches; the optional Suggestions integration can expose plausible new senders through Document Suggestions.
 - **Designed for CPU-only systems** — OCR and LLM inference are serialized to avoid simultaneous heavy CPU/RAM use.
 - **Control Center** — configure connections, workflow tags, OCR, prompts, model settings, tagging strategy, per-tag guidance, history health, Dry Run and configuration history from one UI.
 
@@ -32,43 +32,49 @@ Title, document type, date and sender/issuer are extracted in one structured LLM
 
 Paperless itself already contains an automatic classifier that learns from existing documents. The Hybrid route serves a different integration goal: it exposes an explicit evidence gate before reuse, can hand uncertain cases to the local LLM, and uses the same retrieved documents as examples for that fallback. It does **not** claim to be universally more accurate than Paperless' classifier. See [Tagging](docs/tagging.md#paperless-native-classifier-vs-hybrid-tagging) for the technical comparison.
 
-**Sender extraction is followed by conservative local resolution.** The LLM returns the actual sender/issuer as free text. Normalized exact matches and deliberately strong unambiguous fuzzy matches can resolve to an existing Paperless correspondent; other plausible names go to Document Suggestions for review.
+**Sender extraction is followed by conservative local resolution.** The LLM returns the actual sender/issuer as free text. Normalized exact matches and deliberately strong unambiguous fuzzy matches can resolve to an existing Paperless correspondent. Other plausible names can be exposed through Document Suggestions when the optional bridge integration is configured; otherwise they remain unresolved for manual review.
 
 **Resource-aware execution.** PaddleOCR/OpenVINO and Ollama inference share one resource lock. OCR sessions are reused briefly across consecutive pages, while heavy model processes are released after use.
 
 ## Reference performance
 
-**Intel Core i3-8100 · 4 cores / 4 threads · 16 GB RAM · no GPU · qwen3.5:4b Q4_K_M · PP-OCRv6 Medium / HPI / OpenVINO**
+Measured on an **Intel Core i3-8100 · 4 cores / 4 threads · 16 GB RAM · no GPU · qwen3.5:4b Q4_K_M · PP-OCRv6 Medium / HPI / OpenVINO**.
 
-| Component | Measured time |
-|---|---:|
-| First scanned page after OCR idle | **23.6 s** |
-| Additional page in the same warm OCR session | **17.6 s/page** |
-| Compact metadata request | **~80 s/document** |
-| Hybrid LLM fallback with retrieved examples | **~174 s/document average** |
+| Workload | Document size | Prompt size | Processing time | Peak RAM |
+|---|---|---:|---:|---:|
+| OCR · PP-OCRv6 Medium · 3000 px | per page | — | **~23 s/page** | **~4.3 GiB** |
+| Metadata · qwen3.5:4b Q4_K_M | ~1–2 pages | ~1–4k tokens | **~40 s–2.5 min** | **~4.2 GiB** |
+| Metadata · qwen3.5:4b Q4_K_M | ~3–4 pages | ~5–9k tokens | **~3–5.5 min** | **~4.2 GiB** |
+| Metadata · qwen3.5:4b Q4_K_M | ~5–6 pages | ~9–12k tokens | **~5.5–7.5 min** | **~4.2 GiB** |
 
-The fallback is slower because retrieved examples add prompt context. A confident Hybrid tag route does not send the Tagging prompt or a `tags` output field to the model. These measurements are reference points for one CPU-only system, not performance guarantees.
+Page count is only a rough indication of metadata cost. Runtime primarily follows the number of prompt tokens actually processed. Hybrid matches tend toward the lower end because tagging context is omitted, while fallback requests also include the tag taxonomy, guidance and retrieved examples. A 7-page fallback with ~14k prompt tokens took ~8.7 minutes.
+
+The **Context window** sets the maximum available context and affects RAM usage. It does not mean every request processes the full configured context. A larger context window allows larger prompts, however, and large prompts can substantially increase CPU inference time.
 
 ## RAM usage and tuning
 
-The main memory consumers are PaddleOCR during OCR and the Ollama model during metadata classification. They are serialized, so their heavy peaks normally do not overlap.
+The main memory consumers are PaddleOCR during OCR and the Ollama model during metadata classification. They are serialized, so their heavy peaks do not overlap during paperless-local-ai processing.
 
 | Workload | Configuration | Measured peak |
 |---|---|---:|
-| OCR | PP-OCRv6 Medium · 3000 px | **~4.4–4.7 GiB** |
+| OCR | PP-OCRv6 Medium · 3000 px | **~4.3 GiB** |
 | OCR | PP-OCRv6 Medium · 3200 px | **~4.9–5.1 GiB** |
 | OCR | PP-OCRv6 Medium · 4000 px | **~6.5 GiB** |
 | Metadata | qwen3.5:4b Q4_K_M · 4k context | **~3.6 GiB** |
 | Metadata | qwen3.5:4b Q4_K_M · 8k context | **~3.8 GiB** |
 | Metadata | qwen3.5:4b Q4_K_M · 16k context | **~4.2 GiB** |
 
-If RAM is limited, lower **Maximum OCR image dimension** first for OCR pressure and reduce the **Context window** for LLM pressure. See [Configuration](docs/configuration.md#ram-usage-and-tuning).
+If RAM is limited, lower **Maximum OCR image side** first for OCR pressure and reduce the **Context window** for LLM pressure. See [Configuration](docs/configuration.md#ram-usage-and-tuning).
 
 ## How it fits into Paperless
 
-During import, Paperless/OCRmyPDF decides whether a page needs OCR. Native-text pages stay on Paperless' normal text path. Pages requiring OCR are sent through the included OCRmyPDF plugin to the local PaddleOCR service, which returns OCRmyPDF-native `OcrElement` geometry.
+During import, Paperless/OCRmyPDF decides whether a page needs OCR. Native-text pages are not sent to PaddleOCR. Pages requiring OCR are sent through the included OCRmyPDF plugin to the local PaddleOCR service, which returns OCRmyPDF-native `OcrElement` geometry.
 
 After a document is added, a Paperless **Document Added** workflow assigns the classification queue tag. The metadata worker chooses the tag route, performs one structured Ollama request, resolves the extracted sender locally and writes validated metadata back to the same Paperless document.
+
+The configured review tag can have any name. It stays on the document until human review is complete; removing it makes the document eligible for trusted Hybrid history once queue/error tags are also gone. The recommended Paperless setup marks the chosen review tag as an **Inbox tag** so Paperless adds it automatically during import.
+
+For an exclusive paperless-local-ai metadata workflow, set Paperless **Matching algorithm** to **None** for the content tags, document types, correspondents and technical workflow/review tags managed by paperless-local-ai. See [Paperless setup](docs/paperless-setup.md) for the exact setup.
 
 <p align="center">
   <img src="images/paperless-flow.svg" alt="paperless-local-ai workflow" width="65%">
@@ -91,7 +97,7 @@ Compares documents with reviewed examples and reuses a tag only when similarity 
 **LLM direct — For more capable models**
 The configured model selects tags for every document. Reviewed examples are not used for tag routing or prompt examples.
 
-The Control Center also shows reviewed-history health, a retrospective reuse estimate, **History depth by tag**, and advisory **Potential tag inconsistencies**. [Read the full tagging design](docs/tagging.md).
+The Control Center also shows reviewed-history health, **Retrospective history reuse**, **History depth by tag**, and advisory **Potential tag inconsistencies**. [Read the full tagging design](docs/tagging.md).
 
 ## Prompt composition
 
@@ -105,7 +111,7 @@ The Tagging prompt is appended only when the active route requires an LLM tag de
 
 ## Correspondents
 
-The structured metadata request extracts the actual sender/issuer as free text. Local resolution then applies a safe existing match, exposes a plausible new sender through **Paperless Document Suggestions**, or leaves the field empty when no reliable sender was extracted.
+The structured metadata request extracts the actual sender/issuer as free text. Local resolution applies a safe existing match or leaves the field empty when no reliable existing correspondent can be resolved. If the optional suggestion bridge is configured in Paperless, a plausible unmatched sender can additionally appear in **Paperless Document Suggestions** for review. Without that integration, existing-correspondent matching still works and unmatched senders are handled manually during review.
 
 ## Control Center
 
@@ -113,7 +119,7 @@ The Control Center configures:
 
 - Paperless and Ollama connections;
 - classification queue/error/review tags;
-- OCR language, PaddleOCR model, temporary image limit, retry schedule and recovery state;
+- OCR language, PaddleOCR model, maximum OCR image side, retry schedule and recovery state;
 - metadata Dry Run and worker timing;
 - model settings and all three classification prompt components;
 - **Hybrid tagging / LLM direct**, History health and per-tag Tag Guidance.

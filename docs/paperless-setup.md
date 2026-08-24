@@ -18,11 +18,27 @@ Fresh-install defaults are:
 | `LLM Error` | metadata-processing errors |
 | `Inbox` | human review |
 
-`TODO` is the default additional tag excluded from normal LLM content-tag candidates.
+`TODO` is the default additional tag excluded from LLM content-tag candidates.
 
-You may rename these values in the Control Center. Paperless and Control Center names must match exactly.
+You may rename these values in the Control Center. In particular, the review tag does **not** have to be named `Inbox`; Paperless and Control Center names only need to match exactly.
 
-Set automatic matching to **None** for technical queue/error tags so Paperless does not assign them independently.
+### Review-tag lifecycle
+
+The configured review tag must stay on a document until human review is complete. The recommended setup is to mark the chosen review tag as an **Inbox tag** in Paperless. Paperless then adds it automatically to every newly consumed document. After checking the generated metadata, remove the review tag. Only documents that no longer carry the review, classification queue or classification error tag are eligible as trusted Hybrid history.
+
+If you do not want to use Paperless' Inbox-tag behavior, explicitly add the configured review tag in the Document Added workflow instead.
+
+### Paperless matching algorithms
+
+For an exclusive paperless-local-ai metadata workflow, set **Matching algorithm → None** for every Paperless object whose automatic assignment is owned by paperless-local-ai:
+
+- content tags that paperless-local-ai may assign;
+- document types;
+- correspondents;
+- the classification queue, classification error and configured review tags;
+- additional technical/excluded tags such as `TODO`.
+
+This prevents Paperless' own rule-based or `Automatic` matching from independently assigning the same metadata before paperless-local-ai writes its result. Storage paths are not managed by paperless-local-ai and do not need to be changed for this reason.
 
 OCR does not require PaddleOCR queue or error tags.
 
@@ -36,7 +52,7 @@ Trigger: Document added
 Action:  add tag LLM
 ```
 
-This queues every newly added document for metadata classification after Paperless has completed import/OCR.
+This queues every newly added document for metadata classification after Paperless has completed import/OCR. With the recommended setup, Paperless has already added the configured review tag because that tag is marked as an **Inbox tag**. If you do not use the Inbox-tag option, add a second workflow action that assigns your configured review tag.
 
 If only selected documents should be classified, add Paperless workflow conditions instead of using an unconditional trigger.
 
@@ -113,9 +129,9 @@ The resulting Paperless archive is searchable PDF/A-2b while the uploaded origin
 
 ## 5. What metadata is written
 
-The primary classifier is constrained to the current Paperless document types, existing correspondents and eligible content tags.
+Document types and LLM-selected content tags are constrained to current Paperless values. Sender/issuer output is free text and is resolved locally against existing correspondents after classification.
 
-On successful normal metadata write-back:
+On successful metadata write-back:
 
 - `title` is replaced by the model result;
 - `document_type` is set to the selected existing value, or cleared if the model returns no value;
@@ -128,9 +144,11 @@ Because content-tag assignment is replacement-based, use Dry Run and one test do
 
 The main classification request extracts the actual sender/issuer as free text. `paperless-local-ai` resolves safe existing matches locally. A genuinely new correspondent is exposed through **Paperless Suggestions** and is never auto-created; there is no separate correspondent-only LLM stage.
 
-## 6. Optional native new-correspondent review
+## 6. Optional Paperless Suggestions integration for new correspondents
 
-Skip this section if you only want OCR, automatic metadata assignment and matching of existing correspondents.
+Skip this section if you only need OCR, metadata assignment and matching against correspondents that already exist in Paperless. Without the bridge, those functions continue to work. When the classifier extracts a plausible sender that cannot be safely matched to an existing correspondent, paperless-local-ai leaves the document's correspondent empty; its unmatched sender candidate is not surfaced in Paperless Document Suggestions and must be handled manually during review.
+
+Paperless exposes Document Suggestions through its AI backend configuration. The bridge implements only the narrow classification-suggestion interface needed here: it does **not** run an LLM and does not provide chat/RAG. Configuring Paperless to use this bridge is therefore optional even though the bridge service is included in the paperless-local-ai stack.
 
 Paperless must be able to reach the suggestion bridge. For the default host port:
 
@@ -155,8 +173,8 @@ LLM output language:       empty
 LLM API key:               empty
 ```
 
-The bridge does not run an LLM. The primary classification request has already extracted the sender; for supported Paperless classification-suggestion requests, the bridge preserves Paperless' classic suggestions and adds only a uniquely matched, still-open new-correspondent candidate.
+The primary classification request has already extracted the sender. For supported Paperless classification-suggestion requests, the bridge preserves Paperless' classic suggestions and adds only a uniquely matched, still-open new-correspondent candidate.
 
-The bridge is intentionally narrow and is not a replacement backend for Paperless chat/RAG or other general AI use.
+Do not point general Paperless AI/chat workloads at the bridge. It is intentionally limited to this Suggestions compatibility path.
 
 Check [Compatibility](compatibility.md) before upgrading Paperless because this integration is version-sensitive.

@@ -1,6 +1,6 @@
 # TrueNAS SCALE
 
-`paperless-local-ai` runs as a TrueNAS **Custom App installed from Docker Compose YAML** and uses the same public GHCR images as a normal Docker deployment.
+`paperless-local-ai` runs as a TrueNAS **Custom App installed from Docker Compose YAML** and uses the same public GHCR images as the Docker Compose deployment.
 
 Tested reference: **TrueNAS SCALE 25.10.6**.
 
@@ -93,7 +93,7 @@ http://<truenas-ip>:30148/
 
 The Control Center has no built-in authentication.
 
-For Paperless and Ollama URLs, use addresses reachable from inside the app containers, normally the TrueNAS LAN address plus the published app ports.
+For Paperless and Ollama URLs, use addresses reachable from inside the app containers, usually the TrueNAS LAN address plus the published app ports.
 
 Run **Test connections with current draft** before saving.
 
@@ -139,9 +139,9 @@ See [Paperless setup](paperless-setup.md) for details and the tested OCR contrac
 
 ## 6. Configure the Paperless metadata workflow
 
-Create the required metadata/review tags and a **Document Added** workflow that assigns the `LLM` queue tag.
+Create the required metadata/review tags and a **Document Added** workflow that assigns the configured classification queue tag. The review tag can have any name; the recommended Paperless setup marks that chosen tag as an **Inbox tag** so it is added automatically during import. Set Paperless matching to **None** for the tags, document types and correspondents whose automatic assignment is owned by paperless-local-ai.
 
-OCR does not use a separate PaddleOCR queue tag. It happens inside Paperless import before the metadata workflow.
+OCR does not use a separate PaddleOCR queue tag. It happens inside Paperless import before the metadata workflow. See [Paperless setup](paperless-setup.md) for the complete review and matching configuration.
 
 ## 7. Test one document
 
@@ -155,10 +155,10 @@ Paperless import
 → searchable archive / extracted content
 → Document Added workflow adds LLM
 → metadata classification
-→ Inbox
+→ configured review tag / human review
 ```
 
-Verify the original, archive/searchable text and metadata before processing normal documents.
+Verify the original, archive/searchable text and metadata before processing your regular documents.
 
 ## Resources
 
@@ -175,7 +175,7 @@ CPU threads:   4
 
 These are the tested reference settings, not minimum requirements.
 
-On the reference Intel Core i3-8100 (4 cores / 4 threads, 16 GB RAM, no GPU), the current PP-OCRv6 Medium / HPI / OpenVINO setup measured **23.6 seconds** for the first scanned page after OCR idle and **17.6 seconds per additional page** in the same warm OCR session. With `qwen3.5:4b` Q4_K_M, the compact one-call metadata request measured about **80 seconds per document**. Hybrid LLM fallback documents with relevant reviewed examples averaged about **174 seconds** in the reference evaluation because of the larger prompt. These are reference measurements, not minimum-performance requirements.
+On the reference Intel Core i3-8100 (4 cores / 4 threads, 16 GB RAM, no GPU), PP-OCRv6 Medium / HPI / OpenVINO measured about **23 seconds per OCR page** at the 3000 px limit with a peak of about **4.3 GiB**. Metadata time depends primarily on rendered prompt size: the current reference range is roughly **40 seconds to 7.5 minutes** for ~1–12k prompt tokens, and a measured ~14k-token fallback took about **8.7 minutes**. See [Configuration](configuration.md#reference-performance-and-resource-tuning) for the full table and Context-window/RAM notes.
 
 ## Updates
 

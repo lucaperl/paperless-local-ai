@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Changed
+
+- clarify Control Center wording, review-tag lifecycle, field help, test-result labels and configuration-version labels for first-time users;
+- document the recommended Paperless Inbox-tag and `Matching algorithm: None` setup for metadata managed by paperless-local-ai;
+- clarify that the Paperless Suggestions bridge is optional and document behavior without it;
+- update reference OCR/metadata performance and RAM guidance from the current 0.3.2 production measurements;
+- make Control Center documentation links follow the built application version instead of always linking to `main`.
+
 ## 0.3.2 - 2026-08-24
 
 ### Fixes

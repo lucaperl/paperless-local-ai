@@ -8,7 +8,8 @@ LABEL org.opencontainers.image.title="paperless-local-ai core" \
       org.opencontainers.image.version="${APP_VERSION}" \
       org.opencontainers.image.source="${SOURCE_URL}"
 
-ENV PYTHONUNBUFFERED=1 \
+ENV APP_VERSION="${APP_VERSION}" \
+    PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app

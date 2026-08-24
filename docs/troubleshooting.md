@@ -106,11 +106,19 @@ OCR is part of Paperless import and is independent from metadata Dry run.
 
 ## Existing content tags disappeared or changed
 
-Normal metadata write-back replaces the document's eligible content tags with the tags returned by the classifier.
+Metadata write-back replaces the document's eligible content tags with the tags returned by the classifier.
 
 Technical workflow/review tags and additionally excluded tags are preserved.
 
 Use Dry Run and one test document before enabling metadata automation on an existing archive.
+
+## Metadata classification takes several minutes
+
+This can be expected on CPU-only systems for large prompts. Page count is only a rough indicator; actual runtime mainly follows the number of prompt tokens processed. A Hybrid match uses a smaller prompt because tag taxonomy/guidance/examples are omitted, while a Hybrid fallback can be much larger even for a short document.
+
+On the i3-8100 reference system, ~1–4k-token requests took roughly 40 seconds to 2.5 minutes, while a measured ~14k-token fallback took about 8.7 minutes.
+
+The **Context window** is only the maximum available context. A 16k context does not force every request to process 16k tokens, but it allows larger prompts. If latency or RAM is a problem, inspect the rendered prompt/request details, reduce the document text limit when appropriate, or reduce the Context window.
 
 ## Ollama stays loaded after a document finishes
 
@@ -130,15 +138,15 @@ High-resolution pages can make PaddleOCR use several GiB of RAM even when the so
 
 Measured with PP-OCRv6 Medium on the reference setup:
 
-| Maximum OCR image dimension | OCR-service peak |
+| Maximum OCR image side | OCR-service peak |
 |---|---:|
-| 3000 px | ~4.4–4.7 GiB |
+| 3000 px | ~4.3 GiB |
 | 3200 px | ~4.9–5.1 GiB |
 | 4000 px | ~6.5 GiB |
 
 If OCR is killed or the host reports an OOM:
 
-1. Lower **App Settings → OCR → Maximum OCR image dimension** first.
+1. Lower **App Settings → OCR → Maximum OCR image side** first.
 2. If needed, try **PP-OCRv6 Small** or **Tiny**. Their exact RAM savings have not been benchmarked, but they have lower inference cost than Medium.
 3. Check other host workloads. Paperless, Ollama, the OS/cache and unrelated services also need memory.
 4. Raise `OCR_MEMORY_LIMIT` only when the host genuinely has spare RAM. It is a safety ceiling, not a RAM-reduction setting.
@@ -158,7 +166,7 @@ The **OCR recovery** card shows:
 - **Waiting to retry** — the same page will be retried automatically after a temporary problem; **Retry now** skips only the remaining wait;
 - **Needs attention** — OCR did not recover automatically and the underlying problem needs to be fixed.
 
-Raw exception text is available under **Technical details**. Common memory-related errors also point back to **Maximum OCR image dimension** as the first setting to reduce.
+Raw exception text is available under **Technical details**. Common memory-related errors also point back to **Maximum OCR image side** as the first setting to reduce.
 
 Errors that are unlikely to resolve on their own, such as invalid authentication, an OCR-language mismatch, invalid configuration or malformed input, are not retried.
 
@@ -167,6 +175,10 @@ If all attempts fail, the failed task remains visible in Paperless File Tasks an
 With one Paperless task worker, later imports wait behind a document that is currently in retry backoff. The failed Paddle process has already stopped during the wait, so its heavy OCR memory is released.
 
 For longer custom retry schedules, remember that Paperless' worker timeout is 1800 seconds by default.
+
+## Paperless also assigns tags, document types or correspondents
+
+If Paperless appears to assign metadata independently before paperless-local-ai writes its result, check **Matching algorithm** on the Paperless objects managed by paperless-local-ai. For the exclusive workflow documented here, content tags, document types, correspondents and technical workflow/review tags managed by paperless-local-ai should use **None**, not `Automatic` or another matching rule. Storage paths are not managed by paperless-local-ai.
 
 ## App settings seem ignored
 
@@ -178,17 +190,19 @@ Deployment-owned values such as ports, mounts, HPI enablement, CPU/RAM/shared-me
 
 A historical tag is reused only when the strict confidence gate passes. Check:
 
-- the document used as history has left the configured review tag and is not still in the classification queue/error state;
+- the configured review tag is actually added to new documents (recommended: mark that Paperless tag as an Inbox tag, or add it in the Document Added workflow);
+- human review is complete and the document used as history has had the configured review tag removed;
+- the document is not still in the classification queue/error state;
 - at least two reviewed neighbors support the same winning tag;
 - the nearest reviewed document has exactly one leaf content tag;
 - nearest similarity is at least 0.60 and weighted winner share is at least 0.50;
 - **Classification → Tagging → History health** is not reporting a refresh error.
 
-Use **Refresh history** after correcting historical tags if you want an immediate rebuild. A fallback to the LLM is expected when the archive does not provide a sufficiently strong and internally consistent historical match.
+Use **Refresh reviewed history** after correcting historical tags if you want an immediate rebuild. A fallback to the LLM is expected when the archive does not provide a sufficiently strong and internally consistent historical match.
 
 ## New correspondent does not appear in native Suggestions
 
-Check:
+The Paperless Suggestions integration is optional. Without it, classification and safe matching to existing correspondents still work, but paperless-local-ai does not surface unmatched sender candidates in Paperless Suggestions. If you configured the bridge, check:
 
 - the Classification result extracted a plausible new sender rather than resolving an existing correspondent or leaving it empty;
 - the document still has the review tag;

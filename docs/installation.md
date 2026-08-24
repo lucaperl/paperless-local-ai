@@ -1,6 +1,6 @@
 # Docker Compose installation
 
-This guide covers a normal Docker Compose deployment. For TrueNAS SCALE, use the [TrueNAS guide](truenas.md).
+This guide covers a Docker Compose deployment. For TrueNAS SCALE, use the [TrueNAS guide](truenas.md).
 
 ## Before you start
 
@@ -46,7 +46,7 @@ The same secret is later configured in Paperless as `PLAI_OCR_TOKEN`.
 
 `APP_VERSION=stable` follows the newest non-prerelease image. Replace it with an exact release number for a pinned deployment.
 
-Normal runtime settings such as Paperless/Ollama URLs, OCR language, workflow tags and prompts are configured in the Control Center.
+Runtime settings such as Paperless/Ollama URLs, OCR language, workflow tags and prompts are configured in the Control Center.
 
 ## 3. Start the app
 
@@ -126,11 +126,12 @@ See [Paperless setup](paperless-setup.md) for the full tested integration contra
 In the Control Center:
 
 1. save the tested Paperless and Ollama connections;
-2. review the LLM queue/error/review tag names;
-3. review OCR language/version/model profile/max image side/device;
-4. review polling and Dry Run;
-5. review Classification model/prompt settings;
-6. open **Classification → Tagging**, keep **Hybrid tagging** for compact models unless you intentionally want LLM direct tag decisions, and add optional Tag guidance where your taxonomy needs explanation.
+2. review the classification queue/error/review tag names;
+3. review OCR language/version/model profile/maximum image side/device;
+4. complete [Paperless setup](paperless-setup.md), including the review-tag lifecycle and matching-algorithm settings;
+5. review polling and optional Dry Run;
+6. review Classification model/prompt settings;
+7. open **Classification → Tagging**, keep **Hybrid tagging** for compact models unless you intentionally want LLM direct tag decisions, and add optional Tag Guidance where your taxonomy needs explanation.
 
 The default model is `qwen3.5:4b`. Any selected model must already exist in Ollama. Hybrid tagging is the recommended tag strategy for the 4B reference model; see [Tagging](tagging.md) for the rationale, confidence gate and evaluation.
 
@@ -157,7 +158,7 @@ Paperless import
 → OCRmyPDF / PaddleOCR / PP-OCRv6 when OCR is needed
 → Document Added workflow adds LLM tag
 → metadata worker
-→ Inbox
+→ configured review tag / human review
 ```
 
 For a scanned PDF, verify both the extracted text and Paperless' archive file before processing a larger batch.
@@ -178,7 +179,7 @@ PaddleOCR models and HPI/OpenVINO artifacts are cached below `APP_DATA_DIR/ocr/`
 
 The default `APP_VERSION=stable` follows the newest non-prerelease image.
 
-For a normal image-only update:
+For an image-only update:
 
 ```bash
 docker compose pull

@@ -18,7 +18,7 @@ Paperless import
 Paperless parser / OCRmyPDF
       ↓
 OCR needed for a page?
-  no  → normal Paperless text path
+  no  → existing Paperless text path
   yes → OCRmyPDF rasterizes page
           ↓
         paperless-local-ai OCR plugin
@@ -50,10 +50,14 @@ one structured LLM request
       ↓
 local correspondent resolver
   existing safe match → apply
-  plausible new name  → Paperless Suggestions
+  plausible new name  → optional Paperless Suggestions integration
   unreliable/empty    → leave empty
       ↓
 Paperless metadata + review
+      ↓
+human review removes configured review tag
+      ↓
+eligible for trusted Hybrid history
 ```
 
 The uploaded PDF stays Paperless' original. OCR happens while Paperless consumes the document; `paperless-local-ai` does not maintain a separate OCR queue.
@@ -67,9 +71,9 @@ One Compose project runs four long-lived services from two images:
 | `ocr-service` | authenticated PaddleOCR service used by the OCRmyPDF plugin |
 | `metadata-worker` | tag routing, one-call metadata classification and local sender resolution |
 | `prompt-ui` | Control Center: configuration, tagging diagnostics, testing and configuration history |
-| `suggestion-bridge` | exposes plausible new correspondent candidates through Paperless Suggestions |
+| `suggestion-bridge` | optional adapter that can expose plausible new correspondent candidates through Paperless Suggestions |
 
-The optional `doctor` profile uses the core image as a one-shot deployment check. Paperless and Ollama are external services.
+The optional `doctor` profile uses the core image as a one-shot deployment check. Paperless and Ollama are external services. The suggestion-bridge service is included in the stack, but configuring Paperless to use it is optional; without it, safe matching to existing correspondents still works and unmatched sender candidates are handled manually during review.
 
 ## OCRmyPDF integration
 
@@ -118,7 +122,7 @@ A tag is reused only when the nearest reviewed document has exactly one leaf tag
 
 If the gate abstains, up to five relevant positive reviewed examples are supplied through the editable Tagging prompt. At most two examples with the same tag combination are used.
 
-The configured review tag is the trust boundary. Documents still carrying review, classification-queue or classification-error tags are excluded, and the current document is excluded from its own lookup.
+The configured review tag is the trust boundary and can have any name. It stays on a document until human review is complete. Documents still carrying review, classification-queue or classification-error tags are excluded, and the current document is excluded from its own lookup.
 
 See [Tagging](tagging.md) for the detailed rationale, Paperless-native comparison and diagnostics.
 
