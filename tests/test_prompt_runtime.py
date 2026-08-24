@@ -2,6 +2,8 @@ from prompt_runtime import (
     DEFAULT_CONFIG,
     DEFAULT_SYSTEM_PROMPT,
     DEFAULT_TAGGING_PROMPT,
+    _LEGACY_030_GERMAN_CLASSIFICATION_TEMPLATE,
+    _LEGACY_030_GERMAN_SYSTEM_PROMPT,
     PROMPT_PRESETS,
     make_schema,
     normalize_result,
@@ -174,3 +176,27 @@ def test_old_config_gets_default_tagging_prompt():
     assert cfg["tagging_mode"] == "history_assisted"
     assert cfg["tag_guidance"] == {}
     assert cfg["tagging_prompt"] == DEFAULT_TAGGING_PROMPT
+
+
+def test_released_v030_german_preset_migrates_to_split_prompts():
+    assert (
+        "Wenn kein konkreter Tag vorhanden ist"
+        in _LEGACY_030_GERMAN_CLASSIFICATION_TEMPLATE
+    )
+
+    old = {
+        k: v
+        for k, v in DEFAULT_CONFIG.items()
+        if k not in {"tagging_prompt"}
+    }
+    old["system_prompt"] = _LEGACY_030_GERMAN_SYSTEM_PROMPT
+    old["classification_template"] = _LEGACY_030_GERMAN_CLASSIFICATION_TEMPLATE
+
+    cfg = validate_config(old)
+
+    assert cfg["system_prompt"] == PROMPT_PRESETS["de"]["system_prompt"]
+    assert (
+        cfg["classification_template"]
+        == PROMPT_PRESETS["de"]["classification_template"]
+    )
+    assert cfg["tagging_prompt"] == PROMPT_PRESETS["de"]["tagging_prompt"]

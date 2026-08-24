@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.3.2 - 2026-08-24
+
+### Fixes
+
+- fix migration of the published v0.3.0 German prompt preset to the split System, Base classification and Tagging prompts.
+
 ## 0.3.1 - 2026-08-24
 
 ### Hybrid tagging and editable prompt composition
