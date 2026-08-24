@@ -158,6 +158,9 @@ def test_persistent_core_processes_keep_scientific_history_runtime_out_of_idle()
     assert "HistoryBroker" in worker
     assert "subprocess.Popen" in broker
     assert "from history_runtime import HistoryIndex" in engine
+    assert "routing_docs.clear()" in worker
+    assert "fresh = current_document(doc_id)" in worker
+    assert "Document content changed after History batch routing" in worker
 
 
 def test_history_cache_is_versioned_and_integrity_checked():

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import atexit
+import hashlib
 import json
 import time
 from datetime import datetime
@@ -43,6 +44,11 @@ def log(msg: str) -> None:
 
 def current_document(doc_id: int) -> dict[str, Any]:
     return client.document(doc_id)
+
+
+def document_content_sha256(document: dict[str, Any]) -> str:
+    content = str(document.get("content") or "")
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
 def update_tags(doc_id: int, add=None, remove=None) -> None:
@@ -359,30 +365,52 @@ def main() -> None:
                 },
             ).json()["results"]
 
-            fresh_docs: list[dict[str, Any]] = []
+            routing_docs: list[dict[str, Any]] = []
+            routed_content_sha256: dict[int, str] = {}
             for doc in docs:
+                doc_id = int(doc["id"])
                 try:
-                    fresh_docs.append(current_document(int(doc["id"])))
+                    snapshot = current_document(doc_id)
+                    routing_docs.append(snapshot)
+                    routed_content_sha256[doc_id] = document_content_sha256(snapshot)
                 except Exception as exc:
-                    mark_error(int(doc["id"]), queue_tag, error_tag, exc, error_name)
+                    mark_error(doc_id, queue_tag, error_tag, exc, error_name)
 
             tagging_by_id: dict[int, dict[str, Any]] = {}
-            if fresh_docs:
+            routed_doc_ids = [int(document["id"]) for document in routing_docs]
+            if routing_docs:
                 routing_config = load_config()
                 tagging_by_id = history_contexts_for_documents(
                     routing_config,
-                    fresh_docs,
+                    routing_docs,
                     shutdown_after=True,
                 )
+            # Do not retain full document bodies while sequential LLM jobs run.
+            routing_docs.clear()
 
-            for fresh in fresh_docs:
-                doc_id = int(fresh["id"])
+            for doc_id in routed_doc_ids:
                 try:
                     with ai_resource_lock("LLM", doc_id):
+                        # Re-fetch immediately before rendering/inference, matching
+                        # the pre-batching freshness behavior. If the content
+                        # changed after History routing, fail closed to an LLM tag
+                        # decision rather than applying a stale History match.
+                        fresh = current_document(doc_id)
                         config = load_config()
                         tagging = tagging_by_id.get(doc_id) or history_error_context(
                             "No history route was prepared for this document"
                         )
+                        if (
+                            config.get("tagging_mode", "history_assisted") == "history_assisted"
+                            and document_content_sha256(fresh) != routed_content_sha256.get(doc_id)
+                        ):
+                            tagging = history_error_context(
+                                "Document content changed after History batch routing"
+                            )
+                            log(
+                                f"[HISTORY] ID {doc_id}: content changed after batch routing; "
+                                "using LLM fallback"
+                            )
                         try:
                             process(fresh, tax, app_cfg, config, tagging)
                         finally:
