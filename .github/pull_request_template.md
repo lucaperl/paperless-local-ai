@@ -19,4 +19,5 @@ If any box above is false, explain the required release-note/update guidance.
 
 ## Privacy
 
-- [ ] No token, private document content, private OCR dump or real `.env` was included
+- [ ] No token, real `.env`, private document content/OCR dump, private infrastructure address or user-specific host path was included
+- [ ] Tests, documentation and examples use synthetic fixtures only; no values were copied from a private Paperless archive

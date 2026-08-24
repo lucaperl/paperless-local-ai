@@ -13,7 +13,7 @@ You need:
 - an installed Ollama model (`qwen3.5:4b` is the default);
 - permission to add the OCRmyPDF plugin mount/environment to Paperless.
 
-Fresh installations use English OCR and English prompt defaults. OCR language and the two prompt stages can be changed independently in the Control Center.
+Fresh installations use English OCR and English prompt defaults. OCR language and the three editable prompt components can be changed independently in the Control Center.
 
 ## 1. Download
 
@@ -130,9 +130,9 @@ In the Control Center:
 3. review OCR language/version/model profile/max image side/device;
 4. review polling and Dry Run;
 5. review Classification model/prompt settings;
-6. open **Classification → Tagging**, keep **History-assisted** for compact models unless you intentionally want LLM-only tag decisions, and add optional Tag guidance where your taxonomy needs explanation.
+6. open **Classification → Tagging**, keep **Hybrid tagging** for compact models unless you intentionally want LLM direct tag decisions, and add optional Tag guidance where your taxonomy needs explanation.
 
-The default model is `qwen3.5:4b`. Any selected model must already exist in Ollama. History-assisted is the recommended tag strategy for the 4B reference model; see [Tagging](tagging.md) for the rationale, confidence gate and evaluation.
+The default model is `qwen3.5:4b`. Any selected model must already exist in Ollama. Hybrid tagging is the recommended tag strategy for the 4B reference model; see [Tagging](tagging.md) for the rationale, confidence gate and evaluation.
 
 ## 6. Configure Paperless workflow/tags
 

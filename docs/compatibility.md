@@ -22,19 +22,19 @@ Compatibility claims are intentionally narrow: an environment is listed as teste
 
 ## Paperless / OCRmyPDF versions
 
-The OCR integration uses OCRmyPDF's plugin API and is therefore version-sensitive.
+The OCR integration uses OCRmyPDF's plugin API and is version-sensitive.
 
 The included plugin is verified against OCRmyPDF **17.4.2**, specifically the native `OcrEngine.generate_ocr()` / `OcrElement` interface used by Paperless-ngx **3.0.5**.
 
-Do not assume a newer Paperless/OCRmyPDF release is compatible until the plugin contract has been checked.
+A newer Paperless/OCRmyPDF release should be treated as unverified until the plugin contract is checked.
 
-The native new-correspondent suggestion bridge is also version-sensitive because it depends on Paperless' AI classification-suggestion request shape. Its tested target is likewise Paperless-ngx **3.0.5**.
+The new-correspondent suggestion bridge is also version-sensitive because it depends on Paperless' AI classification-suggestion request shape. Its tested target is Paperless-ngx **3.0.5**.
 
-Paperless 2.x is not a supported target for the current OCR/plugin path.
+Paperless 2.x is not a supported target for this OCR/plugin path.
 
 ## OCR models and languages
 
-The tested reference runtime uses PaddleOCR with **PP-OCRv6 Medium** detection and recognition models. The Control Center also exposes matching **Small** and **Tiny** PP-OCRv6 profiles. Medium remains the default and the reference profile used for the published CPU measurements.
+The tested reference runtime uses PaddleOCR with **PP-OCRv6 Medium** detection and recognition models. The Control Center also exposes matching **Small** and **Tiny** PP-OCRv6 profiles. Medium is the default and the reference profile for published CPU measurements.
 
 PP-OCRv6 Tiny does not support Japanese; configuration validation rejects that combination.
 
@@ -42,10 +42,10 @@ OCR language is configured separately. The service accepts common aliases from P
 
 ## LLM models, tagging and prompts
 
-Classification uses one installed Ollama model selected in the Control Center. Title, document type, date and sender/issuer use the same structured request. Tags use either the default **History-assisted** strategy or **LLM only**.
+Classification uses one installed Ollama model selected in the Control Center. Title, document type, date and sender/issuer use one structured request.
 
-History-assisted tagging uses local scikit-learn TF-IDF/nearest-neighbor retrieval over finished reviewed Paperless documents. It is the recommended strategy for the `qwen3.5:4b` reference model; LLM-only remains available for larger or more capable models.
+Content tags use either **Hybrid tagging** or **LLM direct**. Hybrid tagging uses local scikit-learn TF-IDF/nearest-neighbor retrieval over reviewed Paperless documents and is the recommended strategy for the `qwen3.5:4b` reference model. LLM direct is intended for models that can map document semantics to the user's taxonomy reliably enough without retrieved examples.
 
-Classification includes English and German prompt presets, custom prompt text and optional per-tag LLM guidance.
+System, Base classification and Tagging prompts are editable. English and German presets are included for all three components, and Tag Guidance is configurable per Paperless content tag.
 
-ARM64 is not currently claimed as supported.
+ARM64 is not claimed as supported.
