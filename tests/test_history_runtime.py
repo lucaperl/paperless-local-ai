@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from history_runtime import HistoryIndex, _leaf_names_from_ids
 
 
@@ -151,3 +153,28 @@ def test_cache_roundtrip_preserves_history_route():
         source_signature=index._source_signature,
     )
     assert restored.route("salary statement employer september payroll gross net") == expected
+
+
+def test_sparse_cosine_normalizes_partial_feature_vectors():
+    # "x" has no default word-token feature but does have char_wb features.
+    # The combined stored row must still have unit norm.
+    word, char, matrix, _weight = HistoryIndex._fit_space(["x", "alpha beta"])
+    stored_norm = float(matrix[0].multiply(matrix[0]).sum()) ** 0.5
+    assert stored_norm == pytest.approx(1.0)
+
+    # "alphx" is unseen by the word vocabulary while sharing character
+    # n-grams with "alpha". This is the edge case where a raw weighted hstack
+    # would have norm 1/sqrt(2) and sparse dot would no longer equal cosine.
+    query = "alphx"
+    assert word is not None
+    assert char is not None
+    assert word.transform([query]).nnz == 0
+    assert char.transform([query]).nnz > 0
+
+    index = HistoryIndex()
+    index._word_vectorizer = word
+    index._char_vectorizer = char
+    index._matrix = matrix
+    vector = index._transform(query)
+    query_norm = float(vector.multiply(vector).sum()) ** 0.5
+    assert query_norm == pytest.approx(1.0)

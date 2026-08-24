@@ -10,6 +10,7 @@ from typing import Any
 import numpy as np
 from scipy.sparse import hstack
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.preprocessing import normalize
 
 from history_common import (
     EXAMPLE_MIN_SIMILARITY,
@@ -100,6 +101,11 @@ class HistoryIndex:
             raise RuntimeError("Reviewed documents do not contain usable text for history matching")
         weight = 1.0 / math.sqrt(len(parts))
         matrix = hstack([part * weight for part in parts], format="csr", dtype=np.float32)
+        # Re-normalize the combined vector space. Individual TF-IDF branches
+        # are L2-normalized, but a document can have an empty word or character
+        # branch. Explicit row normalization keeps sparse dot products exactly
+        # equivalent to cosine similarity for those edge cases too.
+        matrix = normalize(matrix, norm="l2", copy=False)
         return word, char, matrix, weight
 
     def _transform(self, content: str):
@@ -111,7 +117,8 @@ class HistoryIndex:
         if not parts:
             raise RuntimeError("History index is not ready")
         weight = 1.0 / math.sqrt(len(parts))
-        return hstack([part * weight for part in parts], format="csr", dtype=np.float32)
+        vector = hstack([part * weight for part in parts], format="csr", dtype=np.float32)
+        return normalize(vector, norm="l2", copy=False)
 
     def _nearest_from_vector(
         self,
@@ -123,8 +130,8 @@ class HistoryIndex:
         if not self._entries or self._matrix is None:
             return []
 
-        # Both TF-IDF branches are L2 normalized and combined with the same
-        # normalization weight, so sparse dot product is cosine similarity.
+        # Combined vectors are explicitly L2-normalized, including rows where
+        # one TF-IDF branch is empty, so sparse dot product is cosine similarity.
         similarities = (self._matrix @ vector.T).toarray().ravel()
         order = np.argsort(-similarities, kind="stable")
         result = []
