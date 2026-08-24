@@ -100,11 +100,15 @@ The Control Center dynamically lists every current Paperless content tag and pro
 
 Use guidance for personal filing boundaries that a model cannot infer from a tag name alone. It is supplied whenever the LLM makes a tag decision and is absent from confident Hybrid routes.
 
-## Reviewed-history refresh
+## Reviewed-history lifecycle
 
-There is no trained tag model inside the Hybrid retriever. Each process keeps a read-only TF-IDF index in memory.
+There is no trained tag model inside the Hybrid retriever. The persistent Control Center and metadata worker stay lightweight and do not keep NumPy, SciPy or scikit-learn resident.
 
-When retrieval data is needed, the app checks at most every **five minutes** whether the reviewed-document count/latest modification state or current tag taxonomy changed. The index is rebuilt only after a detected change. **Refresh reviewed history** requests an immediate rebuild and notifies the metadata worker before its next retrieval route.
+When Hybrid retrieval is needed, a lightweight broker starts a scientific helper subprocess. A source signature checks the eligible reviewed-document count/latest modification state, current tag taxonomy and configured exclusion tags. If the validated local cache matches that source and the exact runtime/algorithm versions, the helper loads the fitted TF-IDF vectorizers and sparse matrix; otherwise it rebuilds them from Paperless and atomically replaces the cache.
+
+The helper is shared by Control Center requests and the metadata worker. Interactive preview/diagnostic work can keep it warm briefly to avoid repeated imports. Automatic metadata batches route queued documents together and then shut the helper down before Ollama starts. **Refresh reviewed history** forces an immediate rebuild.
+
+The cache is local application state and is never accepted from uploads or network input. It uses pickle protocol 5, is integrity-checked before loading and is rebuilt on source, algorithm or Python/scientific-library version mismatch.
 
 ## History health
 
@@ -154,7 +158,7 @@ For Paperless-ngx **3.0.5**, the native classifier trains on non-Inbox documents
 | LLM examples | not part of the native classifier | nearest reviewed documents become few-shot examples on fallback |
 | Personal tag instructions | learned implicitly from labeled documents | optional explicit Tag Guidance plus reviewed examples |
 | User-visible evidence | normal Paperless suggestion/prediction behavior | route, similarity, support, reuse diagnostics and retrieved examples in Control Center |
-| Refresh model | Paperless classifier training lifecycle | lightweight source check; TF-IDF index rebuild only when reviewed data/taxonomy changes |
+| Refresh model | Paperless classifier training lifecycle | lightweight source check; validated local TF-IDF cache, rebuilt only when reviewed data/taxonomy/runtime version changes |
 
 The Hybrid layer exists because its **explicit evidence gate, abstention path, retrieved examples and diagnostics** are directly useful to this local-LLM workflow. Users who prefer Paperless' native automatic matching can continue to use that Paperless feature independently.
 

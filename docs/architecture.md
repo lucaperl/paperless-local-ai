@@ -8,7 +8,7 @@
 - **One structured LLM request per document:** title, document type, date and sender/issuer are extracted together; tags join that request only when the selected tag route needs an LLM decision.
 - **Hybrid tagging:** recurring reviewed patterns can reuse a tag behind a strict evidence gate; uncertain cases use an LLM fallback with Tag Guidance and relevant reviewed examples.
 - **Local correspondent resolution:** the LLM extracts one free-text sender/issuer; Python resolves safe existing matches or exposes a plausible new name through Paperless Document Suggestions.
-- **Bounded resource usage:** PaddleOCR/OpenVINO and Ollama share one AI resource lock and do not perform expensive inference concurrently.
+- **Bounded resource usage:** PaddleOCR/OpenVINO, Hybrid-history work and Ollama share one AI resource lock; heavyweight OCR/history subprocesses and the Ollama model are released after use.
 
 ## Pipeline
 
@@ -69,7 +69,7 @@ One Compose project runs four long-lived services from two images:
 | Service | Purpose |
 |---|---|
 | `ocr-service` | authenticated PaddleOCR service used by the OCRmyPDF plugin |
-| `metadata-worker` | tag routing, one-call metadata classification and local sender resolution |
+| `metadata-worker` | lightweight queue polling/history broker, tag routing, one-call metadata classification and local sender resolution |
 | `prompt-ui` | Control Center: configuration, tagging diagnostics, testing and configuration history |
 | `suggestion-bridge` | optional adapter that can expose plausible new correspondent candidates through Paperless Suggestions |
 
@@ -87,9 +87,9 @@ The OCR service keeps the heavyweight Paddle worker in a spawned subprocess. It 
 
 Transient worker/service failures use bounded automatic retries. Deterministic configuration/input failures fail immediately. Recovery state is exposed through the Control Center without exposing document content through the unauthenticated health endpoint.
 
-## Shared OCR/LLM resource lock
+## Shared AI resource lock
 
-OCR and metadata inference share one exclusive file lock at `/coordination/ai.lock`. This prevents Paddle/OpenVINO and Ollama from competing for the same CPU/RAM budget. The metadata worker unloads the configured Ollama model before leaving the AI transaction.
+OCR, Hybrid-history work and metadata inference share one exclusive file lock at `/coordination/ai.lock`. This prevents Paddle/OpenVINO, the scientific history helper and Ollama from performing heavy work concurrently. Automatic metadata routing shuts the history helper down before the Ollama request starts, and the metadata worker unloads the configured Ollama model before leaving the AI transaction.
 
 ## Structured metadata request
 
@@ -123,6 +123,10 @@ A tag is reused only when the nearest reviewed document has exactly one leaf tag
 If the gate abstains, up to five relevant positive reviewed examples are supplied through the editable Tagging prompt. At most two examples with the same tag combination are used.
 
 The configured review tag is the trust boundary and can have any name. It stays on a document until human review is complete. Documents still carrying review, classification-queue or classification-error tags are excluded, and the current document is excluded from its own lookup.
+
+The persistent UI and queue worker do not import NumPy, SciPy or scikit-learn. The metadata worker hosts a lightweight Unix-socket broker that starts one scientific history subprocess on demand. A validated local TF-IDF cache avoids refitting unchanged reviewed history, and cosine ranking uses sparse matrix dot products. Interactive Control Center lookups can reuse the helper for a short idle window; automatic metadata batches and model tests shut it down before Ollama starts.
+
+The cache is internal application state below `/data/history-cache`. It uses Python pickle protocol 5 only for artifacts created by this application, records exact Python/NumPy/SciPy/scikit-learn plus algorithm/source signatures, and is SHA-256 verified inside the disposable helper immediately before unpickling. The persistent UI checks only lightweight metadata/source state and never reads the cache blob into memory. Invalid caches are rebuilt and cache files are written atomically.
 
 See [Tagging](tagging.md) for the detailed rationale, Paperless-native comparison and diagnostics.
 
@@ -166,9 +170,9 @@ Persistent state lives below one `APP_DATA_DIR`:
 
 ```text
 config/        app and classification configuration/history
-core/          results and open correspondent review records
+core/          results, open correspondent review records and history index cache
 ocr/           PaddleX/OpenVINO cache and OCR runtime state
-coordination/  shared ai.lock + OCR recovery + history refresh marker
+coordination/  shared ai.lock + OCR recovery + history broker socket
 integration/   generated OCRmyPDF plugin consumed by Paperless
 ```
 

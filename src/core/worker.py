@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import atexit
 import json
 import time
 from datetime import datetime
@@ -8,7 +9,12 @@ from typing import Any
 
 from app_config import ensure_config as ensure_app_config, load_config as load_app_config
 from correspondent_resolver import resolve_correspondent
-from history_runtime import HistoryIndex
+from history_broker import HistoryBroker
+from history_client import (
+    history_contexts_for_documents,
+    history_error_context,
+    llm_only_context,
+)
 from prompt_runtime import (
     PaperlessClient,
     ai_resource_lock,
@@ -29,7 +35,6 @@ RESULTS = Path("/data/results")
 RESULTS.mkdir(parents=True, exist_ok=True)
 
 client = PaperlessClient()
-history_index = HistoryIndex()
 
 
 def log(msg: str) -> None:
@@ -173,25 +178,26 @@ def write_review_record_safe(
         log(f"[REVIEW-WARN] ID {doc_id}: {type(exc).__name__}: {exc}")
 
 
-def process(doc: dict[str, Any], tax: dict[str, Any], app_cfg: dict[str, Any]) -> None:
-    doc_id = int(doc["id"])
-    fresh = current_document(doc_id)
+def process(
+    fresh: dict[str, Any],
+    tax: dict[str, Any],
+    app_cfg: dict[str, Any],
+    config: dict[str, Any],
+    tagging: dict[str, Any],
+) -> None:
+    doc_id = int(fresh["id"])
     workflow = app_cfg["workflow"]
     runtime = app_cfg["runtime"]
     queue_name = workflow["llm_queue_tag"]
     error_name = workflow["llm_error_tag"]
-    review_name = workflow["review_tag"]
     queue_tag = tax["tag_by_name"][queue_name]
     error_tag = tax["tag_by_name"][error_name]
 
-    config = load_config()
-    tagging = history_index.tagging_context(
-        client,
-        tax,
-        config,
-        [review_name, queue_name, error_name],
-        fresh,
-    )
+    if config.get("tagging_mode", "history_assisted") == "llm_only":
+        tagging = llm_only_context()
+    elif tagging.get("mode") != "history_assisted":
+        tagging = history_error_context("Tagging mode changed after history batch routing")
+
     rendered = render_prompts(fresh, tax, config, tagging=tagging)
 
     route = tagging.get("route", "llm_only")
@@ -303,12 +309,17 @@ def process(doc: dict[str, Any], tax: dict[str, Any], app_cfg: dict[str, Any]) -
 def main() -> None:
     app_cfg = ensure_app_config()
     config = ensure_config()
+    history_broker = HistoryBroker()
+    history_broker.start()
+    atexit.register(history_broker.stop)
+
     log("[BOOT] Paperless local metadata worker")
     log(f"[BOOT] AppConfig: /config/app-config.json (v{app_cfg['version']})")
     log(f"[BOOT] PromptConfig: /config/prompt-config.json (v{config['version']})")
     log(f"[BOOT] Model: {config['model']}")
     log(f"[BOOT] Context: {config['num_ctx']}")
     log(f"[BOOT] Tagging: {config['tagging_mode']}")
+    log("[BOOT] History engine is loaded on demand and released after use")
     log("[BOOT] Prompt and app settings are reloaded continuously")
 
     last_review_prune = 0.0
@@ -348,12 +359,32 @@ def main() -> None:
                 },
             ).json()["results"]
 
+            fresh_docs: list[dict[str, Any]] = []
             for doc in docs:
                 try:
-                    with ai_resource_lock("LLM", doc["id"]):
+                    fresh_docs.append(current_document(int(doc["id"])))
+                except Exception as exc:
+                    mark_error(int(doc["id"]), queue_tag, error_tag, exc, error_name)
+
+            tagging_by_id: dict[int, dict[str, Any]] = {}
+            if fresh_docs:
+                routing_config = load_config()
+                tagging_by_id = history_contexts_for_documents(
+                    routing_config,
+                    fresh_docs,
+                    shutdown_after=True,
+                )
+
+            for fresh in fresh_docs:
+                doc_id = int(fresh["id"])
+                try:
+                    with ai_resource_lock("LLM", doc_id):
                         config = load_config()
+                        tagging = tagging_by_id.get(doc_id) or history_error_context(
+                            "No history route was prepared for this document"
+                        )
                         try:
-                            process(doc, tax, app_cfg)
+                            process(fresh, tax, app_cfg, config, tagging)
                         finally:
                             try:
                                 unload_ollama_model(config["model"])
@@ -361,7 +392,7 @@ def main() -> None:
                             except Exception as exc:
                                 log(f"[UNLOAD-WARN] {config['model']}: {type(exc).__name__}: {exc}")
                 except Exception as exc:
-                    mark_error(doc["id"], queue_tag, error_tag, exc, error_name)
+                    mark_error(doc_id, queue_tag, error_tag, exc, error_name)
         except Exception as exc:
             log(f"[ERROR] Worker/Polling: {type(exc).__name__}: {exc}")
         time.sleep(poll_interval)

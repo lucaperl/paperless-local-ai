@@ -198,7 +198,7 @@ A historical tag is reused only when the strict confidence gate passes. Check:
 - nearest similarity is at least 0.60 and weighted winner share is at least 0.50;
 - **Classification → Tagging → History health** is not reporting a refresh error.
 
-Use **Refresh reviewed history** after correcting historical tags if you want an immediate rebuild. A fallback to the LLM is expected when the archive does not provide a sufficiently strong and internally consistent historical match.
+Use **Refresh reviewed history** after correcting historical tags if you want an immediate rebuild. The persistent UI/worker do not keep the scientific index in RAM; a Hybrid request starts the history helper on demand and a stale/invalid local cache is rebuilt automatically. If the Control Center reports that the history broker is unavailable, check the `metadata-worker` container because it owns the lightweight broker. A fallback to the LLM is expected when the archive does not provide a sufficiently strong and internally consistent historical match.
 
 ## New correspondent does not appear in native Suggestions
 
