@@ -1,17 +1,17 @@
 # Configuration
 
-The **Control Center** is the main interface for normal `paperless-local-ai` configuration, testing and configuration history.
+The **Control Center** is the main interface for `paperless-local-ai` configuration, testing and configuration history.
 
 ## Recommended first-time setup order
 
 1. **App Settings → Connections** — configure and test Paperless and Ollama.
 2. **App Settings → Pipeline & Tags** — choose classification queue/error/review tag names.
-3. **App Settings → OCR** — choose OCR language, PaddleOCR model, image limit and retry behavior.
-4. **App Settings → Runtime** — choose whether metadata writes are enabled.
-5. **Classification → Tagging** — choose Hybrid tagging or LLM direct and optionally describe ambiguous tags.
-6. **Classification → Prompt** — review the editable System, Base classification and Tagging prompts.
-7. **Classification → Test** — run a safe preview/model test against an existing document.
-8. Complete the matching [Paperless setup](paperless-setup.md).
+3. **App Settings → OCR** — choose OCR language, PaddleOCR model, maximum image side and retry behavior.
+4. Complete the matching [Paperless setup](paperless-setup.md), including the review-tag lifecycle, Paperless matching settings, metadata workflow and OCRmyPDF integration.
+5. **App Settings → Runtime** — leave metadata writes enabled or temporarily use Dry Run for read-only metadata testing.
+6. **Classification → Tagging** — choose Hybrid tagging or LLM direct and optionally describe ambiguous tags.
+7. **Classification → Prompt** — review the editable System, Base classification and Tagging prompts.
+8. **Classification → Test** — run a safe preview/model test against an existing document.
 
 Saved app/classification configurations are versioned and can be restored from the UI.
 
@@ -23,15 +23,17 @@ The URLs must be reachable **from the app containers**. `localhost` inside a con
 
 ## Pipeline & tags
 
-Configure the classification queue tag, classification error tag, review tag and any additional tags excluded from content classification.
+Configure the classification queue tag, classification error tag, review tag and any additional tags excluded from content classification. These names must match existing Paperless tags exactly.
+
+The review tag can have any name; `Inbox` is only the fresh-install default. Keep the configured review tag on a document until human review is complete. Remove it after review; the document becomes eligible for trusted Hybrid retrieval only when the review, classification queue and classification error tags are all absent. The recommended Paperless setup marks the chosen review tag as an **Inbox tag** so Paperless adds it automatically on import. Alternatively, add that tag explicitly in the Document Added workflow.
+
+For an exclusive paperless-local-ai metadata workflow, set Paperless **Matching algorithm** to **None** for the content tags, document types, correspondents and technical workflow/review tags managed by paperless-local-ai. This prevents Paperless matching from independently assigning the same metadata before paperless-local-ai writes its result. Storage paths are not managed by paperless-local-ai and do not need this change. See [Paperless setup](paperless-setup.md#2-metadata-and-review-tags).
 
 OCR runs inside Paperless/OCRmyPDF import and does not use classification queue/error tags.
 
-The **review tag is also the trust boundary for Hybrid tagging**. Documents become eligible for reviewed retrieval after they leave this tag. Documents still carrying the classification queue or error tag are excluded as well.
-
 ## OCR
 
-Configure OCR language, PaddleOCR model, maximum temporary OCR image dimension, retry schedule and inference device.
+Configure OCR language, PaddleOCR model, maximum OCR image side, retry schedule and inference device.
 
 | PaddleOCR model | Intended use |
 |---|---|
@@ -41,22 +43,7 @@ Configure OCR language, PaddleOCR model, maximum temporary OCR image dimension, 
 
 PP-OCRv6 Tiny does not support Japanese.
 
-The temporary OCR image is limited by `ocr.max_side_pixels`. Default: **3000 px** on the longest side; supported range: **2000–4000 px**. This changes only the temporary OCR input and never resizes the original/archive page.
-
-### RAM usage and tuning
-
-| Workload | Configuration | Measured peak |
-|---|---|---:|
-| OCR | PP-OCRv6 Medium · 3000 px | ~4.4–4.7 GiB |
-| OCR | PP-OCRv6 Medium · 3200 px | ~4.9–5.1 GiB |
-| OCR | PP-OCRv6 Medium · 4000 px | ~6.5 GiB |
-| Metadata | qwen3.5:4b Q4_K_M · 4k context | ~3.6 GiB |
-| Metadata | qwen3.5:4b Q4_K_M · 8k context | ~3.8 GiB |
-| Metadata | qwen3.5:4b Q4_K_M · 16k context | ~4.2 GiB |
-
-PaddleOCR and Ollama inference are serialized through the shared AI resource lock, so the heavy peaks normally do not overlap.
-
-If RAM is limited, lower **Maximum OCR image dimension** first when OCR is the problem and reduce the Classification **Context window** when the LLM is the problem. `OCR_MEMORY_LIMIT` is a deployment safety ceiling; raising it does not reduce memory use.
+The temporary OCR raster is limited by `ocr.max_side_pixels`. Default: **3000 px** on the longest side; supported range: **2000–4000 px**. This changes only the temporary OCR input and never resizes the original/archive page.
 
 ### Automatic OCR retries
 
@@ -68,19 +55,51 @@ Paperless defaults `PAPERLESS_WORKER_TIMEOUT` to 1800 seconds; if the configured
 
 HPI/OpenVINO, CPU/thread/RAM/shared-memory and OCR idle limits stay deployment settings because they affect container/runtime construction.
 
+## Reference performance and resource tuning
+
+Measured on an **Intel Core i3-8100 · 4 cores / 4 threads · 16 GB RAM · no GPU · qwen3.5:4b Q4_K_M · PP-OCRv6 Medium / HPI / OpenVINO**.
+
+| Workload | Document size | Prompt size | Processing time | Peak RAM |
+|---|---|---:|---:|---:|
+| OCR · PP-OCRv6 Medium · 3000 px | per page | — | ~23 s/page | ~4.3 GiB |
+| Metadata · qwen3.5:4b Q4_K_M | ~1–2 pages | ~1–4k tokens | ~40 s–2.5 min | ~4.2 GiB |
+| Metadata · qwen3.5:4b Q4_K_M | ~3–4 pages | ~5–9k tokens | ~3–5.5 min | ~4.2 GiB |
+| Metadata · qwen3.5:4b Q4_K_M | ~5–6 pages | ~9–12k tokens | ~5.5–7.5 min | ~4.2 GiB |
+
+Page count is only a rough indication of metadata cost. Runtime primarily follows the number of prompt tokens actually processed. Hybrid matches tend toward the lower end because tagging context is omitted, while fallback requests also include the tag taxonomy, guidance and retrieved examples. A 7-page fallback with ~14k prompt tokens took ~8.7 minutes.
+
+The **Context window** sets the maximum context available to Ollama and affects RAM usage. It does not mean every request processes the full configured context. A larger context window allows larger prompts; large prompts can substantially increase CPU inference time. The **Document text limit** is measured in characters and controls how much Paperless text can enter the prompt before head/tail truncation.
+
+Additional memory reference points:
+
+| Workload | Configuration | Measured peak |
+|---|---|---:|
+| OCR | PP-OCRv6 Medium · 3000 px | ~4.3 GiB |
+| OCR | PP-OCRv6 Medium · 3200 px | ~4.9–5.1 GiB |
+| OCR | PP-OCRv6 Medium · 4000 px | ~6.5 GiB |
+| Metadata | qwen3.5:4b Q4_K_M · 4k context | ~3.6 GiB |
+| Metadata | qwen3.5:4b Q4_K_M · 8k context | ~3.8 GiB |
+| Metadata | qwen3.5:4b Q4_K_M · 16k context | ~4.2 GiB |
+
+PaddleOCR and Ollama inference are serialized through the shared AI resource lock, so their heavy peaks do not overlap during paperless-local-ai processing.
+
+If RAM is limited, lower **Maximum OCR image side** first when OCR is the problem and reduce the Classification **Context window** when the LLM is the problem. `OCR_MEMORY_LIMIT` is a deployment safety ceiling; raising it does not reduce memory use.
+
 ## Runtime
 
 Configure metadata Dry Run plus advanced worker polling/review-cleanup intervals.
 
 ### Dry Run
 
-Dry Run affects the metadata worker, not Paperless import/OCR. The worker still performs routing/classification and stores result JSON, but it does not write title, type, date, content tags, correspondent or a persistent new-correspondent review record. Technical workflow/error tags may still change.
+Dry Run is optional and defaults to **Off**. It affects the metadata worker, not Paperless import/OCR. With Dry Run enabled, the worker still performs routing/classification and stores result JSON, but it does not write title, type, date, content tags, correspondent or a persistent new-correspondent review record. Technical workflow/error tags may still change.
 
 ## Classification
 
 Classification controls one structured local-LLM request. The model always handles title, document type, date and the actual sender/issuer. Tags join the request only when the active tag route needs an LLM decision.
 
 Document type and LLM-selected tags are constrained to current Paperless values. Correspondent output is free text and is resolved locally after the call.
+
+The **Context window** is the maximum capacity available to the request, not the number of tokens processed by every classification. Actual latency mainly follows the rendered prompt size. The **Document text limit** is a character limit; longer Paperless text is truncated by keeping the configured share from the beginning and the remainder from the end.
 
 ### Prompt composition
 
@@ -112,7 +131,7 @@ Guidance is supplied whenever the LLM chooses tags. A confident Hybrid match doe
 
 ### History health
 
-The Tagging tab shows reviewed-document count, represented tags, a retrospective estimated reuse percentage, **History depth by tag** and **Potential tag inconsistencies**.
+The Tagging tab shows reviewed-document count, represented tags, **Retrospective history reuse**, **History depth by tag** and **Potential tag inconsistencies**.
 
 History depth is based only on the number of reviewed examples for a tag:
 
@@ -130,21 +149,21 @@ The reuse estimate uses retrospective leave-one-out routing and counts only case
 
 Potential tag inconsistencies group at least three strongly similar reviewed documents when their leaf-tag assignments differ. They are review hints only and never change Paperless metadata.
 
-The index checks for relevant Paperless changes at most every five minutes when used and rebuilds only after a change. **Refresh history** forces an immediate Control Center rebuild and asks the metadata worker to refresh before its next Hybrid route.
+The index checks for relevant Paperless changes at most every five minutes when used and rebuilds only after a change. **Refresh reviewed history** forces an immediate Control Center rebuild and asks the metadata worker to refresh before its next Hybrid route.
 
 ### Safe interactive testing
 
-For an existing Paperless document, **Preview prompts** shows the exact tag route, structured schema and rendered messages without calling Ollama. **Run model test** performs the real local model request and local sender resolution. Neither modifies the selected Paperless document or persists a suggestion.
+For an existing Paperless document, **Preview prompts** shows the exact tag route, structured schema and rendered messages without calling Ollama. **Run model test** performs the real local model request and local sender resolution. Neither modifies the selected Paperless document or persists a suggestion. On CPU-only systems a model test can take from tens of seconds to several minutes; prompt size is the main driver.
 
 ## Correspondents
 
-The classification request extracts the actual sender/issuer as a short free-text name. Local resolution can apply a normalized exact match or a deliberately strong unambiguous fuzzy match. Other plausible names are exposed through Paperless Document Suggestions; unreliable output is left empty.
+The classification request extracts the actual sender/issuer as a short free-text name. Local resolution can apply a normalized exact match or a deliberately strong unambiguous fuzzy match. Other plausible names can be exposed through Paperless Document Suggestions when the optional suggestion bridge is configured; unreliable output is left empty.
 
-New correspondents are never auto-created.
+New correspondents are never auto-created. The optional Paperless Suggestions integration exposes plausible unmatched sender names in Paperless' native Document Suggestions. Without that integration, classification and safe matching to existing correspondents continue normally, but paperless-local-ai does not surface unmatched sender candidates in Paperless Suggestions; handle those manually during review.
 
 ## Ollama lifecycle
 
-The metadata worker uses the configured model for the structured request and unloads it before releasing the shared AI transaction. `keep_alive` is still available as an Ollama request parameter, while explicit unload is the normal end-of-document behavior.
+The metadata worker uses the configured model for the structured request and unloads it before releasing the shared AI transaction. `keep_alive` is still available as an Ollama request parameter, while explicit unload is the standard end-of-document behavior.
 
 ## Language
 

@@ -34,7 +34,7 @@ The resulting architecture uses deterministic reviewed evidence for familiar cas
 
 ## Trusted reviewed documents
 
-The configured **review tag** is the trust boundary. A document is eligible for Hybrid retrieval after it has left that tag. Documents still carrying the classification queue or classification error tag are excluded as well.
+The configured **review tag** is the trust boundary and can have any name. Keep it on a document until human review is complete, then remove it. A document is eligible for Hybrid retrieval only after it has left that tag and no longer carries the classification queue or classification error tag. The recommended Paperless setup marks the chosen review tag as an **Inbox tag** so it is added automatically during import.
 
 The document currently being previewed or classified is excluded by ID from its own lookup.
 
@@ -100,11 +100,11 @@ The Control Center dynamically lists every current Paperless content tag and pro
 
 Use guidance for personal filing boundaries that a model cannot infer from a tag name alone. It is supplied whenever the LLM makes a tag decision and is absent from confident Hybrid routes.
 
-## History refresh
+## Reviewed-history refresh
 
 There is no trained tag model inside the Hybrid retriever. Each process keeps a read-only TF-IDF index in memory.
 
-When retrieval data is needed, the app checks at most every **five minutes** whether the reviewed-document count/latest modification state or current tag taxonomy changed. The index is rebuilt only after a detected change. **Refresh history** requests an immediate rebuild and notifies the metadata worker before its next retrieval route.
+When retrieval data is needed, the app checks at most every **five minutes** whether the reviewed-document count/latest modification state or current tag taxonomy changed. The index is rebuilt only after a detected change. **Refresh reviewed history** requests an immediate rebuild and notifies the metadata worker before its next retrieval route.
 
 ## History health
 
@@ -112,7 +112,7 @@ History health is diagnostic information about the reviewed evidence available t
 
 - **Reviewed documents** — documents currently eligible as trusted retrieval history.
 - **Tags represented** — how many current content tags have at least one reviewed example.
-- **Estimated reusable history** — retrospective leave-one-out evaluation. Each reviewed document is temporarily treated as new; it counts only when the strict Hybrid gate fires and reproduces its existing reviewed leaf-tag assignment. This is not a prediction of future accuracy.
+- **Retrospective history reuse** — leave-one-out evaluation. Each reviewed document is temporarily treated as new; it counts only when the strict Hybrid gate fires and reproduces its existing reviewed leaf-tag assignment. This is not a prediction of future accuracy.
 - **History depth by tag** — how many reviewed examples currently exist for each tag.
 - **Potential tag inconsistencies** — review hints for groups of strongly similar reviewed documents with different leaf-tag assignments.
 

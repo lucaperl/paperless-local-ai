@@ -1,6 +1,6 @@
 flowchart TD
     A[Paperless import]:::paperless --> B{Page needs OCR?}:::paperless
-    B -- No --> C[Keep native text path]:::paperless
+    B -- No --> C[Use existing text]:::paperless
     B -- Yes --> D[OCRmyPDF rasterizes page]:::paperless
     D --> E[paperless-local-ai OCR plugin]:::local
     E --> F[PaddleOCR · PP-OCRv6]:::local
@@ -9,7 +9,7 @@ flowchart TD
     G --> H[Document Added workflow · classification queue]:::paperless
     H --> I{Tagging strategy}:::local
     I -- Hybrid tagging --> J{Similarity + neighbor agreement pass?}:::local
-    J -- Yes --> K[Fix reviewed tag locally]:::local
+    J -- Yes --> K[Reuse reviewed content tag locally]:::local
     J -- No --> L[LLM fallback · Tag Guidance + reviewed examples]:::local
     I -- LLM direct --> M[LLM chooses tags directly]:::local
     K --> N[LLM · System + Base prompt · no tags schema]:::local
@@ -19,11 +19,13 @@ flowchart TD
     O --> P
     P --> Q{Sender resolution}:::local
     Q -- Existing safe match --> R[Apply existing correspondent]:::local
-    Q -- Plausible new sender --> S[Paperless Document Suggestions]:::paperless
+    Q -- Plausible new sender --> S[Optional Paperless Document Suggestions]:::paperless
     Q -- Empty / unreliable --> T[Leave correspondent empty]:::local
     R --> U[Apply metadata + review]:::paperless
     S --> U
     T --> U
+    U --> V[Human review · remove review tag]:::paperless
+    V --> W[Eligible for trusted Hybrid history]:::local
 
     classDef paperless fill:#173A5E,stroke:#6EA8D9,color:#FFFFFF,stroke-width:2px;
     classDef local fill:#174D3B,stroke:#66C59A,color:#FFFFFF,stroke-width:2px;
