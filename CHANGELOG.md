@@ -12,12 +12,6 @@
 - keep the exact rendered request visible in Control Center preview and explain the dynamic composition directly in the UI;
 - clarify History depth thresholds and Potential tag inconsistency diagnostics in the Control Center.
 
-### Privacy and regression fixtures
-
-- replace archive-derived correspondent fixtures with clearly synthetic examples;
-- generalize privacy regression checks so literal RFC1918 addresses and hard-coded document-ID defaults are caught without embedding private deployment values in the test suite;
-- keep correspondent auto-resolution deliberately fail-closed with normalized exact and strong unambiguous fuzzy matching only.
-
 ### Documentation
 
 - rewrite README and core documentation as current-product documentation rather than release-history narration;
