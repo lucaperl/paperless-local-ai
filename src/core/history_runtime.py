@@ -10,7 +10,8 @@ from typing import Any
 import numpy as np
 from scipy.sparse import hstack
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.preprocessing import normalize
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.neighbors import NearestNeighbors
 
 from history_common import (
     EXAMPLE_MIN_SIMILARITY,
@@ -58,6 +59,7 @@ class HistoryIndex:
         self._word_vectorizer: TfidfVectorizer | None = None
         self._char_vectorizer: TfidfVectorizer | None = None
         self._matrix = None
+        self._neighbors: NearestNeighbors | None = None
         self._source_signature: dict[str, Any] | None = None
         self._last_checked_monotonic = 0.0
         self._refreshed_at: str | None = None
@@ -101,11 +103,6 @@ class HistoryIndex:
             raise RuntimeError("Reviewed documents do not contain usable text for history matching")
         weight = 1.0 / math.sqrt(len(parts))
         matrix = hstack([part * weight for part in parts], format="csr", dtype=np.float32)
-        # Re-normalize the combined vector space. Individual TF-IDF branches
-        # are L2-normalized, but a document can have an empty word or character
-        # branch. Explicit row normalization keeps sparse dot products exactly
-        # equivalent to cosine similarity for those edge cases too.
-        matrix = normalize(matrix, norm="l2", copy=False)
         return word, char, matrix, weight
 
     def _transform(self, content: str):
@@ -117,8 +114,7 @@ class HistoryIndex:
         if not parts:
             raise RuntimeError("History index is not ready")
         weight = 1.0 / math.sqrt(len(parts))
-        vector = hstack([part * weight for part in parts], format="csr", dtype=np.float32)
-        return normalize(vector, norm="l2", copy=False)
+        return hstack([part * weight for part in parts], format="csr", dtype=np.float32)
 
     def _nearest_from_vector(
         self,
@@ -127,21 +123,17 @@ class HistoryIndex:
         exclude_id: int | None = None,
         limit: int = QUERY_NEIGHBORS,
     ):
-        if not self._entries or self._matrix is None:
+        if not self._entries or self._neighbors is None:
             return []
-
-        # Combined vectors are explicitly L2-normalized, including rows where
-        # one TF-IDF branch is empty, so sparse dot product is cosine similarity.
-        similarities = (self._matrix @ vector.T).toarray().ravel()
-        order = np.argsort(-similarities, kind="stable")
+        extra = 1 if exclude_id is not None else 0
+        count = min(len(self._entries), max(1, limit + extra))
+        distances, indices = self._neighbors.kneighbors(vector, n_neighbors=count)
         result = []
-        for raw_index in order:
-            index = int(raw_index)
-            entry = self._entries[index]
+        for distance, index in zip(distances[0], indices[0], strict=False):
+            entry = self._entries[int(index)]
             if exclude_id is not None and entry["id"] == int(exclude_id):
                 continue
-            similarity = max(0.0, min(1.0, float(similarities[index])))
-            result.append((entry, similarity))
+            result.append((entry, max(0.0, min(1.0, 1.0 - float(distance)))))
             if len(result) >= limit:
                 break
         return result
@@ -238,7 +230,7 @@ class HistoryIndex:
         ]
         per_tag.sort(key=lambda row: row["name"].casefold())
 
-        if not n or self._matrix is None:
+        if not n or self._neighbors is None or self._matrix is None:
             return {
                 "estimated_reuse_count": 0,
                 "estimated_reuse_percent": 0.0,
@@ -254,27 +246,36 @@ class HistoryIndex:
         else:
             sample_indices = np.unique(np.linspace(0, n - 1, MAX_DIAGNOSTIC_DOCS, dtype=int))
 
+        query_matrix = self._matrix[sample_indices]
+        neighbor_count = min(n, QUERY_NEIGHBORS + 1)
+        distances, indices = self._neighbors.kneighbors(query_matrix, n_neighbors=neighbor_count)
         routed = 0
         agreement = 0
-        for source_index in sample_indices:
-            source_index = int(source_index)
-            vector = self._matrix[source_index]
-            neighbors = self._nearest_from_vector(
-                vector,
-                exclude_id=self._entries[source_index]["id"],
-                limit=QUERY_NEIGHBORS,
-            )
+        for row_pos, source_index in enumerate(sample_indices):
+            neighbors = []
+            for distance, idx in zip(distances[row_pos], indices[row_pos], strict=False):
+                idx = int(idx)
+                if idx == int(source_index):
+                    continue
+                neighbors.append(
+                    (
+                        self._entries[idx],
+                        max(0.0, min(1.0, 1.0 - float(distance))),
+                    )
+                )
+                if len(neighbors) >= QUERY_NEIGHBORS:
+                    break
             decision = self._decision(neighbors)
             if decision["confident"]:
                 routed += 1
-                if self._entries[source_index]["tags"] == [decision["tag"]]:
+                if self._entries[int(source_index)]["tags"] == [decision["tag"]]:
                     agreement += 1
 
         sample_size = len(sample_indices)
         reuse_percent = (agreement / sample_size * 100.0) if sample_size else 0.0
 
         diagnostic_matrix = self._matrix[sample_indices]
-        similarities = (diagnostic_matrix @ diagnostic_matrix.T).toarray()
+        similarities = cosine_similarity(diagnostic_matrix, dense_output=True)
         distances_complete = np.clip(1.0 - similarities, 0.0, 2.0)
         np.fill_diagonal(distances_complete, 0.0)
         if sample_size >= 2:
@@ -358,13 +359,17 @@ class HistoryIndex:
                 self._word_vectorizer = None
                 self._char_vectorizer = None
                 self._matrix = None
+                self._neighbors = None
 
                 if entries:
                     texts = [entry["content"] for entry in entries]
                     word, char, matrix, _weight = self._fit_space(texts)
+                    neighbors = NearestNeighbors(metric="cosine", algorithm="brute")
+                    neighbors.fit(matrix)
                     self._word_vectorizer = word
                     self._char_vectorizer = char
                     self._matrix = matrix
+                    self._neighbors = neighbors
 
                 diagnostics = self._diagnostics(tax)
                 represented = len({tag for entry in entries for tag in entry["tags"]})
@@ -445,11 +450,17 @@ class HistoryIndex:
         entries = payload.get("entries")
         if not isinstance(entries, list):
             raise ValueError("History cache entries are missing")
+        matrix = payload.get("matrix")
+        neighbors = None
+        if matrix is not None:
+            neighbors = NearestNeighbors(metric="cosine", algorithm="brute")
+            neighbors.fit(matrix)
         with self._lock:
             self._entries = entries
             self._word_vectorizer = payload.get("word_vectorizer")
             self._char_vectorizer = payload.get("char_vectorizer")
-            self._matrix = payload.get("matrix")
+            self._matrix = matrix
+            self._neighbors = neighbors
             self._source_signature = source_signature
             self._status = dict(status)
             self._refreshed_at = status.get("last_updated")

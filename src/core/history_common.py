@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import importlib.metadata
 import json
 import os
@@ -24,7 +23,8 @@ HISTORY_PROTOCOL_MAX_BYTES = int(
     os.getenv("PLAI_HISTORY_PROTOCOL_MAX_BYTES", str(32 * 1024 * 1024))
 )
 HISTORY_CACHE_FORMAT_VERSION = 1
-HISTORY_ALGORITHM_VERSION = "tfidf-word12-char35-sparse-cosine-v1"
+HISTORY_ALGORITHM_VERSION = "tfidf-word12-char35-nearest-neighbors-cosine-v1"
+HISTORY_APP_VERSION = os.getenv("APP_VERSION", "dev").strip() or "dev"
 
 FAST_SIMILARITY = 0.60
 FAMILY_SIMILARITY = 0.50
@@ -46,6 +46,9 @@ def history_algorithm_signature() -> dict[str, Any]:
         "char_ngram_range": [3, 5],
         "dtype": "float32",
         "norm": "l2",
+        "retrieval_estimator": "NearestNeighbors",
+        "retrieval_metric": "cosine",
+        "retrieval_algorithm": "brute",
         "fast_similarity": FAST_SIMILARITY,
         "family_similarity": FAMILY_SIMILARITY,
         "example_min_similarity": EXAMPLE_MIN_SIMILARITY,
@@ -256,6 +259,7 @@ def cached_history_state(
             status = dict(cached_status)
         expected = {
             "format_version": HISTORY_CACHE_FORMAT_VERSION,
+            "app_version": HISTORY_APP_VERSION,
             "algorithm": history_algorithm_signature(),
             "paperless_url": paperless_url,
             "source": source,

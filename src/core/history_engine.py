@@ -19,7 +19,7 @@ from history_common import (
     HISTORY_CACHE_FILE,
     HISTORY_CACHE_LOCK_FILE,
     HISTORY_META_FILE,
-    HISTORY_ALGORITHM_VERSION,
+    HISTORY_APP_VERSION,
     HISTORY_CACHE_FORMAT_VERSION,
     history_algorithm_signature,
     history_excluded_tag_names,
@@ -115,6 +115,7 @@ def _expected_metadata(
 ) -> dict[str, Any]:
     return {
         "format_version": HISTORY_CACHE_FORMAT_VERSION,
+        "app_version": HISTORY_APP_VERSION,
         "algorithm": history_algorithm_signature(),
         "paperless_url": paperless_url,
         "source": source,

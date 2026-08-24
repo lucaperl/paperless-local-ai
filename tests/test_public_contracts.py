@@ -145,7 +145,10 @@ def test_history_runtime_is_confidence_gated():
     assert "EXAMPLE_MIN_SIMILARITY = 0.08" in combined
     assert "AgglomerativeClustering" in runtime
     assert 'linkage="complete"' in runtime
-    assert "NearestNeighbors" not in runtime
+    assert "NearestNeighbors" in runtime
+    assert 'metric="cosine"' in runtime
+    assert 'algorithm="brute"' in runtime
+    assert "cosine_similarity" in runtime
 
 
 def test_persistent_core_processes_keep_scientific_history_runtime_out_of_idle():
@@ -168,6 +171,7 @@ def test_history_cache_is_versioned_and_integrity_checked():
     engine = (ROOT / "src/core/history_engine.py").read_text(encoding="utf-8")
     assert "HISTORY_CACHE_FORMAT_VERSION" in common
     assert "HISTORY_ALGORITHM_VERSION" in common
+    assert "HISTORY_APP_VERSION" in common
     assert 'importlib.metadata.version("scikit-learn")' in common
     assert "cache_sha256" in engine
     assert "history_algorithm_signature" in common

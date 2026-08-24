@@ -144,6 +144,8 @@ class HistoryBroker:
             stdout=subprocess.PIPE,
             stderr=None,
             text=True,
+            encoding="utf-8",
+            errors="strict",
             bufsize=1,
             close_fds=True,
             env=self._engine_env(),
