@@ -1,4 +1,5 @@
 version: 2
+
 updates:
   - package-ecosystem: github-actions
     directory: "/"
@@ -10,7 +11,21 @@ updates:
     schedule:
       interval: monthly
 
+    groups:
+      opencv-ocr:
+        patterns:
+          - "opencv-contrib-python"
+
+      numpy-ocr:
+        patterns:
+          - "numpy"
+
   - package-ecosystem: docker
     directory: "/docker"
     schedule:
       interval: monthly
+
+    groups:
+      paddlepaddle-ocr:
+        patterns:
+          - "paddlepaddle/paddle"
