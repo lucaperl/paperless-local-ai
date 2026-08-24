@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Changed
+
+- move Hybrid history retrieval into an on-demand scientific subprocess behind a lightweight worker broker so persistent UI/worker processes do not keep NumPy, SciPy and scikit-learn resident;
+- persist and validate a compact local TF-IDF history cache while preserving the existing cosine nearest-neighbor routing semantics, and rebuild on source/application/runtime mismatch;
+- keep interactive history work warm briefly while releasing the helper before metadata/model-test Ollama inference.
+
 ## 0.3.3 - 2026-08-24
 
 ### Changed

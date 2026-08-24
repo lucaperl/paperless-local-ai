@@ -134,15 +134,52 @@ def test_control_center_docs_links_follow_built_app_version():
 
 
 def test_history_runtime_is_confidence_gated():
-    text = (ROOT / "src/core/history_runtime.py").read_text(encoding="utf-8")
-    assert "FAST_SIMILARITY = 0.60" in text
-    assert "MIN_SUPPORT = 2" in text
-    assert "MIN_WINNER_SHARE = 0.50" in text
-    assert "MAX_EXAMPLES = 5" in text
-    assert "MAX_EXAMPLES_PER_TAG_SET = 2" in text
-    assert "EXAMPLE_MIN_SIMILARITY = 0.08" in text
-    assert "AgglomerativeClustering" in text
-    assert 'linkage="complete"' in text
+    common = (ROOT / "src/core/history_common.py").read_text(encoding="utf-8")
+    runtime = (ROOT / "src/core/history_runtime.py").read_text(encoding="utf-8")
+    combined = common + "\n" + runtime
+    assert "FAST_SIMILARITY = 0.60" in combined
+    assert "MIN_SUPPORT = 2" in combined
+    assert "MIN_WINNER_SHARE = 0.50" in combined
+    assert "MAX_EXAMPLES = 5" in combined
+    assert "MAX_EXAMPLES_PER_TAG_SET = 2" in combined
+    assert "EXAMPLE_MIN_SIMILARITY = 0.08" in combined
+    assert "AgglomerativeClustering" in runtime
+    assert 'linkage="complete"' in runtime
+    assert "NearestNeighbors" in runtime
+    assert 'metric="cosine"' in runtime
+    assert 'algorithm="brute"' in runtime
+    assert "cosine_similarity" in runtime
+
+
+def test_persistent_core_processes_keep_scientific_history_runtime_out_of_idle():
+    worker = (ROOT / "src/core/worker.py").read_text(encoding="utf-8")
+    ui = (ROOT / "src/core/prompt_ui.py").read_text(encoding="utf-8")
+    broker = (ROOT / "src/core/history_broker.py").read_text(encoding="utf-8")
+    engine = (ROOT / "src/core/history_engine.py").read_text(encoding="utf-8")
+    assert "from history_runtime" not in worker
+    assert "from history_runtime" not in ui
+    assert "HistoryBroker" in worker
+    assert "subprocess.Popen" in broker
+    assert "from history_runtime import HistoryIndex" in engine
+    assert "routing_docs.clear()" in worker
+    assert "fresh = current_document(doc_id)" in worker
+    assert "Document content changed after History batch routing" in worker
+
+
+def test_history_cache_is_versioned_and_integrity_checked():
+    common = (ROOT / "src/core/history_common.py").read_text(encoding="utf-8")
+    engine = (ROOT / "src/core/history_engine.py").read_text(encoding="utf-8")
+    assert "HISTORY_CACHE_FORMAT_VERSION" in common
+    assert "HISTORY_ALGORITHM_VERSION" in common
+    assert "HISTORY_APP_VERSION" in common
+    assert 'importlib.metadata.version("scikit-learn")' in common
+    assert "cache_sha256" in engine
+    assert "history_algorithm_signature" in common
+    assert '"status": persisted_status' in engine
+    assert "pickle.dumps(payload, protocol=5)" in engine
+    assert "os.replace" in engine
+    cached_state = common.split("def cached_history_state", 1)[1].split("def _recv_json_line", 1)[0]
+    assert ".read_bytes()" not in cached_state
 
 
 def test_hybrid_fast_path_omits_tag_prompt_and_schema_field():

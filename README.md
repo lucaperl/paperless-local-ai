@@ -17,7 +17,7 @@ Title, document type, date and sender/issuer are extracted in one structured LLM
 - **Editable prompt composition** — System, Base classification and Tagging prompts are all editable. The Tagging prompt is sent only when the LLM actually has to choose tags.
 - **One LLM request per document** — title, type, date and sender/issuer are produced together; tags are included in the same request only on an LLM tag route.
 - **Optional Paperless-native correspondent review** — local resolution applies safe existing matches; the optional Suggestions integration can expose plausible new senders through Document Suggestions.
-- **Designed for CPU-only systems** — OCR and LLM inference are serialized to avoid simultaneous heavy CPU/RAM use.
+- **Designed for CPU-only systems** — OCR, Hybrid-history work and LLM inference are serialized; heavyweight OCR/history/model runtimes are released after use.
 - **Control Center** — configure connections, workflow tags, OCR, prompts, model settings, tagging strategy, per-tag guidance, history health, Dry Run and configuration history from one UI.
 
 ## Why this architecture
@@ -34,7 +34,7 @@ Paperless itself already contains an automatic classifier that learns from exist
 
 **Sender extraction is followed by conservative local resolution.** The LLM returns the actual sender/issuer as free text. Normalized exact matches and deliberately strong unambiguous fuzzy matches can resolve to an existing Paperless correspondent. Other plausible names can be exposed through Document Suggestions when the optional bridge integration is configured; otherwise they remain unresolved for manual review.
 
-**Resource-aware execution.** PaddleOCR/OpenVINO and Ollama inference share one resource lock. OCR sessions are reused briefly across consecutive pages, while heavy model processes are released after use.
+**Resource-aware execution.** PaddleOCR/OpenVINO, on-demand Hybrid-history work and Ollama inference share one resource lock. OCR sessions and interactive history lookups can be reused briefly, while heavyweight subprocesses and the Ollama model are released after use.
 
 ## Reference performance
 
@@ -53,7 +53,7 @@ The **Context window** sets the maximum available context and affects RAM usage.
 
 ## RAM usage and tuning
 
-The main memory consumers are PaddleOCR during OCR and the Ollama model during metadata classification. They are serialized, so their heavy peaks do not overlap during paperless-local-ai processing.
+The main memory consumers are PaddleOCR during OCR and the Ollama model during metadata classification. Hybrid-history TF-IDF/scikit-learn state is loaded only in an on-demand subprocess and released again after use. Heavy OCR, history and LLM work is serialized through the shared resource lock.
 
 | Workload | Configuration | Measured peak |
 |---|---|---:|

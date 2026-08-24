@@ -81,7 +81,7 @@ Additional memory reference points:
 | Metadata | qwen3.5:4b Q4_K_M · 8k context | ~3.8 GiB |
 | Metadata | qwen3.5:4b Q4_K_M · 16k context | ~4.2 GiB |
 
-PaddleOCR and Ollama inference are serialized through the shared AI resource lock, so their heavy peaks do not overlap during paperless-local-ai processing.
+PaddleOCR, on-demand Hybrid-history work and Ollama inference are serialized through the shared AI resource lock. The scientific history helper is released before automatic/model-test Ollama inference, so its temporary memory does not remain resident through the LLM phase.
 
 If RAM is limited, lower **Maximum OCR image side** first when OCR is the problem and reduce the Classification **Context window** when the LLM is the problem. `OCR_MEMORY_LIMIT` is a deployment safety ceiling; raising it does not reduce memory use.
 
@@ -149,7 +149,7 @@ The reuse estimate uses retrospective leave-one-out routing and counts only case
 
 Potential tag inconsistencies group at least three strongly similar reviewed documents when their leaf-tag assignments differ. They are review hints only and never change Paperless metadata.
 
-The index checks for relevant Paperless changes at most every five minutes when used and rebuilds only after a change. **Refresh reviewed history** forces an immediate Control Center rebuild and asks the metadata worker to refresh before its next Hybrid route.
+The persistent Control Center and metadata worker do not keep the scientific TF-IDF runtime resident. A lightweight source-signature check detects relevant Paperless/taxonomy changes. On Hybrid use, an on-demand helper loads a validated local cache or rebuilds it when the source, algorithm or runtime versions changed. **Refresh reviewed history** forces an immediate rebuild. Interactive preview work can reuse the helper briefly; automatic metadata batches and model tests release it before Ollama inference.
 
 ### Safe interactive testing
 

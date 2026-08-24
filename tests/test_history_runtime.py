@@ -131,3 +131,23 @@ def test_inconsistency_families_use_complete_linkage_not_chain_linkage():
     index = HistoryIndex()
     status = index.refresh(FakeClient(docs), TAX, "Inbox", force=True)
     assert status["potential_inconsistency_count"] == 0
+
+
+
+def test_cache_roundtrip_preserves_history_route():
+    docs = [
+        doc(1, "salary statement employer august payroll gross net", [3]),
+        doc(2, "salary statement employer july payroll gross net", [3]),
+        doc(3, "bank account closure iban current account", [1, 2]),
+    ]
+    index = HistoryIndex()
+    status = index.refresh(FakeClient(docs), TAX, "Inbox", force=True)
+    expected = index.route("salary statement employer september payroll gross net")
+
+    restored = HistoryIndex()
+    restored.load_cache_payload(
+        index.cache_payload(),
+        status=status,
+        source_signature=index._source_signature,
+    )
+    assert restored.route("salary statement employer september payroll gross net") == expected
