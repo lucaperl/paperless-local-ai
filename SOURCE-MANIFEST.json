@@ -1,14 +1,14 @@
 {
-  "version": "0.3.0",
-  "created": "2026-08-23",
+  "version": "0.3.1",
+  "created": "2026-08-24",
   "source_files": {
     "src/common/app_config.py": "01ed2cfe2d5b2c5717d7f30e9fe1899f57106ffc1cb49f6bc58706b6a07090a9",
     "src/common/ocr_recovery_state.py": "5c33f95580a269572a8baf9c4e2958c7e7d101faac41dd622a5030e55f46b433",
     "src/core/correspondent_resolver.py": "095c68846055a8adcbbfb1e2596a1752294926c58a5acf4d77e5cdd4899cbda6",
     "src/core/doctor.py": "12cb1b43267c10d276d91f4146732c1e69ae85bab6f67e8da2a164f9d1d5eceb",
     "src/core/history_runtime.py": "02b97ecad9f63b3937cc85e79c1fb84322f0587bd388b1d5b1cf752dce4c8de1",
-    "src/core/prompt_runtime.py": "4f18ddcb27a982477dcf7c146db3f9ebfc91decea51b493669c0de58b9b41f1b",
-    "src/core/prompt_ui.py": "895240731957155088666e86d26309ef1f91add5bc9d534b4dacbefcd8bd8a0b",
+    "src/core/prompt_runtime.py": "e458874fa320dae543914b89970a7083001f4fd22770b9d638c57424acd6d8ba",
+    "src/core/prompt_ui.py": "8deb02eb92978f3009eb1ca1d7e0d3fdca1738331e798a0ce60d4af27c54b13c",
     "src/core/review_store.py": "208c4ba12d25f4a53a4353d1c84ff086cf30752ee2007b4dc4b764527ae51e95",
     "src/core/suggestion_bridge.py": "09461923ab9c72c662e16643d0e0f015cc817f4997aeb2c8bed686f93d9cc577",
     "src/core/worker.py": "3975a8e9525f1cbbe1b112d9949c7ebe5df10452a9759051400fb989c08e8964",

@@ -1,13 +1,45 @@
+import re
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_no_private_homeserver_ip_in_runtime_source():
-    for path in (ROOT / "src").rglob("*.py"):
-        private_ip = ".".join(("192", "168", "178", "190"))
-        assert private_ip not in path.read_text(encoding="utf-8"), path
+def _is_rfc1918(value: str) -> bool:
+    parts = [int(part) for part in value.split(".")]
+    return (
+        parts[0] == 10
+        or (parts[0] == 172 and 16 <= parts[1] <= 31)
+        or (parts[0] == 192 and parts[1] == 168)
+    )
+
+
+def test_no_literal_rfc1918_addresses_in_public_text_files():
+    ipv4 = re.compile(r"(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)")
+    text_suffixes = {".py", ".md", ".yaml", ".yml", ".txt", ".json"}
+    text_names = {".env.example", "Makefile", "VERSION"}
+    public_dirs = ("src", "tests", "docs", ".github", "deploy", "requirements", "docker", "scripts")
+    paths = [
+        path
+        for path in ROOT.iterdir()
+        if path.is_file() and (path.suffix in text_suffixes or path.name in text_names)
+    ]
+    for dirname in public_dirs:
+        directory = ROOT / dirname
+        if directory.exists():
+            paths.extend(
+                path
+                for path in directory.rglob("*")
+                if path.is_file() and (path.suffix in text_suffixes or path.name in text_names)
+            )
+    for path in paths:
+        content = path.read_text(encoding="utf-8")
+        for match in ipv4.finditer(content):
+            value = match.group(0)
+            parts = value.split(".")
+            if any(int(part) > 255 for part in parts):
+                continue
+            assert not _is_rfc1918(value), f"literal RFC1918 address in {path}: {value}"
 
 
 def test_ollama_is_not_bundled_as_service():
@@ -23,15 +55,20 @@ def test_control_center_keeps_complete_ui_contract():
         "Classification",
         "App Settings",
         "Pipeline &amp; Tags",
-        "History-assisted",
-        "LLM only",
+        "Hybrid tagging",
+        "LLM direct",
         "Recommended for small models",
         "For more capable models",
+        "How Hybrid tagging works",
         "History health",
         "Estimated reusable history",
+        "History depth by tag",
         "Potential tag inconsistencies",
+        "review hint, not an error detector",
         "Tag guidance",
-        "Guidance is used for every tag decision",
+        "Tagging prompt",
+        "taggingPrompt",
+        "omitted entirely",
         "Refresh history",
         "/api/tagging/state",
         "/api/tagging/refresh",
@@ -47,9 +84,6 @@ def test_control_center_keeps_complete_ui_contract():
         "ocrLanguageOptions",
         "appOcrModelProfile",
         "PaddleOCR model",
-        "PP-OCRv6 Medium — Highest quality · Recommended",
-        "PP-OCRv6 Small — Lower inference cost",
-        "PP-OCRv6 Tiny — Lowest inference cost · Lower accuracy",
         "Maximum OCR image dimension",
         "Automatic OCR retries",
         "OCR recovery",
@@ -64,6 +98,8 @@ def test_control_center_keeps_complete_ui_contract():
     ):
         assert required in text
     for obsolete in (
+        "History-assisted",
+        "LLM only",
         "Correspondent fallback",
         "/api/correspondent/",
         "corrPromptPreset",
@@ -73,9 +109,11 @@ def test_control_center_keeps_complete_ui_contract():
         "Prompt Studio",
         "Additional model reasoning",
         "Output randomness",
-        'value="93"',
     ):
         assert obsolete not in text
+    doc_input = re.search(r'<input[^>]+id="docId"[^>]*>', text)
+    assert doc_input is not None
+    assert not re.search(r'\bvalue\s*=', doc_input.group(0))
 
 
 def test_history_runtime_is_confidence_gated():
@@ -90,13 +128,25 @@ def test_history_runtime_is_confidence_gated():
     assert 'linkage="complete"' in text
 
 
+def test_hybrid_fast_path_omits_tag_prompt_and_schema_field():
+    runtime = (ROOT / "src/core/prompt_runtime.py").read_text(encoding="utf-8")
+    assert '"tagging_prompt"' in runtime
+    assert 'if tags_enabled:' in runtime
+    assert 'properties["tags"]' in runtime
+    assert 'render_template(config["tagging_prompt"], values)' in runtime
+    assert '"tags must be omitted when the LLM is not responsible for tag selection"' in runtime
+    assert "return tags as an empty array" not in runtime
+
+
 def test_correspondent_is_resolved_without_second_llm_stage():
     worker = (ROOT / "src/core/worker.py").read_text(encoding="utf-8")
     runtime = (ROOT / "src/core/prompt_runtime.py").read_text(encoding="utf-8")
+    resolver = (ROOT / "src/core/correspondent_resolver.py").read_text(encoding="utf-8")
     assert "resolve_correspondent" in worker
     assert "correspondent_runtime" not in worker
     assert "correspondent_fallback" not in worker
     assert '"correspondent": {"type": "string"}' in runtime
+    assert "FUZZY_MATCH_THRESHOLD = 0.93" in resolver
     assert not (ROOT / "src/core/correspondent_runtime.py").exists()
 
 
@@ -185,15 +235,20 @@ def test_third_party_license_notice_matches_current_runtime():
     assert "PyMuPDF" not in notice
 
 
-def test_public_docs_use_current_pipeline_contract():
+def test_public_docs_describe_current_tagging_product():
     docs = [
         ROOT / "README.md",
         ROOT / "docs/architecture.md",
         ROOT / "docs/configuration.md",
         ROOT / "docs/tagging.md",
+        ROOT / "docs/compatibility.md",
     ]
     combined = "\n".join(path.read_text(encoding="utf-8") for path in docs)
-    assert "History-assisted" in combined
-    assert "LLM only" in combined
-    assert "Potential tag inconsistencies" in combined
+    assert "Hybrid tagging" in combined
+    assert "LLM direct" in combined
+    assert "History depth by tag" in combined
+    assert "Paperless native classifier vs Hybrid tagging" in combined
+    assert "History-assisted" not in combined
+    assert "LLM-only tagging remains" not in combined
+    assert "pre-0.3" not in combined
     assert "correspondent fallback" not in combined.lower()

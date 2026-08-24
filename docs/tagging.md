@@ -1,119 +1,163 @@
 # Tagging
 
-`paperless-local-ai` supports two tag strategies. The choice affects **content tags only**; title, document type, date and sender/issuer still use the configured LLM.
+`paperless-local-ai` provides two content-tag strategies. The strategy affects **content tags only**; title, document type, date and sender/issuer use the configured local LLM.
 
 ## Which strategy should I use?
 
-### History-assisted — recommended for small local models
+### Hybrid tagging — recommended for small local models
 
-Use this as the default for 4B-class and other compact models.
+Hybrid tagging combines a confidence-gated reviewed-document lookup with an LLM fallback.
 
-For each new document, `paperless-local-ai` first compares the Paperless text with already reviewed documents. A historical tag is reused only when the match passes a deliberately strict confidence gate. If the document is unfamiliar or the historical neighborhood is ambiguous, the LLM decides the tags instead and receives a small set of relevant reviewed examples.
+For each document, `paperless-local-ai` compares the full Paperless text with documents that have already passed human review. A reviewed tag is reused only when the nearest document is sufficiently similar **and** the nearest neighborhood agrees strongly enough. If any gate fails, the LLM chooses tags instead and receives the current Tag Guidance plus a small set of relevant reviewed examples.
 
-This gives repeating document types a deterministic path without preventing the model from handling new material.
+This creates an explicit abstention/fallback path: uncertain historical evidence is not treated as a tag decision.
 
-### LLM only — suited to larger/more capable models
+### LLM direct — suited to larger or more capable models
 
-The configured model chooses tags for every document. Reviewed history is not used for routing or few-shot examples.
+The configured model chooses tags directly for every document. Reviewed documents are not used for routing or retrieved prompt examples. Tag Guidance still applies.
 
-This option is intentionally retained because a larger model, different model family or future model may map semantic document understanding to a personal taxonomy more reliably than the 4B reference model.
+## Why Hybrid tagging is the default
 
-## Why History-assisted is the default
+Understanding a document and mapping that understanding to a personal filing taxonomy are different tasks. Compact 4B-class models were generally capable of identifying the subject of the reference documents, but direct taxonomy mapping was not consistent enough across recurring and semantically similar document types.
 
-In the reference archive, 4B-class models were good enough to identify what a document was about, but **not consistently reliable enough to apply a personal Paperless tag taxonomy across recurring and semantically similar document types**. The same kind of document could cross taxonomy boundaries between runs or prompt variants even when its semantics were understood correctly.
+### What was evaluated
 
-Adding explicit tag boundaries and relevant reviewed examples improved direct LLM tag selection substantially. Continuing to add prompt rules after that produced diminishing gains and regressions: rules that repaired one boundary could make previously correct cases worse.
+The tagging design was tested with several established prompting approaches before settling on the Hybrid route:
 
-Reference results with `qwen3.5:4b`, deterministic sampling and the evaluated archive:
+- **Zero-shot constrained classification / direct taxonomy mapping:** document semantics were usually understood, but label selection across a personal taxonomy was inconsistent.
+- **Label-description and decision-boundary prompting, including verbalizer-style wording:** clearer definitions fixed individual boundaries but introduced regressions elsewhere as prompt complexity grew.
+- **Hierarchy-aware prompting:** explicit parent/child instructions did not provide a stable overall improvement.
+- **Retrieval-augmented few-shot prompting with positive reviewed examples:** relevant labeled examples produced the clearest and most repeatable improvement for the LLM fallback.
+- **Contrastive/negative examples and additional boundary rules:** added prompt cost without a reliable net improvement and are not part of the default fallback.
 
-| Evaluation | Exact tag result |
-|---|---:|
-| Direct small-model fallback baseline | 18 / 43 overall fallback documents* |
-| Tag guidance + relevant reviewed examples | 33 / 43 |
-| Strict historical route | 89 / 89 routed documents in retrospective leave-one-out testing |
+The resulting architecture uses deterministic reviewed evidence for familiar cases and reserves LLM taxonomy mapping for cases where the evidence gate abstains.
 
-\*The direct baseline completed 38 of the 43 calls successfully and was exact on 18 of those; five calls ended in technical errors. Counting the complete 43-document fallback set, that is 18/43.
+## Trusted reviewed documents
 
-The strict history route covered 89 of 132 reviewed documents at the selected threshold. Combining that historical route with the evaluated few-shot fallback yielded 122/132 exact tag results retrospectively in this archive. These results explain the default architecture; they are **not general accuracy guarantees**. The archive is personal, relatively small and some evaluation families are heavily concentrated in one tag.
+The configured **review tag** is the trust boundary. A document is eligible for Hybrid retrieval after it has left that tag. Documents still carrying the classification queue or classification error tag are excluded as well.
 
-## What counts as trusted history?
+The document currently being previewed or classified is excluded by ID from its own lookup.
 
-A document becomes eligible only after it has **left the review tag configured under App Settings → Pipeline & Tags**. Documents still carrying the classification queue or classification error tag are also excluded, so unfinished/failed processing cannot become trusted history.
+Paperless tag hierarchy is respected. If Paperless stores both a selected child and its automatically added parent, the parent is pruned for retrieval and evaluation so the example represents the most specific selected filing tag.
 
-The document currently being previewed/classified is excluded by ID from its own history lookup.
+## Similarity and confidence gate
 
-Paperless tag hierarchy is respected: if a child tag and its automatically added parent are both present, the parent is pruned for history decisions so the stored example represents the most specific selected filing tag.
-
-## Matching logic
-
-The index uses the full Paperless document text. Similarity is the equal-weight combination of cosine similarity from:
+The retrieval index uses full Paperless document text. Its vector representation combines equal-weight cosine similarity from:
 
 - TF-IDF word n-grams 1–2;
 - TF-IDF `char_wb` character n-grams 3–5.
 
-A history tag is accepted only when all of these conditions hold:
+A reviewed tag is reused only when **all** of these conditions hold:
 
-- nearest reviewed document similarity is at least `0.60`;
+- nearest reviewed-document similarity is at least `0.60`;
 - the nearest document has exactly one leaf content tag;
 - that tag is also the weighted winner among the five nearest reviewed documents;
 - at least two of those neighbors support the winning tag;
 - the winning tag receives at least `0.50` of the weighted tag vote.
 
-If any condition fails, the LLM is used instead.
+If any condition fails, Hybrid tagging abstains and routes tag selection to the LLM.
 
-These thresholds are intentionally conservative. They came from retrospective calibration on the reference archive and are implementation constants, not user-facing tuning knobs in the current release.
+The thresholds are conservative implementation constants rather than user-facing tuning knobs.
 
-## LLM fallback examples
+## LLM fallback and retrieved examples
 
-When History-assisted routing cannot make a confident decision, the fallback reuses the same similarity index to select up to five relevant reviewed examples.
+A Hybrid fallback uses the same similarity index to select up to five relevant positive reviewed examples. Examples below the minimum relevance threshold are skipped, examples without a content tag are not injected, and no more than two examples with the same tag combination are used.
 
-Only examples with a content tag are included, examples below the minimum relevance threshold are skipped, and no more than two examples with the same tag combination are used. This keeps the prompt focused and avoids a single repetitive family dominating the examples.
+Retrieved examples are for **tag selection only**. Their text is treated as untrusted document content.
 
-The examples are used for **tagging only**. Their text is treated as untrusted document content and is not a source for the new document's title, sender or date.
+## Editable prompt composition
 
-## Tag guidance
+Prompt behavior is not hidden in a fixed tag-classification prompt. The Control Center exposes three editable components:
 
-**Tag guidance is independent from History-assisted matching.**
+- **System prompt** — global instructions/security framing;
+- **Base classification prompt** — title, document type, sender/issuer, date and document text;
+- **Tagging prompt** — tag-selection instructions and placeholders for taxonomy/guidance/examples.
 
-The Control Center dynamically lists every current Paperless content tag and provides an optional description field for each one. Use it to explain personal filing boundaries, for example when two semantically related categories are used differently in your archive.
+The application decides only **whether** the Tagging prompt is needed:
 
-Guidance is supplied to the LLM:
+| Route | Prompt sent to the LLM | `tags` in output schema |
+|---|---|---|
+| Hybrid confident match | System + Base classification | omitted |
+| Hybrid fallback | System + Base classification + Tagging | included |
+| LLM direct | System + Base classification + Tagging | included |
 
-- for every document in **LLM only**;
-- only on LLM fallback documents in **History-assisted**.
+On a confident Hybrid match, Tag Guidance, retrieved examples, the tag list, the Tagging prompt and the `tags` schema field are all omitted. The application inserts the reviewed tag after validating the base LLM result.
 
-A high-confidence history match ignores tag guidance completely. Descriptions are stored by Paperless tag ID so renaming a tag keeps its guidance.
+**Preview prompts** shows the exact rendered system/user messages and schema for a selected Paperless document.
+
+### Tagging-prompt placeholders
+
+The Tagging prompt can use the normal classification placeholders plus:
+
+- `{{TAGS_JSON}}` / `{{TAGS_LINES}}` — current allowed Paperless content tags;
+- `{{MAX_TAGS}}` — configured maximum number of LLM-selected tags;
+- `{{TAG_GUIDANCE}}` — current non-empty per-tag guidance lines;
+- `{{TAG_EXAMPLES}}` — retrieved reviewed examples on a Hybrid fallback; empty for LLM direct.
+
+## Tag Guidance
+
+The Control Center dynamically lists every current Paperless content tag and provides an optional guidance field for each one. Guidance is stored by Paperless tag ID, so a rename keeps its description.
+
+Use guidance for personal filing boundaries that a model cannot infer from a tag name alone. It is supplied whenever the LLM makes a tag decision and is absent from confident Hybrid routes.
 
 ## History refresh
 
-There is no trained custom ML model to rebuild. Each process keeps a read-only TF-IDF history index in memory.
+There is no trained tag model inside the Hybrid retriever. Each process keeps a read-only TF-IDF index in memory.
 
-When History-assisted data is needed, the app checks at most every **five minutes** whether the count/latest modification state of reviewed documents or the current tag taxonomy changed. The expensive index is rebuilt only after a detected change. **Refresh history** in the Control Center requests an immediate rebuild and also notifies the metadata worker to refresh before its next history route.
-
-For comparison, Paperless-ngx 3.0.5 retrains its own automatic classifier hourly by default. `paperless-local-ai` does not depend on that training schedule or model.
+When retrieval data is needed, the app checks at most every **five minutes** whether the reviewed-document count/latest modification state or current tag taxonomy changed. The index is rebuilt only after a detected change. **Refresh history** requests an immediate rebuild and notifies the metadata worker before its next retrieval route.
 
 ## History health
 
-The Control Center intentionally shows metrics that are useful to a normal user rather than raw vector-space internals:
+History health is diagnostic information about the reviewed evidence available to Hybrid tagging.
 
-- **Reviewed documents** — documents currently eligible as trusted history.
+- **Reviewed documents** — documents currently eligible as trusted retrieval history.
 - **Tags represented** — how many current content tags have at least one reviewed example.
-- **Estimated reusable history** — a retrospective leave-one-out estimate: each reviewed document is temporarily treated as new and tested against the remaining history. A document counts as reusable only when the strict route fires **and reproduces its existing reviewed leaf-tag assignment**. This does not predict future accuracy.
-- **Coverage by tag** — reviewed-example count plus a simple history-depth label.
-- **Potential tag inconsistencies** — similar reviewed documents using different leaf-tag assignments.
+- **Estimated reusable history** — retrospective leave-one-out evaluation. Each reviewed document is temporarily treated as new; it counts only when the strict Hybrid gate fires and reproduces its existing reviewed leaf-tag assignment. This is not a prediction of future accuracy.
+- **History depth by tag** — how many reviewed examples currently exist for each tag.
+- **Potential tag inconsistencies** — review hints for groups of strongly similar reviewed documents with different leaf-tag assignments.
+
+### History depth by tag
+
+History depth is **an example-count indicator, not an accuracy score or match probability**.
+
+| Reviewed examples for a tag | History depth |
+|---:|---|
+| 0 | No history |
+| 1 | Very limited |
+| 2–4 | Limited |
+| 5–9 | Good |
+| 10+ | Strong |
+
+More examples make it more likely that recurring document patterns are represented, but they do not guarantee that a new document will pass the confidence gate.
 
 ### Potential tag inconsistencies
 
-This diagnostic is intended to catch accidental historical inconsistencies before they become training examples. It groups highly similar documents and highlights groups containing more than one tag assignment.
+This diagnostic groups reviewed documents whose **full text is strongly similar** but whose current leaf-tag assignments differ. A group is displayed only when it contains at least three documents and more than one tag set.
 
-A flagged group is **not proof that a tag is wrong**. Similar documents can intentionally be filed differently. The Control Center therefore shows the affected document IDs/titles and current tag sets for review and never changes historical tags automatically.
+The diagnostic uses the same word + character TF-IDF document representation as retrieval. It calculates pairwise cosine similarity and uses **complete-linkage agglomerative clustering** with a minimum within-group similarity of `0.50`.
 
-## Why not use Paperless' native automatic classifier?
+A finding is a **review hint, not an error detector**. Similar documents can legitimately require different tags. The diagnostic never changes historical tags and does not affect runtime routing by itself.
 
-Paperless-ngx 3.0.5 already contains an automatic classifier. `paperless-local-ai` does not replace or claim to outperform it universally.
+## Paperless native classifier vs Hybrid tagging
 
-The custom history layer exists because this integration needs an explicit similarity value and support/agreement gate before automatic reuse, and because the same nearest reviewed documents are needed for the LLM fallback examples. It also avoids depending on Paperless' internal sklearn model representation and does not require content tags to use Paperless' `Automatic` matching mode.
+Paperless-ngx already includes its own automatic metadata classifier. `paperless-local-ai` does not claim that Hybrid tagging is universally more accurate. The two approaches solve the integration problem differently.
+
+For Paperless-ngx **3.0.5**, the native classifier trains on non-Inbox documents. Tag labels come from tags whose matching algorithm is **Automatic**. Document text is vectorized with a word `CountVectorizer` using 1–2-grams (`min_df=0.01`), and tag labels are learned with scikit-learn's `MLPClassifier` through a label/multilabel binarizer. See the [Paperless 3.0.5 classifier source](https://github.com/paperless-ngx/paperless-ngx/blob/v3.0.5/src/documents/classifier.py).
+
+| | Paperless native automatic classifier | `paperless-local-ai` Hybrid tagging |
+|---|---|---|
+| Core method | trained supervised classifier | confidence-gated nearest-reviewed-document retrieval + LLM fallback |
+| Text features | word CountVectorizer, 1–2-grams | equal-weight word TF-IDF 1–2 + character `char_wb` TF-IDF 3–5 |
+| Tag training/evidence | tags configured with Automatic matching | reviewed content tags; no Paperless Automatic matching requirement |
+| Decision control | classifier prediction | explicit similarity + neighborhood support/agreement gate |
+| Uncertain historical evidence | native classifier behavior | explicit abstention to the configured LLM |
+| LLM examples | not part of the native classifier | nearest reviewed documents become few-shot examples on fallback |
+| Personal tag instructions | learned implicitly from labeled documents | optional explicit Tag Guidance plus reviewed examples |
+| User-visible evidence | normal Paperless suggestion/prediction behavior | route, similarity, support, reuse diagnostics and retrieved examples in Control Center |
+| Refresh model | Paperless classifier training lifecycle | lightweight source check; TF-IDF index rebuild only when reviewed data/taxonomy changes |
+
+The Hybrid layer exists because its **explicit evidence gate, abstention path, retrieved examples and diagnostics** are directly useful to this local-LLM workflow. Users who prefer Paperless' native automatic matching can continue to use that Paperless feature independently.
 
 ## Privacy
 
-History text and few-shot examples remain inside the local stack and are sent only to the configured Ollama endpoint. `paperless-local-ai` does not add cloud inference or telemetry.
+Reviewed text and retrieved examples remain inside the local stack and are sent only to the configured Ollama endpoint when an LLM tag decision is required. `paperless-local-ai` adds no cloud inference or telemetry.
