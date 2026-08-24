@@ -174,7 +174,7 @@ Runtime settings are loaded from `APP_DATA_DIR/config/app-config.json`.
 
 Deployment-owned values such as ports, mounts, HPI enablement, CPU/RAM/shared-memory limits and Paperless-side plugin environment require recreating/redeploying the affected containers.
 
-## History-assisted tagging does not reuse history
+## Hybrid tagging does not reuse history
 
 A historical tag is reused only when the strict confidence gate passes. Check:
 
@@ -197,4 +197,4 @@ Check:
 - Paperless can reach the bridge;
 - bridge `/health` is healthy.
 
-The bridge deliberately fails closed on absent or ambiguous document matching. There is no separate correspondent-only model call in v0.3.0.
+The bridge deliberately fails closed on absent or ambiguous document matching. Sender extraction is part of the structured metadata request; the suggestion bridge does not run a separate correspondent-only model call.

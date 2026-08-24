@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+## 0.3.1 - 2026-08-24
+
+### Hybrid tagging and editable prompt composition
+
+- rename the user-facing tag strategies to **Hybrid tagging** and **LLM direct** while keeping the existing internal config values stable;
+- split model instructions into editable **System**, **Base classification** and **Tagging** prompts with English/German presets for all three;
+- append the Tagging prompt only when the LLM is responsible for tags; confident Hybrid matches omit tag instructions, taxonomy, Tag Guidance, retrieved examples and the `tags` schema field entirely;
+- keep the exact rendered request visible in Control Center preview and explain the dynamic composition directly in the UI;
+- clarify History depth thresholds and Potential tag inconsistency diagnostics in the Control Center.
+
+### Privacy and regression fixtures
+
+- replace archive-derived correspondent fixtures with clearly synthetic examples;
+- generalize privacy regression checks so literal RFC1918 addresses and hard-coded document-ID defaults are caught without embedding private deployment values in the test suite;
+- keep correspondent auto-resolution deliberately fail-closed with normalized exact and strong unambiguous fuzzy matching only.
+
+### Documentation
+
+- rewrite README and core documentation as current-product documentation rather than release-history narration;
+- expand the technical comparison with Paperless-ngx 3.0.5's native automatic classifier;
+- document the evaluated prompting approaches for compact-model taxonomy mapping using standard technical terminology, without presenting archive-specific benchmark numbers as product guarantees.
+
+### Deployment
+
+- image-only patch release: no Compose service, port, mount, secret, dependency or Paperless OCR integration changes.
+
 ## 0.3.0 - 2026-08-23
 
 ### History-assisted tagging

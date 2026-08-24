@@ -175,7 +175,7 @@ CPU threads:   4
 
 These are the tested reference settings, not minimum requirements.
 
-On the reference Intel Core i3-8100 (4 cores / 4 threads, 16 GB RAM, no GPU), the current PP-OCRv6 Medium / HPI / OpenVINO setup measured **23.6 seconds** for the first scanned page after OCR idle and **17.6 seconds per additional page** in the same warm OCR session. With `qwen3.5:4b` Q4_K_M, the compact one-call metadata request measured about **80 seconds per document**. In the History-assisted evaluation, LLM fallback documents with relevant reviewed examples averaged about **174 seconds** because of the larger prompt. These are reference measurements, not minimum-performance requirements.
+On the reference Intel Core i3-8100 (4 cores / 4 threads, 16 GB RAM, no GPU), the current PP-OCRv6 Medium / HPI / OpenVINO setup measured **23.6 seconds** for the first scanned page after OCR idle and **17.6 seconds per additional page** in the same warm OCR session. With `qwen3.5:4b` Q4_K_M, the compact one-call metadata request measured about **80 seconds per document**. Hybrid LLM fallback documents with relevant reviewed examples averaged about **174 seconds** in the reference evaluation because of the larger prompt. These are reference measurements, not minimum-performance requirements.
 
 ## Updates
 
