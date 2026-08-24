@@ -11,7 +11,10 @@ VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 
 files = {}
 for path in sorted((ROOT / "src").rglob("*.py")):
-    files[str(path.relative_to(ROOT))] = hashlib.sha256(path.read_bytes()).hexdigest()
+    # Keep release manifests identical across Windows and Linux checkouts.
+    with path.open("r", encoding="utf-8", newline=None) as handle:
+        data = handle.read().encode("utf-8")
+    files[path.relative_to(ROOT).as_posix()] = hashlib.sha256(data).hexdigest()
 
 manifest = {
     "version": VERSION,

@@ -134,7 +134,7 @@ _LEGACY_030_GERMAN_CLASSIFICATION_TEMPLATE = """Klassifiziere nach dem Hauptinha
 - document_type: passendster Wert aus der Liste; "" wenn nicht zuverlässig bestimmbar.
 - correspondent: tatsächlicher Absender oder Aussteller, der aus dem Dokument hervorgeht. Gib einen kurzen Namen aus, auch wenn dieser noch nicht in Paperless existiert; sonst "".
 - tags: befolge den unten ergänzten Tagging-Kontext der Anwendung. Wenn das LLM die Tags bestimmt, normalerweise genau den spezifischsten passenden fachlichen Tag verwenden; 2 Tags nur bei zwei eigenständigen Hauptthemen.
-- created: Datum zur chronologischen Ablage. Muss entweder "" oder exakt YYYY-MM-DD sein. Dokument- oder Ausstellungsdatum bevorzugen. Wenn kein konkretes Tagesdatum vorhanden ist, aber ein zentraler Monatszeitraum eindeutig ist, verwende dessen letzten Kalendertag (z. B. Januar 2019 -> 2019-01-31). Sonst "".
+- created: Datum zur chronologischen Ablage. Muss entweder "" oder exakt YYYY-MM-DD sein. Dokument- oder Ausstellungsdatum bevorzugen. Wenn kein konkreter Tag vorhanden ist, aber ein zentraler Monatszeitraum eindeutig ist, verwende dessen letzten Kalendertag (z. B. Januar 2019 -> 2019-01-31). Sonst "".
 
 Zulässige Tags:
 {{TAGS_JSON}}
