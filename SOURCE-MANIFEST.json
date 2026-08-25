@@ -1,9 +1,10 @@
 {
-  "version": "0.3.4-rc.1",
+  "version": "0.3.4-rc.2",
   "created": "2026-08-25",
   "source_files": {
     "src/common/app_config.py": "01ed2cfe2d5b2c5717d7f30e9fe1899f57106ffc1cb49f6bc58706b6a07090a9",
     "src/common/ocr_recovery_state.py": "5c33f95580a269572a8baf9c4e2958c7e7d101faac41dd622a5030e55f46b433",
+    "src/core/core_service.py": "4854a6fef299f02cf4791d93acaff0b21a33c2161e2faa694d16eed821d16529",
     "src/core/correspondent_resolver.py": "095c68846055a8adcbbfb1e2596a1752294926c58a5acf4d77e5cdd4899cbda6",
     "src/core/doctor.py": "12cb1b43267c10d276d91f4146732c1e69ae85bab6f67e8da2a164f9d1d5eceb",
     "src/core/history_broker.py": "769f4b0ae2862267f0017fbc84a6709954198bf34b5b2d322f3d0f62db3d7760",
@@ -15,7 +16,7 @@
     "src/core/prompt_ui.py": "08322fbf11e20cc057c58544ecfd9f21b2680c30790e1ae6b85be3b9cbf3e393",
     "src/core/review_store.py": "208c4ba12d25f4a53a4353d1c84ff086cf30752ee2007b4dc4b764527ae51e95",
     "src/core/suggestion_bridge.py": "09461923ab9c72c662e16643d0e0f015cc817f4997aeb2c8bed686f93d9cc577",
-    "src/core/worker.py": "8db030434562eda3f41621c61f09787bf5d0a5b654805bf62e88c46957c9e442",
+    "src/core/worker.py": "d2b0964b14142f70559a8392c78f1bf3a48380dff1e4e85457f695c3ae71b05e",
     "src/ocr/ocrmypdf_plai.py": "9a02361f15f931484fa20d96b958336cef155f6c74bd4384c361828faa569b57",
     "src/ocr/service.py": "b96a5051f94092a90a2d61a4938c89d1589d53d106708864e25a842f7e3aa7b0"
   }
