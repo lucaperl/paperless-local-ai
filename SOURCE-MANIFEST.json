@@ -1,20 +1,22 @@
 {
-  "version": "0.3.5-rc.1",
+  "version": "0.3.5-rc.2",
   "created": "2026-08-25",
   "source_files": {
     "rust/core/build.rs": "0f3157e332b38b94b0be05928688cfecc40f182fda237c84e79c301be5f37f49",
     "rust/core/src/ai_lock.rs": "e31d2d594c2b324ba0a6c69678fa64bc33db2366eea5e99f69095b7bb8ca530a",
     "rust/core/src/app_config.rs": "8d2c777afa89023f1ff189bd6e9f91a8b71fdb2bec3790619813207adab06ca4",
-    "rust/core/src/assets.rs": "4a466f6da16b81570ae9cfbd97008b5ebd29fb5a6777695f4128af2859a0f3c9",
+    "rust/core/src/assets.rs": "71c629b3f6cb21c49c3ecb64bf62bbc09cd4c1e8e54c8b4fcc0a432c6b4a2e4b",
+    "rust/core/src/bin/plai-healthcheck.rs": "c48c040f118e3dfa85a5454b58fd38caed84ec2fcf2df49ea20e25aa7b65195f",
     "rust/core/src/bridge.rs": "0b511d12a24140a92c57ebbe5a813c998adeb03ef03959ad94fc005bd7e1b1d5",
     "rust/core/src/control.rs": "ee15cd0e37b332651fd7a196e8856efe7085b5963978d0f898550cc551274a7a",
     "rust/core/src/correspondent.rs": "369901030ace0f84df3e6d2bd59a29277c9afa603f6e3957a4867c9a8a9acf88",
     "rust/core/src/error.rs": "2da7179c4ef13ae34177ee2c11b42958f0401e9baf053c4ca02a1a51ec318b67",
+    "rust/core/src/healthcheck_probe.rs": "440fa60f1021b2cb934be0c7b0c705f6c714460b3f8671a6a854b1d64fdfd9dd",
     "rust/core/src/history.rs": "11dfde52f2745576ba7f2d5ae44ae64f3267246182701d4b28cfd6662aba3e57",
     "rust/core/src/http.rs": "63f353629d5f864088c6fa741148a80a50b60e5fdbd83b7f851344b9fd483c2d",
     "rust/core/src/json_compat.rs": "0495f689dba1128bbeed32c58d63ee68a1361f6356e2c492628592e2e4bad62d",
     "rust/core/src/lib.rs": "ccc4b40e679d3980b61295cb97969f6d6d7e28e97e23edc943a0f28ef1eaacc3",
-    "rust/core/src/main.rs": "07c5fb09cba4972e7f91dd54d7092582ad6fa8b2a1f2def3c8296cfb181b0df6",
+    "rust/core/src/main.rs": "9c7d5f1262fe9d501abe31bf8961b153b43c79b29f6bce501a55a62dbcc10237",
     "rust/core/src/ocr_recovery.rs": "13e05e38daa357d5ce732466cc970d11c978bd34544151fd03cf02a95ccb8b78",
     "rust/core/src/ollama.rs": "da80f7f6c8b7d19c360f5a79ac0aff0978e08fec0ecf8ffa83a696a1fe96401e",
     "rust/core/src/paperless.rs": "987b25afbe291b7787726c2c7fb4765678eafad4fc26db9c43a2bd7b776f2ee6",
@@ -24,6 +26,7 @@
     "rust/core/src/text.rs": "9c574b3951ee7d6395862c8ba0a47994aa5a26baaf9e4b40412eb2a2e4ea9106",
     "rust/core/src/worker.rs": "7fe74201ea5d06dcd9edc2ac847fd72aeeb333af356549a68127c3242fc10d54",
     "src/common/app_config.py": "01ed2cfe2d5b2c5717d7f30e9fe1899f57106ffc1cb49f6bc58706b6a07090a9",
+    "src/common/memory_reclaim.py": "8f36b9eacb64f53b713243215441417877813b48cb21d06bbac0e84ff1572ebf",
     "src/common/ocr_recovery_state.py": "5c33f95580a269572a8baf9c4e2958c7e7d101faac41dd622a5030e55f46b433",
     "src/core/core_service.py": "4854a6fef299f02cf4791d93acaff0b21a33c2161e2faa694d16eed821d16529",
     "src/core/correspondent_resolver.py": "095c68846055a8adcbbfb1e2596a1752294926c58a5acf4d77e5cdd4899cbda6",
@@ -31,7 +34,7 @@
     "src/core/history_broker.py": "769f4b0ae2862267f0017fbc84a6709954198bf34b5b2d322f3d0f62db3d7760",
     "src/core/history_client.py": "090b52e911eeb5a4f17e07271ed1598b62468f300451efd5c5a46657224a0848",
     "src/core/history_common.py": "92ff360b4be607c18303e2ad7fbde794eab2190a2289a6de41195471ada58aef",
-    "src/core/history_engine.py": "69c3747914db2293289afa0da84912cb2ef8002af0e2ae6a17481a90cc7692d2",
+    "src/core/history_engine.py": "634b989508ae3b0b2fc621129c508de9e1f638f60aaf571a1f62f337ce5c1dd4",
     "src/core/history_runtime.py": "a65612fbeb46d072578c2ada8496b648381bafeca206e62563a5bfd2aef9cdaf",
     "src/core/prompt_runtime.py": "c9a7514cfad9e8d89710b544445a3d668eba32200001e71dc12674a675c64c3d",
     "src/core/prompt_ui.py": "08322fbf11e20cc057c58544ecfd9f21b2680c30790e1ae6b85be3b9cbf3e393",
@@ -39,6 +42,7 @@
     "src/core/suggestion_bridge.py": "09461923ab9c72c662e16643d0e0f015cc817f4997aeb2c8bed686f93d9cc577",
     "src/core/worker.py": "d2b0964b14142f70559a8392c78f1bf3a48380dff1e4e85457f695c3ae71b05e",
     "src/ocr/ocrmypdf_plai.py": "9a02361f15f931484fa20d96b958336cef155f6c74bd4384c361828faa569b57",
-    "src/ocr/service.py": "b96a5051f94092a90a2d61a4938c89d1589d53d106708864e25a842f7e3aa7b0"
+    "src/ocr/paddle_engine.py": "5829a8eafbcf28772ddaedfef11f249eaef62a717bf7121cb09b850b5caed435",
+    "src/ocr/service.py": "fd0a3edd70d4beb2433dfe3b9fd81d99c6507be94cd11ce11106e20b9ba71caa"
   }
 }

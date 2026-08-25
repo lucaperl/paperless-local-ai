@@ -94,3 +94,21 @@ def test_transient_ocr_error_classifier_is_narrow():
 def test_retryable_ocr_error_is_distinct():
     exc = ocr_service.RetryableOCRError("worker exited")
     assert isinstance(exc, RuntimeError)
+
+
+
+def test_json_socket_connection_round_trip():
+    import socket
+
+    from service import _JsonSocketConnection
+
+    left_sock, right_sock = socket.socketpair()
+    left = _JsonSocketConnection(left_sock)
+    right = _JsonSocketConnection(right_sock)
+    try:
+        left.send({"type": "probe", "value": "ä"})
+        assert right.poll(0.5)
+        assert right.recv() == {"type": "probe", "value": "ä"}
+    finally:
+        left.close()
+        right.close()

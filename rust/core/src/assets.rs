@@ -32,9 +32,9 @@ mod tests {
 
     #[test]
     fn release_docs_link_to_the_matching_tag() {
-        let html = render_control_center("0.3.5-rc.1");
-        assert!(html.contains("/blob/v0.3.5-rc.1/docs/tagging.md"));
-        assert!(html.contains("/blob/v0.3.5-rc.1/docs/paperless-setup.md"));
+        let html = render_control_center("0.3.5-rc.2");
+        assert!(html.contains("/blob/v0.3.5-rc.2/docs/tagging.md"));
+        assert!(html.contains("/blob/v0.3.5-rc.2/docs/paperless-setup.md"));
         assert!(!html.contains("__APP_VERSION__"));
     }
 

@@ -230,6 +230,25 @@ def test_ocr_is_service_not_queue_worker():
     assert "/integration" in compose
 
 
+def test_ocr_heavy_worker_does_not_use_python_multiprocessing():
+    service = (ROOT / "src/ocr/service.py").read_text(encoding="utf-8")
+    engine = (ROOT / "src/ocr/paddle_engine.py").read_text(encoding="utf-8")
+    assert "multiprocessing" not in service
+    assert "subprocess.Popen" in service
+    assert "socket.socketpair()" in service
+    assert "page_out_self_file_mappings" in engine
+    assert "os._exit" in engine
+
+
+def test_core_compose_healthcheck_uses_dedicated_binary():
+    compose = (ROOT / "compose.yaml").read_text(encoding="utf-8")
+    truenas = (ROOT / "deploy/truenas/compose.example.yaml").read_text(encoding="utf-8")
+    dockerfile = (ROOT / "docker/core.Dockerfile").read_text(encoding="utf-8")
+    for text in (compose, truenas):
+        assert 'test: ["CMD", "/usr/local/bin/plai-healthcheck"]' in text
+    assert "/src/target/release/plai-healthcheck /usr/local/bin/plai-healthcheck" in dockerfile
+
+
 def test_single_app_data_directory_in_compose():
     text = (ROOT / "compose.yaml").read_text(encoding="utf-8")
     assert "APP_DATA_DIR" in text

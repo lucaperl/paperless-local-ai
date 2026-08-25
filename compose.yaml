@@ -59,7 +59,7 @@ services:
     mem_limit: ${CORE_MEMORY_LIMIT:-512m}
     cpus: ${CORE_CPU_LIMIT:-0.5}
     healthcheck:
-      test: ["CMD", "/usr/local/bin/plai-core", "--healthcheck"]
+      test: ["CMD", "/usr/local/bin/plai-healthcheck"]
       interval: 30s
       timeout: 10s
       retries: 3
