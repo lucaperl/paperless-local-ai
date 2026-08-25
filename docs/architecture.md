@@ -73,7 +73,7 @@ One Compose project runs two long-lived services from two images:
 
 The optional `doctor` profile uses the core image as a one-shot deployment check. Paperless and Ollama are external services. The suggestion-bridge endpoint is included in `core-service`, but configuring Paperless to use it is optional; without it, safe matching to existing correspondents still works and unmatched sender candidates are handled manually during review.
 
-For compatibility with stored pre-0.3.4 Compose deployments, the core image still contains the standalone `worker.py`, `prompt_ui.py` and `suggestion_bridge.py` entry points. Migrating to `core-service` removes the duplicate persistent Python interpreters and is the recommended deployment.
+The core image also provides standalone `worker.py`, `prompt_ui.py` and `suggestion_bridge.py` entry points for deployments that explicitly invoke those components.
 
 ## OCRmyPDF integration
 

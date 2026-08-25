@@ -55,7 +55,7 @@ The Paperless API token and OCR service token must never be written to app-confi
 
 The public Control Center UI is English. Fresh-install OCR and prompt defaults are English, with English/German prompt presets available. Keep UI language, OCR language and prompt language independent.
 
-Keep externally documented ports, secrets and integration contracts stable unless a migration is explicitly planned. The 0.3.4 unified-core migration intentionally replaces the three persistent core Compose services with `core-service`; the legacy `worker.py`, `prompt_ui.py` and `suggestion_bridge.py` entry points remain available so older stored Compose YAML can continue to run the new core image until it is migrated.
+Keep externally documented ports, secrets and integration contracts stable unless a migration is explicitly planned. The core image provides `core_service.py` as the default entry point and also retains standalone `worker.py`, `prompt_ui.py` and `suggestion_bridge.py` entry points for deployments that explicitly invoke them.
 
 ## Compatibility
 
