@@ -73,7 +73,7 @@ One Compose project runs two long-lived services from two images:
 
 The optional `doctor` profile uses the core image as a one-shot deployment check. Paperless and Ollama are external services. The suggestion-bridge endpoint is included in `core-service`, but configuring Paperless to use it is optional; without it, safe matching to existing correspondents still works and unmatched sender candidates are handled manually during review.
 
-The core image defaults to `/usr/local/bin/plai-core`. It retains `/app/core_service.py` as an exec-based compatibility shim for stored 0.3.4 commands and also keeps standalone `worker.py`, `prompt_ui.py` and `suggestion_bridge.py` entry points for deployments that explicitly invoke them. A separate std-only `/usr/local/bin/plai-healthcheck` probes the Control Center and suggestion bridge without starting the full core or Python.
+The core image defaults to `/usr/local/bin/plai-core`. It retains `/app/core_service.py` as an exec-based compatibility shim for stored 0.3.4 commands and also keeps standalone `worker.py`, `prompt_ui.py` and `suggestion_bridge.py` entry points for deployments that explicitly invoke them. A separate std-only `/usr/local/bin/plai-healthcheck` probes the Control Center and suggestion bridge without starting the full core or Python. The same tiny probe is shipped statically in the OCR image and checks `/health` with `--ocr`, avoiding a recurring Python/urllib healthcheck process in the OCR cgroup.
 
 ## OCRmyPDF integration
 
@@ -83,13 +83,13 @@ The plugin is verified against OCRmyPDF **17.4.2** as bundled by Paperless-ngx *
 
 ## OCR service lifecycle
 
-The OCR service keeps the heavyweight Paddle worker in a normal short-lived Python subprocess connected over a private local socket. It acquires the shared `ai.lock`, initializes the selected PP-OCRv6 profile on the first required page and reuses the process briefly across consecutive pages. After the configured idle timeout it releases the worker and `ai.lock`, then the OCR service exits cleanly so the existing `restart: unless-stopped` policy starts a fresh container/cgroup. This preserves the short warm-session optimization while returning the long-lived OCR service to a genuinely cold idle memory state without cgroup privileges or global cache manipulation; no Python multiprocessing helper remains resident.
+The OCR service keeps the heavyweight Paddle worker in a normal short-lived Python subprocess connected over a private local socket. It acquires the shared `ai.lock`, initializes the selected PP-OCRv6 profile on the first required page and reuses the process briefly across consecutive pages. After the configured idle timeout it releases the worker and `ai.lock`, then the OCR service exits cleanly so the existing `restart: unless-stopped` policy starts a fresh container/cgroup. The restarted service stays lightweight because its recurring healthcheck uses the static std-only probe instead of launching Python. This preserves the short warm-session optimization while returning OCR to a genuinely cold idle memory state without cgroup privileges or global cache manipulation; no Python multiprocessing helper remains resident.
 
 Transient worker/service failures use bounded automatic retries. Deterministic configuration/input failures fail immediately. Recovery state is exposed through the Control Center without exposing document content through the unauthenticated health endpoint.
 
 ## Shared AI resource lock
 
-OCR, Hybrid-history work and metadata inference share one exclusive file lock at `/coordination/ai.lock`. This prevents Paddle/OpenVINO, the scientific history helper and Ollama from performing heavy work concurrently. Automatic metadata routing shuts the history helper down before the Ollama request starts, and the core metadata worker unloads the configured Ollama model before leaving the AI transaction.
+OCR, Hybrid-history work and metadata inference share one exclusive file lock at `/coordination/ai.lock`. This prevents Paddle/OpenVINO, the scientific history helper and Ollama from performing heavy work concurrently. Automatic metadata routing shuts the history helper down before the Ollama request starts, and the core metadata worker unloads the configured Ollama model before leaving the AI transaction. After a complete metadata batch, or after an explicit History refresh has returned its response, the unified core requests a graceful self-recycle. Its existing `restart: unless-stopped` policy then starts a fresh core cgroup, clearing file cache accumulated by the on-demand scientific helper and heavy Rust code paths while preserving all persistent state on mounted storage.
 
 ## Structured metadata request
 

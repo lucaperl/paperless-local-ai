@@ -253,13 +253,31 @@ def test_ocr_service_has_restart_policy_for_idle_container_recycle():
         assert "restart: unless-stopped" in ocr_section
 
 
-def test_core_compose_healthcheck_uses_dedicated_binary():
+def test_core_and_ocr_compose_healthchecks_use_dedicated_binary():
     compose = (ROOT / "compose.yaml").read_text(encoding="utf-8")
     truenas = (ROOT / "deploy/truenas/compose.example.yaml").read_text(encoding="utf-8")
-    dockerfile = (ROOT / "docker/core.Dockerfile").read_text(encoding="utf-8")
+    core_dockerfile = (ROOT / "docker/core.Dockerfile").read_text(encoding="utf-8")
+    ocr_dockerfile = (ROOT / "docker/ocr.Dockerfile").read_text(encoding="utf-8")
     for text in (compose, truenas):
         assert 'test: ["CMD", "/usr/local/bin/plai-healthcheck"]' in text
-    assert "/src/target/release/plai-healthcheck /usr/local/bin/plai-healthcheck" in dockerfile
+        assert 'test: ["CMD", "/usr/local/bin/plai-healthcheck", "--ocr"]' in text
+        assert "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8082/health'" not in text
+    assert "/src/target/release/plai-healthcheck /usr/local/bin/plai-healthcheck" in core_dockerfile
+    assert "x86_64-unknown-linux-musl" in ocr_dockerfile
+    assert "/plai-healthcheck /usr/local/bin/plai-healthcheck" in ocr_dockerfile
+
+
+def test_core_recycles_after_complete_heavy_work_boundaries():
+    state = (ROOT / "rust/core/src/state.rs").read_text(encoding="utf-8")
+    main = (ROOT / "rust/core/src/main.rs").read_text(encoding="utf-8")
+    worker = (ROOT / "rust/core/src/worker.rs").read_text(encoding="utf-8")
+    control = (ROOT / "rust/core/src/control.rs").read_text(encoding="utf-8")
+    assert "pub struct RecycleSignal" in state
+    assert "CoreEvent::Recycle" in main
+    assert "RESTART_POLICY_ARM_SECONDS: u64 = 11" in main
+    assert "had_jobs && state.recycle.request()" in worker
+    assert "history::refresh_history(&state.history, true)" in control
+    assert "History refresh completed; requesting clean core restart" in control
 
 
 def test_single_app_data_directory_in_compose():

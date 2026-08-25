@@ -37,7 +37,7 @@ services:
     cpus: ${OCR_CPU_LIMIT:-4.0}
     shm_size: ${OCR_SHM_SIZE:-2gb}
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8082/health', timeout=5).read()"]
+      test: ["CMD", "/usr/local/bin/plai-healthcheck", "--ocr"]
       interval: 30s
       timeout: 10s
       retries: 3

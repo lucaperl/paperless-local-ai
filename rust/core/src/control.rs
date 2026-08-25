@@ -381,7 +381,7 @@ async fn tagging_state_impl(state: &CoreState, force: bool) -> std::result::Resu
     let app = state.app_config.load()?;
     let taxonomy = state.paperless.taxonomy().await?;
     let history = if force {
-        history::refresh_history(&state.history, false).await?
+        history::refresh_history(&state.history, true).await?
     } else {
         history::cached_history_state(&state.paperless, &taxonomy, &app, &state.app_version).await?
     };
@@ -403,12 +403,20 @@ async fn tagging_state_get(State(state): State<Arc<CoreState>>) -> ApiResult {
 }
 
 async fn tagging_refresh(State(state): State<Arc<CoreState>>) -> ApiResult {
-    Ok(json_response(
-        StatusCode::OK,
-        tagging_state_impl(&state, true)
-            .await
-            .map_err(ApiError::internal)?,
-    ))
+    let value = tagging_state_impl(&state, true)
+        .await
+        .map_err(ApiError::internal)?;
+    let response = json_response(StatusCode::OK, value);
+
+    let recycle_state = Arc::clone(&state);
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        if recycle_state.recycle.request() {
+            println!("[CORE] History refresh completed; requesting clean core restart");
+        }
+    });
+
+    Ok(response)
 }
 
 async fn prompt_validate(body: Bytes) -> ApiResult {

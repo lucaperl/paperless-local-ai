@@ -10,8 +10,40 @@ use crate::prompt::PromptConfigStore;
 use crate::review::ReviewStore;
 use serde_json::Value;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify};
+
+pub struct RecycleSignal {
+    requested: AtomicBool,
+    notify: Notify,
+}
+
+impl Default for RecycleSignal {
+    fn default() -> Self {
+        Self {
+            requested: AtomicBool::new(false),
+            notify: Notify::new(),
+        }
+    }
+}
+
+impl RecycleSignal {
+    pub fn request(&self) -> bool {
+        if self.requested.swap(true, Ordering::AcqRel) {
+            return false;
+        }
+        self.notify.notify_one();
+        true
+    }
+
+    pub async fn wait(&self) {
+        if self.requested.load(Ordering::Acquire) {
+            return;
+        }
+        self.notify.notified().await;
+    }
+}
 
 pub struct CoreState {
     pub http: HttpClient,
@@ -26,6 +58,7 @@ pub struct CoreState {
     pub app_version: Arc<str>,
     pub control_html: Arc<str>,
     pub bridge_cache: Mutex<Option<(Instant, Value)>>,
+    pub recycle: RecycleSignal,
 }
 
 impl CoreState {
@@ -67,6 +100,20 @@ impl CoreState {
             app_version: Arc::from(app_version),
             control_html,
             bridge_cache: Mutex::new(None),
+            recycle: RecycleSignal::default(),
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RecycleSignal;
+
+    #[tokio::test]
+    async fn recycle_signal_is_idempotent_and_retains_early_notification() {
+        let signal = RecycleSignal::default();
+        assert!(signal.request());
+        assert!(!signal.request());
+        signal.wait().await;
     }
 }
