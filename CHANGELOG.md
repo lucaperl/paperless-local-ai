@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.3.5-rc.6 - 2026-08-25
+
+### Fixed
+
+- make the std-only healthcheck consume the complete HTTP response before closing its localhost connection;
+- prevent the OCR service from logging misleading `ConnectionResetError` tracebacks on successful recurring health probes.
+
+### Validation
+
+RC5 already passed the complete production-like TrueNAS functional, automatic-recycle and raw-cgroup idle gates. RC6 changes only the healthcheck response-drain behavior; the final validation therefore focuses on repeated health probes, clean OCR logs and unchanged cold-idle memory.
+
+
 ## 0.3.5-rc.5 - 2026-08-25
 
 ### Fixed

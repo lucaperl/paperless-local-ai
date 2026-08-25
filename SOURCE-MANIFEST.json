@@ -1,5 +1,5 @@
 {
-  "version": "0.3.5-rc.5",
+  "version": "0.3.5-rc.6",
   "created": "2026-08-25",
   "source_files": {
     "rust/core/build.rs": "0f3157e332b38b94b0be05928688cfecc40f182fda237c84e79c301be5f37f49",
@@ -11,7 +11,7 @@
     "rust/core/src/control.rs": "d0be7e39d69edff22ad2da985b0dff020b03c3f965cff1997d54bd0ed4270bf2",
     "rust/core/src/correspondent.rs": "369901030ace0f84df3e6d2bd59a29277c9afa603f6e3957a4867c9a8a9acf88",
     "rust/core/src/error.rs": "2da7179c4ef13ae34177ee2c11b42958f0401e9baf053c4ca02a1a51ec318b67",
-    "rust/core/src/healthcheck_probe.rs": "2e8f79a4b2b957bada52e1c45a5db5ba94a9f2b7f7845c7c3ae53e2e0e2db30e",
+    "rust/core/src/healthcheck_probe.rs": "7175c62c13b714f8d73d18ad3f33a8ddf811d82cd30e220fa57b48d44136cd02",
     "rust/core/src/history.rs": "11dfde52f2745576ba7f2d5ae44ae64f3267246182701d4b28cfd6662aba3e57",
     "rust/core/src/http.rs": "63f353629d5f864088c6fa741148a80a50b60e5fdbd83b7f851344b9fd483c2d",
     "rust/core/src/json_compat.rs": "0495f689dba1128bbeed32c58d63ee68a1361f6356e2c492628592e2e4bad62d",

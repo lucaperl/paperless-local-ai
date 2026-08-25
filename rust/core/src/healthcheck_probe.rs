@@ -69,9 +69,13 @@ fn check_http_endpoint(port: u16, path: &str) -> std::io::Result<()> {
     )?;
     stream.flush()?;
 
-    let mut response = [0_u8; 64];
-    let read = stream.read(&mut response)?;
-    let status = std::str::from_utf8(&response[..read]).unwrap_or_default();
+    // Drain the complete response before closing the socket. The OCR service
+    // uses Python's BaseHTTPRequestHandler; closing immediately after reading
+    // only the status bytes can reset the connection while it is still writing
+    // the health JSON body and produces a misleading server-side traceback.
+    let mut response = Vec::with_capacity(512);
+    stream.read_to_end(&mut response)?;
+    let status = std::str::from_utf8(&response).unwrap_or_default();
     if status.starts_with("HTTP/1.1 200 ") || status.starts_with("HTTP/1.0 200 ") {
         Ok(())
     } else {
