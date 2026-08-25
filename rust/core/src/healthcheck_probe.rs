@@ -4,6 +4,10 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 pub fn run() -> ExitCode {
+    run_core()
+}
+
+pub fn run_core() -> ExitCode {
     let control_port = match env_port("PROMPT_UI_PORT", 8080) {
         Ok(port) => port,
         Err(error) => {
@@ -24,6 +28,22 @@ pub fn run() -> ExitCode {
             eprintln!("[HEALTH] 127.0.0.1:{port}{path}: {error}");
             return ExitCode::FAILURE;
         }
+    }
+    ExitCode::SUCCESS
+}
+
+#[allow(dead_code)]
+pub fn run_ocr() -> ExitCode {
+    let port = match env_port("OCR_SERVICE_PORT", 8082) {
+        Ok(port) => port,
+        Err(error) => {
+            eprintln!("[HEALTH] {error}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if let Err(error) = check_http_endpoint(port, "/health") {
+        eprintln!("[HEALTH] 127.0.0.1:{port}/health: {error}");
+        return ExitCode::FAILURE;
     }
     ExitCode::SUCCESS
 }

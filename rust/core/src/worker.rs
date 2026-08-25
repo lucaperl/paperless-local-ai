@@ -504,6 +504,7 @@ pub async fn run(state: Arc<CoreState>, mut shutdown: watch::Receiver<bool>) -> 
             }
 
             let routed_ids = routing_docs.iter().map(|document| document.id).collect::<Vec<_>>();
+            let had_jobs = !routed_ids.is_empty();
             let routing_config = state.prompt_config.load()?;
             let mut tagging_by_id = history::history_contexts_for_documents(
                 &state.history,
@@ -548,6 +549,10 @@ pub async fn run(state: Arc<CoreState>, mut shutdown: watch::Receiver<bool>) -> 
                 if let Err(error) = job {
                     mark_error(&state, doc_id, queue_tag, error_tag, &error, error_name).await;
                 }
+            }
+
+            if had_jobs && state.recycle.request() {
+                log("[RECYCLE] Metadata batch completed; requesting clean core restart");
             }
             Ok::<(), Error>(())
         }

@@ -41,12 +41,16 @@ jobs:
         run: |
           rustup toolchain install 1.98.0 --profile minimal
           rustup component add --toolchain 1.98.0 rustfmt clippy
+          rustup target add --toolchain 1.98.0 x86_64-unknown-linux-musl
       - name: Rust checks
         run: |
           cargo fmt --all -- --check
           cargo check --locked --workspace --all-targets
           cargo test --locked --workspace
           cargo clippy --locked --workspace --all-targets -- -D warnings
+          rustc +1.98.0             --edition=2024             --target x86_64-unknown-linux-musl             -C opt-level=s             -C strip=symbols             -C panic=abort             -C target-feature=+crt-static             -o /tmp/plai-healthcheck-musl             rust/core/src/bin/plai-healthcheck.rs
+          file /tmp/plai-healthcheck-musl
+          ldd /tmp/plai-healthcheck-musl 2>&1 | grep -Eq 'not a dynamic executable|statically linked'
 
   compose:
     runs-on: ubuntu-latest

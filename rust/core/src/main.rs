@@ -12,10 +12,12 @@ use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
 const SHUTDOWN_JOIN_SECONDS: u64 = 5;
+const RESTART_POLICY_ARM_SECONDS: u64 = 11;
 
 #[derive(Debug)]
 enum CoreEvent {
     Signal(&'static str),
+    Recycle,
     ComponentStopped {
         name: &'static str,
         error: Option<String>,
@@ -48,6 +50,7 @@ fn main() -> ExitCode {
 }
 
 async fn async_main() -> Result<u8, Error> {
+    let service_started_at = Instant::now();
     let state = CoreState::from_env()?;
     let app = state.app_config.ensure()?;
     let prompt = state.prompt_config.ensure()?;
@@ -138,6 +141,18 @@ async fn async_main() -> Result<u8, Error> {
         ));
     }
 
+    let recycle_tx = event_tx.clone();
+    let recycle_state = Arc::clone(&state);
+    let recycle_handle = tokio::spawn(async move {
+        recycle_state.recycle.wait().await;
+        let minimum_uptime = Duration::from_secs(RESTART_POLICY_ARM_SECONDS);
+        let remaining = minimum_uptime.saturating_sub(service_started_at.elapsed());
+        if !remaining.is_zero() {
+            tokio::time::sleep(remaining).await;
+        }
+        let _ = recycle_tx.send(CoreEvent::Recycle);
+    });
+
     let signal_tx = event_tx.clone();
     let signal_handle = tokio::spawn(async move {
         match shutdown_signal().await {
@@ -170,6 +185,10 @@ async fn async_main() -> Result<u8, Error> {
             println!("[CORE] received {signal}; shutting down");
             0
         }
+        CoreEvent::Recycle => {
+            println!("[CORE] completed heavy work; recycling cleanly for container restart");
+            0
+        }
         CoreEvent::ComponentStopped { name, error } => {
             if let Some(error) = error {
                 eprintln!("[CORE] {name} failed: {error}");
@@ -181,6 +200,8 @@ async fn async_main() -> Result<u8, Error> {
     };
 
     let _ = shutdown_tx.send(true);
+    recycle_handle.abort();
+    let _ = recycle_handle.await;
     signal_handle.abort();
     let _ = signal_handle.await;
     graceful_join(&mut tasks).await;

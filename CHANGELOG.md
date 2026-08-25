@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 0.3.5-rc.5 - 2026-08-25
+
+### Fixed
+
+- replace the recurring OCR Python/urllib healthcheck with the existing std-only Rust probe, shipped as a static binary in the Paddle image;
+- recycle the unified Rust core cleanly after a completed metadata batch so transient History/scientific-helper and heavy core file cache does not become the new idle baseline;
+- recycle the core after an explicit History refresh has returned, while shutting the disposable History helper down before the recycle request;
+- keep both intentional service recycle paths behind the existing 11-second Docker restart-policy activation guard.
+
+### Deployment
+
+- no new service, port, mount, secret, privilege or required environment variable is introduced;
+- published Compose and TrueNAS templates now use `/usr/local/bin/plai-healthcheck --ocr` for the OCR healthcheck;
+- existing deployments that keep the old Python OCR healthcheck remain functional, but should update that persisted healthcheck command to receive the full idle-memory benefit;
+- existing `restart: unless-stopped` policies for both core and OCR are part of the intended lifecycle.
+
+
 ## 0.3.5-rc.4 - 2026-08-25
 
 ### Fixed
