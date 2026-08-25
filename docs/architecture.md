@@ -83,7 +83,7 @@ The plugin is verified against OCRmyPDF **17.4.2** as bundled by Paperless-ngx *
 
 ## OCR service lifecycle
 
-The OCR service keeps the heavyweight Paddle worker in a normal short-lived Python subprocess connected over a private local socket. It acquires the shared `ai.lock`, initializes the selected PP-OCRv6 profile on the first required page, reuses the process briefly across consecutive pages and tears it down after the idle timeout before releasing the lock. The disposable worker pages out its read-only file-backed mappings immediately before final process exit so Paddle/OpenVINO code pages do not remain charged to the idle OCR cgroup; no Python multiprocessing helper remains resident.
+The OCR service keeps the heavyweight Paddle worker in a normal short-lived Python subprocess connected over a private local socket. It acquires the shared `ai.lock`, initializes the selected PP-OCRv6 profile on the first required page, reuses the process briefly across consecutive pages and tears it down after the idle timeout before releasing the lock. On final exit the disposable worker first pages out its read-only file-backed mappings, then uses `mincore()` to identify already-resident pages of those runtime files, temporarily remaps only that resident working set and applies `MADV_PAGEOUT` again before direct process exit. This targets clean Paddle/OpenVINO library cache without cgroup privileges or a global cache drop; no Python multiprocessing helper remains resident.
 
 Transient worker/service failures use bounded automatic retries. Deterministic configuration/input failures fail immediately. Recovery state is exposed through the Control Center without exposing document content through the unauthenticated health endpoint.
 

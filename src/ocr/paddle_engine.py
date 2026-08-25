@@ -6,7 +6,10 @@ import socket
 import sys
 from typing import Any
 
-from memory_reclaim import page_out_self_file_mappings
+from memory_reclaim import (
+    page_out_self_file_mappings,
+    page_out_self_resident_file_cache,
+)
 from service import _JsonSocketConnection, _engine_process
 
 
@@ -48,8 +51,31 @@ def _final_exit(code: int) -> None:
             "[PADDLE-ENGINE] final file-mapping reclaim skipped: "
             f"{type(exc).__name__}: {exc}"
         )
-    finally:
-        os._exit(code)
+
+    try:
+        cache_stats = page_out_self_resident_file_cache()
+        _write_stderr(
+            "[PADDLE-ENGINE] final resident file-cache reclaim: "
+            f"accepted={cache_stats['accepted_bytes'] / 1048576:.1f} MiB "
+            f"resident={cache_stats['resident_bytes'] / 1048576:.1f} MiB "
+            f"files_scanned={cache_stats['files_scanned']} "
+            f"failed_files={cache_stats['failed_files']}"
+        )
+    except BaseException as exc:
+        _write_stderr(
+            "[PADDLE-ENGINE] final resident file-cache reclaim skipped: "
+            f"{type(exc).__name__}: {exc}"
+        )
+
+    # Logging and the cache sweep itself can fault a few runtime code pages
+    # back in. One last mapping-only pass immediately before direct exit keeps
+    # that tail small without changing worker semantics if reclaim is absent.
+    try:
+        page_out_self_file_mappings()
+    except BaseException:
+        pass
+
+    os._exit(code)
 
 
 if __name__ == "__main__":

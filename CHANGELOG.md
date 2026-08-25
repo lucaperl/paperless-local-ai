@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.3.5-rc.3 - 2026-08-25
+
+### Fixed
+
+- extend disposable Paddle worker teardown with a second best-effort Linux reclaim pass for clean runtime-library pages that can remain in the OCR cgroup after the worker's original mappings are paged out;
+- use `mincore()` to identify already-resident pages of files seen in the worker's read-only mappings, temporarily establish PTEs only for those pages, apply `MADV_PAGEOUT`, then immediately exit;
+- keep cleanup fail-open and unprivileged: no cgroup `memory.reclaim`, global cache drop, extra service, port, mount, secret or required environment variable is introduced.
+
+### Deployment
+
+- image-only prerelease; existing Compose and TrueNAS Custom App deployment contracts remain unchanged.
+
+
 ## 0.3.5-rc.2 - 2026-08-25
 
 ### Fixed
