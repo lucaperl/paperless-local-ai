@@ -1,17 +1,21 @@
 {
-  "version": "0.3.3",
-  "created": "2026-08-24",
+  "version": "0.3.4-rc.1",
+  "created": "2026-08-25",
   "source_files": {
     "src/common/app_config.py": "01ed2cfe2d5b2c5717d7f30e9fe1899f57106ffc1cb49f6bc58706b6a07090a9",
     "src/common/ocr_recovery_state.py": "5c33f95580a269572a8baf9c4e2958c7e7d101faac41dd622a5030e55f46b433",
     "src/core/correspondent_resolver.py": "095c68846055a8adcbbfb1e2596a1752294926c58a5acf4d77e5cdd4899cbda6",
     "src/core/doctor.py": "12cb1b43267c10d276d91f4146732c1e69ae85bab6f67e8da2a164f9d1d5eceb",
-    "src/core/history_runtime.py": "02b97ecad9f63b3937cc85e79c1fb84322f0587bd388b1d5b1cf752dce4c8de1",
+    "src/core/history_broker.py": "769f4b0ae2862267f0017fbc84a6709954198bf34b5b2d322f3d0f62db3d7760",
+    "src/core/history_client.py": "090b52e911eeb5a4f17e07271ed1598b62468f300451efd5c5a46657224a0848",
+    "src/core/history_common.py": "92ff360b4be607c18303e2ad7fbde794eab2190a2289a6de41195471ada58aef",
+    "src/core/history_engine.py": "69c3747914db2293289afa0da84912cb2ef8002af0e2ae6a17481a90cc7692d2",
+    "src/core/history_runtime.py": "a65612fbeb46d072578c2ada8496b648381bafeca206e62563a5bfd2aef9cdaf",
     "src/core/prompt_runtime.py": "c9a7514cfad9e8d89710b544445a3d668eba32200001e71dc12674a675c64c3d",
-    "src/core/prompt_ui.py": "965f33eb63f080c59a9727accfd4a8cc415256e9c14e6baaed43cc132a121771",
+    "src/core/prompt_ui.py": "08322fbf11e20cc057c58544ecfd9f21b2680c30790e1ae6b85be3b9cbf3e393",
     "src/core/review_store.py": "208c4ba12d25f4a53a4353d1c84ff086cf30752ee2007b4dc4b764527ae51e95",
     "src/core/suggestion_bridge.py": "09461923ab9c72c662e16643d0e0f015cc817f4997aeb2c8bed686f93d9cc577",
-    "src/core/worker.py": "3975a8e9525f1cbbe1b112d9949c7ebe5df10452a9759051400fb989c08e8964",
+    "src/core/worker.py": "8db030434562eda3f41621c61f09787bf5d0a5b654805bf62e88c46957c9e442",
     "src/ocr/ocrmypdf_plai.py": "9a02361f15f931484fa20d96b958336cef155f6c74bd4384c361828faa569b57",
     "src/ocr/service.py": "b96a5051f94092a90a2d61a4938c89d1589d53d106708864e25a842f7e3aa7b0"
   }

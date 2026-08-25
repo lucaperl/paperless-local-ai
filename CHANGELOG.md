@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.4-rc.1 - 2026-08-25
+
 ### Changed
 
 - move Hybrid history retrieval into an on-demand scientific subprocess behind a lightweight worker broker so persistent UI/worker processes do not keep NumPy, SciPy and scikit-learn resident;
