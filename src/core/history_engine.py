@@ -310,7 +310,7 @@ def _reclaim_before_process_exit() -> None:
             "[HISTORY-ENGINE] final file-mapping reclaim: "
             f"accepted={stats['accepted_bytes'] / 1048576:.1f} MiB "
             f"attempted={stats['attempted_bytes'] / 1048576:.1f} MiB "
-            f"failed_mappings={stats['failed_mappings']}\\n"
+            f"failed_mappings={stats['failed_mappings']}\n"
         )
         try:
             os.write(2, message.encode("utf-8", errors="replace"))
@@ -322,7 +322,7 @@ def _reclaim_before_process_exit() -> None:
                 2,
                 (
                     "[HISTORY-ENGINE] final file-mapping reclaim skipped: "
-                    f"{type(exc).__name__}: {exc}\\n"
+                    f"{type(exc).__name__}: {exc}\n"
                 ).encode("utf-8", errors="replace"),
             )
         except OSError:

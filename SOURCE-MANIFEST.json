@@ -34,7 +34,7 @@
     "src/core/history_broker.py": "769f4b0ae2862267f0017fbc84a6709954198bf34b5b2d322f3d0f62db3d7760",
     "src/core/history_client.py": "090b52e911eeb5a4f17e07271ed1598b62468f300451efd5c5a46657224a0848",
     "src/core/history_common.py": "92ff360b4be607c18303e2ad7fbde794eab2190a2289a6de41195471ada58aef",
-    "src/core/history_engine.py": "f79fcade60dd46079bf4fcceba6293b005fd20861f32c51dd980241ef252ffbb",
+    "src/core/history_engine.py": "634b989508ae3b0b2fc621129c508de9e1f638f60aaf571a1f62f337ce5c1dd4",
     "src/core/history_runtime.py": "a65612fbeb46d072578c2ada8496b648381bafeca206e62563a5bfd2aef9cdaf",
     "src/core/prompt_runtime.py": "c9a7514cfad9e8d89710b544445a3d668eba32200001e71dc12674a675c64c3d",
     "src/core/prompt_ui.py": "08322fbf11e20cc057c58544ecfd9f21b2680c30790e1ae6b85be3b9cbf3e393",
