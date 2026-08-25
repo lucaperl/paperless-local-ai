@@ -237,8 +237,20 @@ def test_ocr_heavy_worker_does_not_use_python_multiprocessing():
     assert "subprocess.Popen" in service
     assert "socket.socketpair()" in service
     assert "page_out_self_file_mappings" in engine
-    assert "page_out_self_resident_file_cache" in engine
+    assert "page_out_self_resident_file_cache" not in engine
     assert "os._exit" in engine
+    assert "recycle_event.set()" in service
+    assert "server.handle_request()" in service
+    assert "RESTART_POLICY_ARM_SECONDS = 11.0" in service
+    assert "uptime >= RESTART_POLICY_ARM_SECONDS" in service
+
+
+def test_ocr_service_has_restart_policy_for_idle_container_recycle():
+    compose = (ROOT / "compose.yaml").read_text(encoding="utf-8")
+    truenas = (ROOT / "deploy/truenas/compose.example.yaml").read_text(encoding="utf-8")
+    for text in (compose, truenas):
+        ocr_section = text.split("\n  ocr-service:", 1)[1].split("\n  core-service:", 1)[0]
+        assert "restart: unless-stopped" in ocr_section
 
 
 def test_core_compose_healthcheck_uses_dedicated_binary():
