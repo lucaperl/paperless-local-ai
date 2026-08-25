@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+## 0.3.5 - 2026-08-25
+
+### Changed
+
+- replace the persistent Python core runtime with a lightweight Rust 1.98 process while retaining the existing two-image architecture, public ports, mounted state and compatibility entry points;
+- keep the scientific History engine disposable and on demand so NumPy, SciPy and scikit-learn are not resident during normal idle operation;
+- use dedicated std-only Rust health probes for Core and OCR instead of starting Python for recurring health checks.
+
+### Runtime lifecycle
+
+- keep PaddleOCR in a short-lived subprocess with the existing five-second warm-session reuse window;
+- recycle the OCR service cleanly after a completed warm session so Docker starts a fresh OCR cgroup at cold idle;
+- recycle the unified Core cleanly after completed metadata batches and explicit History refreshes so transient helper/runtime file cache does not become the new idle baseline;
+- retain `restart: unless-stopped` as part of the intended lifecycle for both services.
+
+### Deployment
+
+- existing ports, mounts, secrets and resource limits remain unchanged;
+- existing 0.3.4-style Core commands remain compatible through `/app/core_service.py`, which execs the Rust core;
+- existing TrueNAS/Docker deployments should use the std-only OCR healthcheck:
+  `["CMD", "/usr/local/bin/plai-healthcheck", "--ocr"]`.
+
+### Validation
+
+Production-like TrueNAS validation passed real PaddleOCR inference, automatic OCR recycle, explicit History refresh, a real Paperless metadata writeback/restore cycle, Core recycling, Ollama unload and raw cgroup idle checks. The validated final idle footprint was approximately 18.6 MiB combined for Core and OCR on the reference system.
+
+
 ## 0.3.5-rc.6 - 2026-08-25
 
 ### Fixed
