@@ -88,6 +88,7 @@ def test_worker_eof_tears_down_session_and_releases_ai_lock(tmp_path):
     session._started_at = time.monotonic()
     session._config = config
     session._current_ocr_config = lambda: dict(config)
+    session._recycle_event = threading.Event()
 
     with pytest.raises(RuntimeError, match="Paddle worker IPC receive failed"):
         session.ocr(tmp_path / "page.png")
@@ -105,3 +106,35 @@ def test_worker_eof_tears_down_session_and_releases_ai_lock(tmp_path):
     with lock_path.open("a+") as probe:
         fcntl.flock(probe.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         fcntl.flock(probe.fileno(), fcntl.LOCK_UN)
+
+
+class _AliveWorker:
+    def is_alive(self):
+        return True
+
+
+class _OneHousekeepingTick:
+    def __init__(self):
+        self.calls = 0
+
+    def wait(self, timeout):
+        self.calls += 1
+        return self.calls > 1
+
+
+def test_idle_worker_stop_requests_container_recycle():
+    session = PaddleSession.__new__(PaddleSession)
+    session._mutex = threading.RLock()
+    session._process = _AliveWorker()
+    session._lock_file = object()
+    session._last_used = time.monotonic() - service.SESSION_IDLE_SECONDS - 1.0
+    session._recycle_event = threading.Event()
+    session._stop_event = _OneHousekeepingTick()
+
+    stopped = []
+    session._stop = lambda reason: stopped.append(reason)
+
+    session._housekeeping_loop()
+
+    assert stopped == [f"idle for {service.SESSION_IDLE_SECONDS:.0f}s"]
+    assert session._recycle_event.is_set()

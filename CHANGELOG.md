@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.3.5-rc.4 - 2026-08-25
+
+### Fixed
+
+- recycle the long-lived OCR service process after a completed warm PaddleOCR session instead of relying on advisory page-cache reclaim to return the OCR cgroup to its cold idle footprint;
+- keep the existing five-second warm-session behavior so consecutive OCR pages can reuse one loaded Paddle worker, then release `ai.lock`, stop the worker and exit the OCR service cleanly;
+- rely on the stack's existing `restart: unless-stopped` policy to start a fresh OCR container/cgroup immediately after that clean exit;
+- delay an intentional recycle exit until the OCR service has been up for at least 11 seconds, covering Docker's documented 10-second restart-policy activation window;
+- remove the RC3 `mincore()`/temporary-remap cache sweep after production-path validation showed that accepted `MADV_PAGEOUT` calls did not reliably remove the remaining clean file cache.
+
+### Deployment
+
+- no new service, port, mount, secret, privilege or required environment variable is introduced;
+- the existing published Compose and TrueNAS templates already configure `ocr-service` with `restart: unless-stopped`, which is now part of the OCR lifecycle requirement.
+
+
 ## 0.3.5-rc.3 - 2026-08-25
 
 ### Fixed

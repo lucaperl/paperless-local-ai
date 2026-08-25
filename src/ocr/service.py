@@ -47,6 +47,10 @@ AI_LOCK_FILE = Path("/coordination/ai.lock")
 INTEGRATION_SOURCE = Path(os.getenv("OCR_PLUGIN_SOURCE", "/app/ocrmypdf_plai.py"))
 INTEGRATION_TARGET = Path("/integration/ocrmypdf_plai.py")
 SESSION_IDLE_SECONDS = float(os.getenv("OCR_SESSION_IDLE_SECONDS", "5"))
+# Docker restart policies are documented as becoming active after a
+# container has remained up for at least 10 seconds. Keep a small margin
+# before an intentional recycle exit.
+RESTART_POLICY_ARM_SECONDS = 11.0
 PAGE_TIMEOUT_SECONDS = float(os.getenv("OCR_PAGE_TIMEOUT_SECONDS", "1800"))
 TMP_DIR = Path(os.getenv("OCR_TMP_DIR", "/dev/shm/paperless-local-ai-ocr"))
 PP_OCRV6_MODEL_PROFILES = {
@@ -502,7 +506,7 @@ def _engine_process(conn: Any, ocr_config: dict[str, Any]) -> None:
 
 
 class PaddleSession:
-    def __init__(self) -> None:
+    def __init__(self, recycle_event: threading.Event) -> None:
         self._mutex = threading.RLock()
         self._process: _SubprocessWorker | None = None
         self._conn: _JsonSocketConnection | None = None
@@ -511,6 +515,7 @@ class PaddleSession:
         self._started_at = 0.0
         self._config: dict[str, Any] | None = None
         self._stop_event = threading.Event()
+        self._recycle_event = recycle_event
         self._housekeeper = threading.Thread(target=self._housekeeping_loop, daemon=True)
         self._housekeeper.start()
 
@@ -671,6 +676,10 @@ class PaddleSession:
 
     def ocr(self, image_path: Path) -> dict[str, Any]:
         with self._mutex:
+            if self._recycle_event.is_set():
+                raise RetryableOCRError(
+                    "OCR service is recycling after the completed warm session"
+                )
             config = self._current_ocr_config()
             lock_wait = 0.0
             started_new_session = False
@@ -753,6 +762,12 @@ class PaddleSession:
                     self._stop("Paddle worker no longer alive")
                 elif self.active and time.monotonic() - self._last_used >= SESSION_IDLE_SECONDS:
                     self._stop(f"idle for {SESSION_IDLE_SECONDS:.0f}s")
+                    LOG.info(
+                        "Completed OCR warm session; requesting service recycle "
+                        "so the container cgroup returns to cold idle"
+                    )
+                    self._recycle_event.set()
+                    return
 
     def close(self) -> None:
         self._stop_event.set()
@@ -1062,11 +1077,37 @@ def main() -> None:
     TMP_DIR.mkdir(parents=True, exist_ok=True)
     sync_integration_plugin()
     set_idle_state()
-    SESSION = PaddleSession()
-    LOG.info("Starting PaddleOCR service on %s:%d", HOST, PORT)
+
+    recycle_event = threading.Event()
+    SESSION = PaddleSession(recycle_event)
     server = ThreadingHTTPServer((HOST, PORT), Handler)
+    server.timeout = 0.5
+    service_started_at = time.monotonic()
+    restart_wait_logged = False
+    LOG.info("Starting PaddleOCR service on %s:%d", HOST, PORT)
+
     try:
-        server.serve_forever()
+        while True:
+            server.handle_request()
+
+            if not recycle_event.is_set():
+                continue
+
+            uptime = time.monotonic() - service_started_at
+            if uptime >= RESTART_POLICY_ARM_SECONDS:
+                break
+
+            if not restart_wait_logged:
+                LOG.info(
+                    "OCR recycle waiting %.1fs for Docker restart policy arm window",
+                    RESTART_POLICY_ARM_SECONDS - uptime,
+                )
+                restart_wait_logged = True
+
+        LOG.info(
+            "OCR service recycle requested after completed warm session; "
+            "exiting cleanly for container restart"
+        )
     except KeyboardInterrupt:
         pass
     finally:
