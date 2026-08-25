@@ -237,6 +237,7 @@ def test_ocr_heavy_worker_does_not_use_python_multiprocessing():
     assert "subprocess.Popen" in service
     assert "socket.socketpair()" in service
     assert "page_out_self_file_mappings" in engine
+    assert "page_out_self_resident_file_cache" in engine
     assert "os._exit" in engine
 
 
