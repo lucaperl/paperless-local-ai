@@ -21,4 +21,4 @@ RUN python -m pip install --no-cache-dir --disable-pip-version-check -r /tmp/req
 COPY src/common/ /app/
 COPY src/core/ /app/
 
-CMD ["python", "/app/worker.py"]
+CMD ["python", "/app/core_service.py"]

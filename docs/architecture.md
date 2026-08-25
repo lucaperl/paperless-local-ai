@@ -35,7 +35,7 @@ Paperless Document Added workflow
       ↓
 classification queue tag
       ↓
-metadata-worker
+core-service metadata worker
       ↓
 Tagging strategy
   Hybrid tagging:
@@ -64,16 +64,16 @@ The uploaded PDF stays Paperless' original. OCR happens while Paperless consumes
 
 ## Services
 
-One Compose project runs four long-lived services from two images:
+One Compose project runs two long-lived services from two images:
 
 | Service | Purpose |
 |---|---|
 | `ocr-service` | authenticated PaddleOCR service used by the OCRmyPDF plugin |
-| `metadata-worker` | lightweight queue polling/history broker, tag routing, one-call metadata classification and local sender resolution |
-| `prompt-ui` | Control Center: configuration, tagging diagnostics, testing and configuration history |
-| `suggestion-bridge` | optional adapter that can expose plausible new correspondent candidates through Paperless Suggestions |
+| `core-service` | one lightweight Python process hosting metadata queue polling, the Control Center, the optional suggestion bridge and the on-demand History broker |
 
-The optional `doctor` profile uses the core image as a one-shot deployment check. Paperless and Ollama are external services. The suggestion-bridge service is included in the stack, but configuring Paperless to use it is optional; without it, safe matching to existing correspondents still works and unmatched sender candidates are handled manually during review.
+The optional `doctor` profile uses the core image as a one-shot deployment check. Paperless and Ollama are external services. The suggestion-bridge endpoint is included in `core-service`, but configuring Paperless to use it is optional; without it, safe matching to existing correspondents still works and unmatched sender candidates are handled manually during review.
+
+For compatibility with stored pre-0.3.4 Compose deployments, the core image still contains the standalone `worker.py`, `prompt_ui.py` and `suggestion_bridge.py` entry points. Migrating to `core-service` removes the duplicate persistent Python interpreters and is the recommended deployment.
 
 ## OCRmyPDF integration
 
@@ -89,7 +89,7 @@ Transient worker/service failures use bounded automatic retries. Deterministic c
 
 ## Shared AI resource lock
 
-OCR, Hybrid-history work and metadata inference share one exclusive file lock at `/coordination/ai.lock`. This prevents Paddle/OpenVINO, the scientific history helper and Ollama from performing heavy work concurrently. Automatic metadata routing shuts the history helper down before the Ollama request starts, and the metadata worker unloads the configured Ollama model before leaving the AI transaction.
+OCR, Hybrid-history work and metadata inference share one exclusive file lock at `/coordination/ai.lock`. This prevents Paddle/OpenVINO, the scientific history helper and Ollama from performing heavy work concurrently. Automatic metadata routing shuts the history helper down before the Ollama request starts, and the core metadata worker unloads the configured Ollama model before leaving the AI transaction.
 
 ## Structured metadata request
 
@@ -124,7 +124,7 @@ If the gate abstains, up to five relevant positive reviewed examples are supplie
 
 The configured review tag is the trust boundary and can have any name. It stays on a document until human review is complete. Documents still carrying review, classification-queue or classification-error tags are excluded, and the current document is excluded from its own lookup.
 
-The persistent UI and queue worker do not import NumPy, SciPy or scikit-learn. The metadata worker hosts a lightweight Unix-socket broker that starts one scientific history subprocess on demand. A validated local TF-IDF cache avoids refitting unchanged reviewed history, and the helper reconstructs the existing cosine nearest-neighbor view from the cached sparse matrix. Interactive Control Center lookups can reuse the helper for a short idle window; automatic metadata batches and model tests shut it down before Ollama starts.
+The persistent unified core process does not import NumPy, SciPy or scikit-learn. `core-service` hosts a lightweight Unix-socket broker that starts one scientific history subprocess on demand. A validated local TF-IDF cache avoids refitting unchanged reviewed history, and the helper reconstructs the existing cosine nearest-neighbor view from the cached sparse matrix. Interactive Control Center lookups can reuse the helper for a short idle window; automatic metadata batches and model tests shut it down before Ollama starts.
 
 The cache is internal application state below `/data/history-cache`. It uses Python pickle protocol 5 only for artifacts created by this application, records exact Python/NumPy/SciPy/scikit-learn plus algorithm/source signatures, and is SHA-256 verified inside the disposable helper immediately before unpickling. The persistent UI checks only lightweight metadata/source state and never reads the cache blob into memory. Invalid caches are rebuilt and cache files are written atomically.
 
