@@ -74,14 +74,14 @@ In TrueNAS:
 4. paste the edited YAML;
 5. install it.
 
-The four long-running services are:
+The two long-running services are:
 
 ```text
 ocr-service
-metadata-worker
-prompt-ui
-suggestion-bridge
+core-service
 ```
+
+`core-service` hosts metadata polling, the Control Center, the suggestion-bridge endpoint and the lightweight History broker in one persistent Python process. This avoids keeping three separate Python runtimes resident while preserving ports `30148` and `30149`.
 
 ## 4. Configure the Control Center
 

@@ -59,7 +59,7 @@ If only selected documents should be classified, add Paperless workflow conditio
 The metadata handoff is:
 
 ```text
-Document Added → LLM → metadata-worker → Inbox/review
+Document Added → LLM → core-service metadata worker → Inbox/review
 ```
 
 On metadata-processing errors, the LLM queue tag is removed and the configured LLM error tag is applied.
@@ -148,7 +148,7 @@ The main classification request extracts the actual sender/issuer as free text. 
 
 Skip this section if you only need OCR, metadata assignment and matching against correspondents that already exist in Paperless. Without the bridge, those functions continue to work. When the classifier extracts a plausible sender that cannot be safely matched to an existing correspondent, paperless-local-ai leaves the document's correspondent empty; its unmatched sender candidate is not surfaced in Paperless Document Suggestions and must be handled manually during review.
 
-Paperless exposes Document Suggestions through its AI backend configuration. The bridge implements only the narrow classification-suggestion interface needed here: it does **not** run an LLM and does not provide chat/RAG. Configuring Paperless to use this bridge is therefore optional even though the bridge service is included in the paperless-local-ai stack.
+Paperless exposes Document Suggestions through its AI backend configuration. The bridge implements only the narrow classification-suggestion interface needed here: it does **not** run an LLM and does not provide chat/RAG. Configuring Paperless to use this bridge is therefore optional even though the bridge endpoint is included in `core-service`.
 
 Paperless must be able to reach the suggestion bridge. For the default host port:
 

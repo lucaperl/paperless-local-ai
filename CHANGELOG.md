@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- consolidate metadata polling, the Control Center, the optional suggestion bridge and the lightweight History broker into one persistent `core-service` process/container, while keeping OCR isolated and preserving the existing public ports and legacy core entry points;
+
 ## 0.3.4-rc.1 - 2026-08-25
 
 ### Changed

@@ -7,23 +7,7 @@ services:
         APP_VERSION: ${APP_VERSION:-dev}
     image: paperless-local-ai-ocr:dev
 
-  metadata-worker:
-    build:
-      context: .
-      dockerfile: docker/core.Dockerfile
-      args:
-        APP_VERSION: ${APP_VERSION:-dev}
-    image: paperless-local-ai-core:dev
-
-  prompt-ui:
-    build:
-      context: .
-      dockerfile: docker/core.Dockerfile
-      args:
-        APP_VERSION: ${APP_VERSION:-dev}
-    image: paperless-local-ai-core:dev
-
-  suggestion-bridge:
+  core-service:
     build:
       context: .
       dockerfile: docker/core.Dockerfile

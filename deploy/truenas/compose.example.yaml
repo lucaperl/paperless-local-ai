@@ -51,53 +51,32 @@ services:
       retries: 3
       start_period: 10s
 
-  metadata-worker:
+  core-service:
     <<: *core-image
-    command: ["python", "/app/worker.py"]
-    env_file:
-      - /mnt/YOUR_POOL/paperless-local-ai/paperless.env
-    volumes: *core-volumes
-    mem_limit: 512m
-    cpus: 0.5
-
-  prompt-ui:
-    <<: *core-image
-    command: ["python", "/app/prompt_ui.py"]
+    command: ["python", "/app/core_service.py"]
     env_file:
       - /mnt/YOUR_POOL/paperless-local-ai/paperless.env
     environment:
       PROMPT_UI_HOST: 0.0.0.0
       PROMPT_UI_PORT: "8080"
+      SUGGESTION_BRIDGE_HOST: 0.0.0.0
+      SUGGESTION_BRIDGE_PORT: "8081"
     ports:
       - "0.0.0.0:30148:8080"
+      - "0.0.0.0:30149:8081"
     volumes: *core-volumes
-    mem_limit: 256m
-    cpus: 0.25
+    mem_limit: 512m
+    cpus: 0.5
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=5).read()"]
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=5).read();
+          urllib.request.urlopen('http://127.0.0.1:8081/api/version', timeout=5).read()
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
-
-  suggestion-bridge:
-    <<: *core-image
-    command: ["python", "/app/suggestion_bridge.py"]
-    env_file:
-      - /mnt/YOUR_POOL/paperless-local-ai/paperless.env
-    environment:
-      SUGGESTION_BRIDGE_HOST: 0.0.0.0
-      SUGGESTION_BRIDGE_PORT: "8081"
-    ports:
-      - "0.0.0.0:30149:8081"
-    volumes:
-      - /mnt/YOUR_POOL/paperless-local-ai/config:/config:ro
-      - /mnt/YOUR_POOL/paperless-local-ai/core:/data:ro
-    mem_limit: 128m
-    cpus: 0.1
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/health', timeout=5).read()"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 5s

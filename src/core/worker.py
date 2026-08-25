@@ -4,6 +4,7 @@ import atexit
 import hashlib
 import json
 import time
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -312,12 +313,19 @@ def process(
         write_review_record_safe(doc_id, correspondent_resolution)
 
 
-def main() -> None:
+def main(
+    *,
+    stop_event: threading.Event | None = None,
+    manage_history_broker: bool = True,
+) -> None:
     app_cfg = ensure_app_config()
     config = ensure_config()
-    history_broker = HistoryBroker()
-    history_broker.start()
-    atexit.register(history_broker.stop)
+
+    history_broker = None
+    if manage_history_broker:
+        history_broker = HistoryBroker()
+        history_broker.start()
+        atexit.register(history_broker.stop)
 
     log("[BOOT] Paperless local metadata worker")
     log(f"[BOOT] AppConfig: /config/app-config.json (v{app_cfg['version']})")
@@ -329,7 +337,7 @@ def main() -> None:
     log("[BOOT] Prompt and app settings are reloaded continuously")
 
     last_review_prune = 0.0
-    while True:
+    while stop_event is None or not stop_event.is_set():
         poll_interval = 10
         try:
             app_cfg = load_app_config()
@@ -423,7 +431,11 @@ def main() -> None:
                     mark_error(doc_id, queue_tag, error_tag, exc, error_name)
         except Exception as exc:
             log(f"[ERROR] Worker/Polling: {type(exc).__name__}: {exc}")
-        time.sleep(poll_interval)
+        if stop_event is not None:
+            if stop_event.wait(poll_interval):
+                break
+        else:
+            time.sleep(poll_interval)
 
 
 if __name__ == "__main__":
