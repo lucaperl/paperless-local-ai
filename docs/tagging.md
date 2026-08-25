@@ -102,7 +102,7 @@ Use guidance for personal filing boundaries that a model cannot infer from a tag
 
 ## Reviewed-history lifecycle
 
-There is no trained tag model inside the Hybrid retriever. The persistent Control Center and metadata worker stay lightweight and do not keep NumPy, SciPy or scikit-learn resident.
+There is no trained tag model inside the Hybrid retriever. The persistent Rust core stays lightweight and does not keep NumPy, SciPy or scikit-learn resident.
 
 When Hybrid retrieval is needed, a lightweight broker starts a scientific helper subprocess. A source signature checks the eligible reviewed-document count/latest modification state, current tag taxonomy and configured exclusion tags. If the validated local cache matches that source and the exact runtime/algorithm versions, the helper loads the fitted TF-IDF vectorizers and sparse matrix; otherwise it rebuilds them from Paperless and atomically replaces the cache.
 

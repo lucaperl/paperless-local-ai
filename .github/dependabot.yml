@@ -20,6 +20,11 @@ updates:
         patterns:
           - "numpy"
 
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: monthly
+
   - package-ecosystem: docker
     directory: "/docker"
     schedule:

@@ -10,7 +10,7 @@ Do not turn it into a bundled Paperless distribution, an Ollama distribution, or
 
 ## Architecture invariants
 
-- One Compose application, two long-running services: `ocr-service` and `core-service`. The core service hosts metadata polling, the Control Center, the optional suggestion bridge and the lightweight History broker in one persistent Python process.
+- One Compose application, two long-running services: `ocr-service` and `core-service`. The core service hosts metadata polling, the Control Center, the optional suggestion bridge and the lightweight History broker in one persistent Rust process.
 - Two images only: OCR image and core image.
 - Ollama stays external.
 - Paperless stays the document system of record.
@@ -55,7 +55,7 @@ The Paperless API token and OCR service token must never be written to app-confi
 
 The public Control Center UI is English. Fresh-install OCR and prompt defaults are English, with English/German prompt presets available. Keep UI language, OCR language and prompt language independent.
 
-Keep externally documented ports, secrets and integration contracts stable unless a migration is explicitly planned. The core image provides `core_service.py` as the default entry point and also retains standalone `worker.py`, `prompt_ui.py` and `suggestion_bridge.py` entry points for deployments that explicitly invoke them.
+Keep externally documented ports, secrets and integration contracts stable unless a migration is explicitly planned. The core image defaults to `/usr/local/bin/plai-core`; it retains `/app/core_service.py` as an exec-based compatibility shim and also retains standalone `worker.py`, `prompt_ui.py` and `suggestion_bridge.py` entry points for deployments that explicitly invoke them.
 
 ## Compatibility
 
@@ -80,6 +80,10 @@ Current published OCR support is linux/amd64. Do not claim ARM64 until the Paddl
 Before merging code changes:
 
 ```bash
+cargo fmt --all -- --check
+cargo check --locked --workspace --all-targets
+cargo test --locked --workspace
+cargo clippy --locked --workspace --all-targets -- -D warnings
 python -m compileall -q src tests scripts
 pytest -q
 docker compose -f compose.yaml config

@@ -33,6 +33,21 @@ jobs:
       - name: Unit and regression tests
         run: pytest -q
 
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal
+          rustup component add --toolchain 1.98.0 rustfmt clippy
+      - name: Rust checks
+        run: |
+          cargo fmt --all -- --check
+          cargo check --locked --workspace --all-targets
+          cargo test --locked --workspace
+          cargo clippy --locked --workspace --all-targets -- -D warnings
+
   compose:
     runs-on: ubuntu-latest
     steps:

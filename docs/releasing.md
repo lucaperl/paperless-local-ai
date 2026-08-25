@@ -20,7 +20,7 @@ The publish workflow refuses a release whose GitHub tag does not match `VERSION`
 
 A published GitHub Release:
 
-1. runs compile/unit/regression tests;
+1. runs Python compile/unit/regression tests and Rust format/check/test/Clippy gates;
 2. validates both published and development Compose configurations;
 3. builds linux/amd64 `core` and `ocr` images;
 4. logs into GHCR using the repository `GITHUB_TOKEN` with `packages: write`;
@@ -56,6 +56,10 @@ The Dockerfiles/workflow include the OCI source label so each package is linked 
 4. Run:
 
    ```bash
+   cargo fmt --all -- --check
+   cargo check --locked --workspace --all-targets
+   cargo test --locked --workspace
+   cargo clippy --locked --workspace --all-targets -- -D warnings
    python -m compileall -q src tests scripts
    pytest -q
    docker compose -f compose.yaml config

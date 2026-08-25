@@ -7,7 +7,7 @@
 - **OCR quality before classification:** PP-OCRv6 Medium is the quality-focused default, with Small and Tiny profiles for lower inference cost.
 - **One structured LLM request per document:** title, document type, date and sender/issuer are extracted together; tags join that request only when the selected tag route needs an LLM decision.
 - **Hybrid tagging:** recurring reviewed patterns can reuse a tag behind a strict evidence gate; uncertain cases use an LLM fallback with Tag Guidance and relevant reviewed examples.
-- **Local correspondent resolution:** the LLM extracts one free-text sender/issuer; Python resolves safe existing matches or exposes a plausible new name through Paperless Document Suggestions.
+- **Local correspondent resolution:** the LLM extracts one free-text sender/issuer; Rust resolves safe existing matches or exposes a plausible new name through Paperless Document Suggestions.
 - **Bounded resource usage:** PaddleOCR/OpenVINO, Hybrid-history work and Ollama share one AI resource lock; heavyweight OCR/history subprocesses and the Ollama model are released after use.
 
 ## Pipeline
@@ -69,11 +69,11 @@ One Compose project runs two long-lived services from two images:
 | Service | Purpose |
 |---|---|
 | `ocr-service` | authenticated PaddleOCR service used by the OCRmyPDF plugin |
-| `core-service` | one lightweight Python process hosting metadata queue polling, the Control Center, the optional suggestion bridge and the on-demand History broker |
+| `core-service` | one lightweight Rust process hosting metadata queue polling, the Control Center, the optional suggestion bridge and the on-demand History broker |
 
 The optional `doctor` profile uses the core image as a one-shot deployment check. Paperless and Ollama are external services. The suggestion-bridge endpoint is included in `core-service`, but configuring Paperless to use it is optional; without it, safe matching to existing correspondents still works and unmatched sender candidates are handled manually during review.
 
-The core image also provides standalone `worker.py`, `prompt_ui.py` and `suggestion_bridge.py` entry points for deployments that explicitly invoke those components.
+The core image defaults to `/usr/local/bin/plai-core`. It retains `/app/core_service.py` as an exec-based compatibility shim for stored 0.3.4 commands and also keeps standalone `worker.py`, `prompt_ui.py` and `suggestion_bridge.py` entry points for deployments that explicitly invoke them.
 
 ## OCRmyPDF integration
 
@@ -124,7 +124,7 @@ If the gate abstains, up to five relevant positive reviewed examples are supplie
 
 The configured review tag is the trust boundary and can have any name. It stays on a document until human review is complete. Documents still carrying review, classification-queue or classification-error tags are excluded, and the current document is excluded from its own lookup.
 
-The persistent unified core process does not import NumPy, SciPy or scikit-learn. `core-service` hosts a lightweight Unix-socket broker that starts one scientific history subprocess on demand. A validated local TF-IDF cache avoids refitting unchanged reviewed history, and the helper reconstructs the existing cosine nearest-neighbor view from the cached sparse matrix. Interactive Control Center lookups can reuse the helper for a short idle window; automatic metadata batches and model tests shut it down before Ollama starts.
+The persistent unified core is Rust and does not load NumPy, SciPy or scikit-learn. It hosts a lightweight Unix-socket broker that starts one Python scientific-history subprocess on demand. A validated local TF-IDF cache avoids refitting unchanged reviewed history, and the helper reconstructs the existing cosine nearest-neighbor view from the cached sparse matrix. Interactive Control Center lookups can reuse the helper for a short idle window; automatic metadata batches and model tests shut it down before Ollama starts.
 
 The cache is internal application state below `/data/history-cache`. It uses Python pickle protocol 5 only for artifacts created by this application, records exact Python/NumPy/SciPy/scikit-learn plus algorithm/source signatures, and is SHA-256 verified inside the disposable helper immediately before unpickling. The persistent UI checks only lightweight metadata/source state and never reads the cache blob into memory. Invalid caches are rebuilt and cache files are written atomically.
 

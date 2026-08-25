@@ -10,7 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 
 files = {}
-for path in sorted((ROOT / "src").rglob("*.py")):
+source_paths = list((ROOT / "src").rglob("*.py"))
+source_paths.extend((ROOT / "rust" / "core" / "src").rglob("*.rs"))
+source_paths.append(ROOT / "rust" / "core" / "build.rs")
+for path in sorted(source_paths):
     # Keep release manifests identical across Windows and Linux checkouts.
     with path.open("r", encoding="utf-8", newline=None) as handle:
         data = handle.read().encode("utf-8")
