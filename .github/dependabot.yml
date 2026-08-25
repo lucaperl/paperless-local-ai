@@ -19,11 +19,24 @@ updates:
       numpy-ocr:
         patterns:
           - "numpy"
-
+          
   - package-ecosystem: cargo
     directory: "/"
     schedule:
       interval: monthly
+
+    ignore:
+      # Unicode 17; keep Python 3.14 / Unicode 16 parity.
+      - dependency-name: "unicode-normalization"
+        versions: ["0.1.25"]
+
+      # Unicode 17; keep Python 3.14 / Unicode 16 parity.
+      - dependency-name: "unicase"
+        versions: ["2.9.0"]
+
+      # Breaking API change; requires an explicit code migration.
+      - dependency-name: "sha2"
+        versions: ["0.11.0"]
 
   - package-ecosystem: docker
     directory: "/docker"
