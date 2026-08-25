@@ -2,19 +2,14 @@
 
 ## Unreleased
 
-## 0.3.4-rc.2 - 2026-08-25
+## 0.3.4 - 2026-08-25
 
 ### Changed
 
-- consolidate metadata polling, the Control Center, the optional suggestion bridge and the lightweight History broker into one persistent `core-service` process/container, while keeping OCR isolated and preserving the existing public ports and legacy core entry points;
-
-## 0.3.4-rc.1 - 2026-08-25
-
-### Changed
-
-- move Hybrid history retrieval into an on-demand scientific subprocess behind a lightweight worker broker so persistent UI/worker processes do not keep NumPy, SciPy and scikit-learn resident;
+- move Hybrid history retrieval into an on-demand scientific subprocess so persistent runtime processes do not keep NumPy, SciPy and scikit-learn resident;
 - persist and validate a compact local TF-IDF history cache while preserving the existing cosine nearest-neighbor routing semantics, and rebuild on source/application/runtime mismatch;
-- keep interactive history work warm briefly while releasing the helper before metadata/model-test Ollama inference.
+- keep interactive history work warm briefly while releasing the helper before metadata/model-test Ollama inference;
+- consolidate metadata polling, the Control Center, the optional suggestion bridge and the lightweight History broker into one persistent `core-service` process/container, while keeping OCR isolated and preserving the existing public ports and standalone core entry points.
 
 ## 0.3.3 - 2026-08-24
 

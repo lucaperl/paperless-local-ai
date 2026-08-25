@@ -1,5 +1,5 @@
 {
-  "version": "0.3.4-rc.2",
+  "version": "0.3.4",
   "created": "2026-08-25",
   "source_files": {
     "src/common/app_config.py": "01ed2cfe2d5b2c5717d7f30e9fe1899f57106ffc1cb49f6bc58706b6a07090a9",
