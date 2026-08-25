@@ -34,7 +34,7 @@ Paperless itself already contains an automatic classifier that learns from exist
 
 **Sender extraction is followed by conservative local resolution.** The LLM returns the actual sender/issuer as free text. Normalized exact matches and deliberately strong unambiguous fuzzy matches can resolve to an existing Paperless correspondent. Other plausible names can be exposed through Document Suggestions when the optional bridge integration is configured; otherwise they remain unresolved for manual review.
 
-**Resource-aware execution.** PaddleOCR/OpenVINO, on-demand Hybrid-history work and Ollama inference share one resource lock. OCR sessions and interactive history lookups can be reused briefly, while heavyweight subprocesses and the Ollama model are released after use.
+**Resource-aware execution.** The persistent `core-service` runtime is one Rust process. PaddleOCR/OpenVINO, on-demand Hybrid-history work and Ollama inference share one resource lock. The scientific Hybrid-history stack runs only in a disposable Python subprocess; OCR sessions and interactive history lookups can be reused briefly, while heavyweight subprocesses and the Ollama model are released after use.
 
 ## Reference performance
 

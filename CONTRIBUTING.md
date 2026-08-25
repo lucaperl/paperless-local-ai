@@ -16,9 +16,15 @@ Create a Python environment and install development dependencies:
 python -m pip install -r requirements/dev.txt
 ```
 
+The Rust core uses the pinned Rust 1.98 toolchain from `rust-toolchain.toml`.
+
 Then run:
 
 ```bash
+cargo fmt --all -- --check
+cargo check --locked --workspace --all-targets
+cargo test --locked --workspace
+cargo clippy --locked --workspace --all-targets -- -D warnings
 python -m compileall -q src tests scripts
 pytest -q
 ```

@@ -45,7 +45,7 @@ services:
 
   core-service:
     <<: *core-image
-    command: ["python", "/app/core_service.py"]
+    command: ["/usr/local/bin/plai-core"]
     environment:
       PAPERLESS_TOKEN: ${PAPERLESS_TOKEN:?set PAPERLESS_TOKEN in .env}
       PROMPT_UI_HOST: 0.0.0.0
@@ -59,14 +59,7 @@ services:
     mem_limit: ${CORE_MEMORY_LIMIT:-512m}
     cpus: ${CORE_CPU_LIMIT:-0.5}
     healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - >-
-          import urllib.request;
-          urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=5).read();
-          urllib.request.urlopen('http://127.0.0.1:8081/api/version', timeout=5).read()
+      test: ["CMD", "/usr/local/bin/plai-core", "--healthcheck"]
       interval: 30s
       timeout: 10s
       retries: 3

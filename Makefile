@@ -1,9 +1,15 @@
-.PHONY: test compile compose-config dev-up dev-down doctor manifest
+.PHONY: test compile rust compose-config dev-up dev-down doctor manifest
 
 compile:
 	python -m compileall -q src tests scripts
 
-test: compile
+rust:
+	cargo fmt --all -- --check
+	cargo check --locked --workspace --all-targets
+	cargo test --locked --workspace
+	cargo clippy --locked --workspace --all-targets -- -D warnings
+
+test: compile rust
 	pytest -q
 
 compose-config:

@@ -42,8 +42,23 @@ jobs:
           docker compose -f compose.yaml config >/dev/null
           docker compose -f compose.yaml -f compose.dev.yaml config >/dev/null
 
+  verify-rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal
+          rustup component add --toolchain 1.98.0 rustfmt clippy
+      - name: Verify Rust core
+        run: |
+          cargo fmt --all -- --check
+          cargo check --locked --workspace --all-targets
+          cargo test --locked --workspace
+          cargo clippy --locked --workspace --all-targets -- -D warnings
+
   build:
-    needs: verify
+    needs: [verify, verify-rust]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

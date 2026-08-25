@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.3.5-rc.1 - 2026-08-25
+
+### Changed
+
+- replace the persistent Python core runtime with one Rust 1.98 process hosting metadata polling, the Control Center, the suggestion bridge and the lightweight History broker while preserving the two-service architecture and existing public ports and mounts;
+- keep the scikit-learn History engine as an on-demand Python subprocess so NumPy, SciPy and scikit-learn remain outside the persistent core;
+- retain the legacy `/app/core_service.py` command and standalone Python core entry points in the image for compatibility while new/default Compose deployments start `/usr/local/bin/plai-core`;
+- build the core image with a pinned Rust multi-stage build, use a native Rust health check, and add Rust format/check/test/clippy gates to CI and release verification.
+
+### Deployment
+
+- existing 0.3.4 Docker/TrueNAS deployments remain compatible: no new ports, mounts, secrets or required environment variables are introduced, and the legacy `/app/core_service.py` command execs the Rust core; fresh Compose templates start the Rust binary directly.
+
 ## 0.3.4 - 2026-08-25
 
 ### Changed

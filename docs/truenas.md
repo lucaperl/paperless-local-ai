@@ -81,7 +81,7 @@ ocr-service
 core-service
 ```
 
-`core-service` hosts metadata polling, the Control Center, the suggestion-bridge endpoint and the lightweight History broker in one persistent Python process. This avoids keeping three separate Python runtimes resident while preserving ports `30148` and `30149`.
+`core-service` hosts metadata polling, the Control Center, the suggestion-bridge endpoint and the lightweight History broker in one persistent Rust process. The scientific History engine remains an on-demand Python subprocess, while ports `30148` and `30149` stay unchanged.
 
 ## 4. Configure the Control Center
 

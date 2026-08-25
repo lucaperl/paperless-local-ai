@@ -6,15 +6,19 @@ This document is for maintainers and contributors.
 
 Every push and pull request runs:
 
-1. Python 3.12 compile checks;
-2. unit/regression tests;
+1. Python 3.12/3.14 compile and unit/regression tests;
+2. Rust 1.98 format, check, test and Clippy gates;
 3. Docker Compose configuration validation.
 
-Publishing a GitHub Release also verifies that the release tag matches `VERSION`, reruns tests, builds both amd64 images, publishes them to GHCR and creates build-provenance attestations.
+Publishing a GitHub Release also verifies that the release tag matches `VERSION`, reruns the Python and Rust checks, builds both amd64 images, publishes them to GHCR and creates build-provenance attestations.
 
 ## Local checks
 
 ```bash
+cargo fmt --all -- --check
+cargo check --locked --workspace --all-targets
+cargo test --locked --workspace
+cargo clippy --locked --workspace --all-targets -- -D warnings
 python -m compileall -q src tests scripts
 pytest -q
 docker compose -f compose.yaml config
