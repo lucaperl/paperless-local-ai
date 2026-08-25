@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.3.5-rc.2 - 2026-08-25
+
+### Fixed
+
+- replace the OCR worker's Python `multiprocessing` spawn lifecycle with a normal short-lived subprocess and private socket IPC so no persistent multiprocessing resource-tracker process remains after OCR;
+- page out read-only file-backed mappings immediately before disposable Paddle/OpenVINO and scientific History helpers exit, returning their cgroup memory close to the natural pre-run idle state without changing the warm-session behavior;
+- add a dedicated std-only Rust core healthcheck binary that verifies the same Control Center and suggestion-bridge endpoints without launching Python or the full core process.
+
+### Deployment
+
+- no ports, mounts, secrets or required environment variables change; existing stored TrueNAS healthchecks remain functional, but updating the core healthcheck command to `/usr/local/bin/plai-healthcheck` is recommended to receive the lower idle-memory footprint.
+
 ## 0.3.5-rc.1 - 2026-08-25
 
 ### Changed

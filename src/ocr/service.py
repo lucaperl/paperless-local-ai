@@ -5,9 +5,12 @@ import hmac
 import json
 import logging
 import math
-import multiprocessing as mp
 import os
+import select
 import shutil
+import socket
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -321,6 +324,86 @@ def _run_paddle(image_path: Path, model: Any, max_side_pixels: int) -> dict[str,
     }
 
 
+class _JsonSocketConnection:
+    """Small newline-delimited JSON channel over a local socketpair."""
+
+    def __init__(self, sock: socket.socket) -> None:
+        self._socket = sock
+        self._buffer = bytearray()
+        self._eof = False
+
+    def send(self, payload: dict[str, Any]) -> None:
+        encoded = (
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
+        ).encode("utf-8")
+        self._socket.sendall(encoded)
+
+    def poll(self, timeout: float | None = None) -> bool:
+        if b"\n" in self._buffer or self._eof:
+            return True
+        deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
+        while True:
+            remaining = None
+            if deadline is not None:
+                remaining = max(0.0, deadline - time.monotonic())
+            ready, _, _ = select.select([self._socket], [], [], remaining)
+            if not ready:
+                return False
+            chunk = self._socket.recv(65536)
+            if not chunk:
+                self._eof = True
+                return True
+            self._buffer.extend(chunk)
+            if b"\n" in self._buffer:
+                return True
+            if deadline is not None and time.monotonic() >= deadline:
+                return False
+
+    def recv(self) -> dict[str, Any]:
+        while b"\n" not in self._buffer:
+            if self._eof:
+                raise EOFError("Paddle worker closed IPC socket")
+            self.poll(None)
+        raw, _, rest = self._buffer.partition(b"\n")
+        self._buffer = bytearray(rest)
+        try:
+            payload = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ValueError("Paddle worker returned invalid JSON") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("Paddle worker returned a non-object JSON message")
+        return payload
+
+    def close(self) -> None:
+        try:
+            self._socket.close()
+        finally:
+            self._eof = True
+
+
+class _SubprocessWorker:
+    """Compatibility-shaped wrapper around subprocess.Popen."""
+
+    def __init__(self, process: subprocess.Popen[Any]) -> None:
+        self._process = process
+
+    def is_alive(self) -> bool:
+        return self._process.poll() is None
+
+    @property
+    def exitcode(self) -> int | None:
+        return self._process.poll()
+
+    def join(self, timeout: float | None = None) -> None:
+        try:
+            self._process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            pass
+
+    def terminate(self) -> None:
+        self._process.terminate()
+
+
 def _engine_process(conn: Any, ocr_config: dict[str, Any]) -> None:
     # Import Paddle only in the short-lived inference process. When this process
     # exits after the warm-session timeout, all Paddle allocations are returned
@@ -421,9 +504,8 @@ def _engine_process(conn: Any, ocr_config: dict[str, Any]) -> None:
 class PaddleSession:
     def __init__(self) -> None:
         self._mutex = threading.RLock()
-        self._ctx = mp.get_context("spawn")
-        self._process: mp.Process | None = None
-        self._conn: Any | None = None
+        self._process: _SubprocessWorker | None = None
+        self._conn: _JsonSocketConnection | None = None
         self._lock_file: Any | None = None
         self._last_used = 0.0
         self._started_at = 0.0
@@ -483,11 +565,30 @@ class PaddleSession:
 
     def _start(self) -> float:
         lock_wait = self._acquire_global_lock()
-        parent_conn, child_conn = self._ctx.Pipe()
+        parent_sock, child_sock = socket.socketpair()
+        parent_conn = _JsonSocketConnection(parent_sock)
         config = self._current_ocr_config()
-        process = self._ctx.Process(target=_engine_process, args=(child_conn, config), daemon=True)
-        process.start()
-        child_conn.close()
+        engine_script = Path(__file__).with_name("paddle_engine.py")
+        try:
+            popen = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-B",
+                    str(engine_script),
+                    str(child_sock.fileno()),
+                    json.dumps(config, ensure_ascii=False, separators=(",", ":")),
+                ],
+                stdin=subprocess.DEVNULL,
+                close_fds=True,
+                pass_fds=(child_sock.fileno(),),
+            )
+        except Exception:
+            parent_conn.close()
+            child_sock.close()
+            self._release_global_lock()
+            raise
+        child_sock.close()
+        process = _SubprocessWorker(popen)
         try:
             if not parent_conn.poll(180):
                 raise RetryableOCRError("Timed out waiting for PaddleOCR model initialization")

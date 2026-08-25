@@ -6,7 +6,7 @@ COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY rust/core/ rust/core/
 COPY src/core/prompt_ui.py src/core/prompt_ui.py
 
-RUN cargo build --locked --release -p plai-core
+RUN cargo build --locked --release -p plai-core --bin plai-core --bin plai-healthcheck
 
 FROM python:3.14-slim-bookworm
 
@@ -34,6 +34,7 @@ RUN python -m pip install --no-cache-dir --disable-pip-version-check -r /tmp/req
 COPY src/common/ /app/
 COPY src/core/ /app/
 COPY --from=rust-builder /src/target/release/plai-core /usr/local/bin/plai-core
+COPY --from=rust-builder /src/target/release/plai-healthcheck /usr/local/bin/plai-healthcheck
 
 # Compatibility for stored 0.3.4 TrueNAS/Compose commands. execv replaces the
 # short-lived Python shim with the Rust process, so Python does not stay resident.

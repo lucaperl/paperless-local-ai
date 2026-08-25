@@ -73,7 +73,7 @@ One Compose project runs two long-lived services from two images:
 
 The optional `doctor` profile uses the core image as a one-shot deployment check. Paperless and Ollama are external services. The suggestion-bridge endpoint is included in `core-service`, but configuring Paperless to use it is optional; without it, safe matching to existing correspondents still works and unmatched sender candidates are handled manually during review.
 
-The core image defaults to `/usr/local/bin/plai-core`. It retains `/app/core_service.py` as an exec-based compatibility shim for stored 0.3.4 commands and also keeps standalone `worker.py`, `prompt_ui.py` and `suggestion_bridge.py` entry points for deployments that explicitly invoke them.
+The core image defaults to `/usr/local/bin/plai-core`. It retains `/app/core_service.py` as an exec-based compatibility shim for stored 0.3.4 commands and also keeps standalone `worker.py`, `prompt_ui.py` and `suggestion_bridge.py` entry points for deployments that explicitly invoke them. A separate std-only `/usr/local/bin/plai-healthcheck` probes the Control Center and suggestion bridge without starting the full core or Python.
 
 ## OCRmyPDF integration
 
@@ -83,7 +83,7 @@ The plugin is verified against OCRmyPDF **17.4.2** as bundled by Paperless-ngx *
 
 ## OCR service lifecycle
 
-The OCR service keeps the heavyweight Paddle worker in a spawned subprocess. It acquires the shared `ai.lock`, initializes the selected PP-OCRv6 profile on the first required page, reuses the process briefly across consecutive pages and tears it down after the idle timeout before releasing the lock.
+The OCR service keeps the heavyweight Paddle worker in a normal short-lived Python subprocess connected over a private local socket. It acquires the shared `ai.lock`, initializes the selected PP-OCRv6 profile on the first required page, reuses the process briefly across consecutive pages and tears it down after the idle timeout before releasing the lock. The disposable worker pages out its read-only file-backed mappings immediately before final process exit so Paddle/OpenVINO code pages do not remain charged to the idle OCR cgroup; no Python multiprocessing helper remains resident.
 
 Transient worker/service failures use bounded automatic retries. Deterministic configuration/input failures fail immediately. Recovery state is exposed through the Control Center without exposing document content through the unauthenticated health endpoint.
 
@@ -124,7 +124,7 @@ If the gate abstains, up to five relevant positive reviewed examples are supplie
 
 The configured review tag is the trust boundary and can have any name. It stays on a document until human review is complete. Documents still carrying review, classification-queue or classification-error tags are excluded, and the current document is excluded from its own lookup.
 
-The persistent unified core is Rust and does not load NumPy, SciPy or scikit-learn. It hosts a lightweight Unix-socket broker that starts one Python scientific-history subprocess on demand. A validated local TF-IDF cache avoids refitting unchanged reviewed history, and the helper reconstructs the existing cosine nearest-neighbor view from the cached sparse matrix. Interactive Control Center lookups can reuse the helper for a short idle window; automatic metadata batches and model tests shut it down before Ollama starts.
+The persistent unified core is Rust and does not load NumPy, SciPy or scikit-learn. It hosts a lightweight Unix-socket broker that starts one Python scientific-history subprocess on demand. A validated local TF-IDF cache avoids refitting unchanged reviewed history, and the helper reconstructs the existing cosine nearest-neighbor view from the cached sparse matrix. Interactive Control Center lookups can reuse the helper for a short idle window; automatic metadata batches and model tests shut it down before Ollama starts. On final helper shutdown, read-only file-backed scientific-runtime mappings are paged out before immediate process exit so they do not become persistent core cgroup cache.
 
 The cache is internal application state below `/data/history-cache`. It uses Python pickle protocol 5 only for artifacts created by this application, records exact Python/NumPy/SciPy/scikit-learn plus algorithm/source signatures, and is SHA-256 verified inside the disposable helper immediately before unpickling. The persistent UI checks only lightweight metadata/source state and never reads the cache blob into memory. Invalid caches are rebuilt and cache files are written atomically.
 

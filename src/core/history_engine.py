@@ -14,6 +14,7 @@ from typing import Any
 from sklearn.exceptions import InconsistentVersionWarning
 
 from app_config import load_config as load_app_config
+from memory_reclaim import page_out_self_file_mappings
 from history_common import (
     HISTORY_CACHE_DIR,
     HISTORY_CACHE_FILE,
@@ -302,5 +303,33 @@ def main() -> None:
             return
 
 
+def _reclaim_before_process_exit() -> None:
+    try:
+        stats = page_out_self_file_mappings()
+        message = (
+            "[HISTORY-ENGINE] final file-mapping reclaim: "
+            f"accepted={stats['accepted_bytes'] / 1048576:.1f} MiB "
+            f"attempted={stats['attempted_bytes'] / 1048576:.1f} MiB "
+            f"failed_mappings={stats['failed_mappings']}\\n"
+        )
+        try:
+            os.write(2, message.encode("utf-8", errors="replace"))
+        except OSError:
+            pass
+    except BaseException as exc:
+        try:
+            os.write(
+                2,
+                (
+                    "[HISTORY-ENGINE] final file-mapping reclaim skipped: "
+                    f"{type(exc).__name__}: {exc}\\n"
+                ).encode("utf-8", errors="replace"),
+            )
+        except OSError:
+            pass
+
+
 if __name__ == "__main__":
     main()
+    _reclaim_before_process_exit()
+    os._exit(0)
