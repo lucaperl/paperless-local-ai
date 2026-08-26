@@ -168,6 +168,7 @@ class HistoryIndex:
         confident = (
             top[1] >= self._matching["match_similarity"]
             and top_tags == winner
+            and bool(winner)
             and len(winner) <= self._matching["max_tags"]
             and supports[winner] >= self._matching["min_support"]
             and share >= self._matching["min_winner_share"]

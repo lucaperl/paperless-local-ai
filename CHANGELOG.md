@@ -9,7 +9,7 @@
 
 ### Changed
 
-- Hybrid History now votes on complete reviewed leaf-tag sets and can safely reuse reviewed multi-tag combinations; combinations not established by reviewed History continue to fall back to the LLM instead of being synthesized by History.
+- Hybrid History now votes on complete reviewed leaf-tag sets and can reuse reviewed multi-tag combinations; History never synthesizes new combinations, and cases without a confident observed-set match fall back to the LLM.
 - raise the default confident-History similarity gate from `0.60` to `0.62`; the default support and weighted winner-share gates remain `2` and `0.50`.
 
 ## 0.3.5 - 2026-08-25

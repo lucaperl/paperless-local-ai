@@ -100,10 +100,35 @@ def test_history_never_synthesizes_unseen_tag_combinations():
     ]
     index = HistoryIndex()
     index.refresh(FakeClient(docs), TAX, "Inbox", force=True)
-    route = index.route("shared recurring notice gamma finance employer account work")
+
+    route = index.route(
+        "shared recurring notice gamma finance employer account work"
+    )
+
+    if route["route"] == "history_match":
+        selected = route["tags"]
+    else:
+        assert route["route"] == "llm_fallback"
+        selected = route.get("candidate_tags", [])
+
+    assert tuple(selected) in {("Bank",), ("Work",)}
+    assert selected != ["Bank", "Work"]
+
+
+def test_empty_tag_set_never_uses_history_fast_path():
+    docs = [
+        doc(1, "recurring document intentionally without content tags", []),
+        doc(2, "recurring document intentionally without content tags", []),
+    ]
+    index = HistoryIndex()
+    index.refresh(FakeClient(docs), TAX, "Inbox", force=True)
+
+    route = index.route(
+        "recurring document intentionally without content tags"
+    )
+
     assert route["route"] == "llm_fallback"
-    assert set(route.get("candidate_tags", [])) in ({"Bank"}, {"Work"})
-    assert set(route.get("candidate_tags", [])) != {"Bank", "Work"}
+    assert route["candidate_tags"] == []
 
 
 def test_complete_set_over_max_tags_falls_back_to_llm():

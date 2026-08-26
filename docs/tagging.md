@@ -57,11 +57,11 @@ A reviewed set is reused only when **all** of these conditions hold:
 - the winning set receives at least the configured **Minimum winner share** of the similarity-weighted set vote; default `0.50`;
 - the complete set contains no more tags than the configured **Maximum LLM tags** limit.
 
-If any condition fails, Hybrid tagging abstains and routes tag selection to the LLM. This includes plausible combinations whose individual tags have historical support but whose complete combination has not been established by reviewed History.
+If any condition fails, Hybrid tagging abstains and routes tag selection to the LLM. History can only return complete tag sets that occur in reviewed documents; it never constructs a new set from individually supported tags.
 
 ### Advanced History matching
 
-The three confidence values above are exposed under **Control Center → Classification → Tagging → History health → Advanced History matching** and are saved as versioned App Settings. Lowering them increases automatic History coverage but also increases the risk of accepting an incorrect complete tag set. Supported ranges are `0.50?1.00` for similarity, `2?5` for support and `0.50?1.00` for winner share. The remaining retrieval, example-selection and inconsistency-diagnostic constants are implementation details rather than user-facing tuning knobs.
+The three confidence values above are exposed under **Control Center → Classification → Tagging → History health → Advanced History matching** and are saved as versioned App Settings. Lowering them increases automatic History coverage but also increases the risk of accepting an incorrect complete tag set. Supported ranges are `0.50 to 1.00` for similarity, `2 to 5` for support and `0.50 to 1.00` for winner share. The remaining retrieval, example-selection and inconsistency-diagnostic constants are implementation details rather than user-facing tuning knobs.
 
 Changing one of these controls changes the History algorithm signature, so cached diagnostics are considered stale until the index is rebuilt automatically on the next Hybrid use or manually with **Refresh reviewed history**.
 

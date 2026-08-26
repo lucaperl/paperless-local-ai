@@ -6,7 +6,7 @@
 
 - **OCR quality before classification:** PP-OCRv6 Medium is the quality-focused default, with Small and Tiny profiles for lower inference cost.
 - **One structured LLM request per document:** title, document type, date and sender/issuer are extracted together; tags join that request only when the selected tag route needs an LLM decision.
-- **Hybrid tagging:** recurring reviewed patterns can reuse a complete known leaf-tag set behind a strict evidence gate; uncertain or unseen combinations use an LLM fallback with Tag Guidance and relevant reviewed examples.
+- **Hybrid tagging:** recurring reviewed patterns can reuse a complete known leaf-tag set behind a strict evidence gate; cases without a confident observed-set match use an LLM fallback with Tag Guidance and relevant reviewed examples.
 - **Local correspondent resolution:** the LLM extracts one free-text sender/issuer; Rust resolves safe existing matches or exposes a plausible new name through Paperless Document Suggestions.
 - **Bounded resource usage:** PaddleOCR/OpenVINO, Hybrid-history work and Ollama share one AI resource lock; heavyweight OCR/history subprocesses and the Ollama model are released after use.
 

@@ -12,7 +12,7 @@ Title, document type, date and sender/issuer are extracted in one structured LLM
 ## Highlights
 
 - **Improved scan OCR with PaddleOCR** — PP-OCRv6 Medium is the quality-focused default, with Small and Tiny profiles when lower inference cost matters.
-- **Hybrid tagging** — compares new documents with reviewed Paperless documents, reuses a complete known leaf-tag set only behind a strict similarity/agreement gate, and sends uncertain or unseen combinations to the LLM with relevant reviewed examples and optional Tag Guidance.
+- **Hybrid tagging** — compares new documents with reviewed Paperless documents, reuses a complete known leaf-tag set only behind a strict similarity/agreement gate, and sends cases without a confident observed-set match to the LLM with relevant reviewed examples and optional Tag Guidance.
 - **LLM direct** — lets a sufficiently capable local model choose tags directly from the Paperless taxonomy.
 - **Editable prompt composition** — System, Base classification and Tagging prompts are all editable. The Tagging prompt is sent only when the LLM actually has to choose tags.
 - **One LLM request per document** — title, type, date and sender/issuer are produced together; tags are included in the same request only on an LLM tag route.
@@ -28,7 +28,7 @@ Title, document type, date and sender/issuer are extracted in one structured LLM
 
 **Semantic metadata stays with the LLM.** Title, document type, date and sender/issuer benefit directly from document understanding, so they are produced together by the configured Ollama model.
 
-**Tags use an explicit Hybrid route by default.** Compact local models can understand what a document is about while still applying a personal filing taxonomy inconsistently. Hybrid tagging first compares the document with already reviewed Paperless documents. A complete reviewed leaf-tag set is reused only when the closest match is sufficiently similar and nearby reviewed examples agree strongly enough on that exact set. History never synthesizes a new tag combination; if the evidence is not strong enough or the combination is unseen, the LLM chooses the tags using the current Tag Guidance and relevant reviewed examples.
+**Tags use an explicit Hybrid route by default.** Compact local models can understand what a document is about while still applying a personal filing taxonomy inconsistently. Hybrid tagging first compares the document with already reviewed Paperless documents. A complete reviewed leaf-tag set is reused only when the closest match is sufficiently similar and nearby reviewed examples agree strongly enough on that exact set. History considers only complete tag sets already present in reviewed history and never synthesizes a new combination. If no observed set passes the evidence gate, the LLM chooses the tags using the current Tag Guidance and relevant reviewed examples.
 
 Paperless itself already contains an automatic classifier that learns from existing documents. The Hybrid route serves a different integration goal: it exposes an explicit evidence gate before reuse, can hand uncertain cases to the local LLM, and uses the same retrieved documents as examples for that fallback. It does **not** claim to be universally more accurate than Paperless' classifier. See [Tagging](docs/tagging.md#paperless-native-classifier-vs-hybrid-tagging) for the technical comparison.
 
