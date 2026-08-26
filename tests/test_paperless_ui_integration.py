@@ -4,6 +4,7 @@ import importlib
 import json
 import sys
 from pathlib import Path
+from types import ModuleType
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,7 +52,6 @@ def test_disabled_is_noop(tmp_path, monkeypatch):
     response = Response()
     original = response.content
     assert module.inject_response(response).content == original
-    assert response.headers["X-Paperless-Local-AI-UI"] == "ready"
 
 
 def test_enabled_injects_settings_link_script(tmp_path, monkeypatch):
@@ -67,7 +67,6 @@ def test_enabled_injects_settings_link_script(tmp_path, monkeypatch):
     assert 'document.createTextNode("paperless-local-ai")' in text
     assert "https://plai.example/" in text
     assert 'href === "admin/"' in text
-    assert response.headers["X-Paperless-Local-AI-UI"] == "ready"
     assert response.headers["Content-Length"] == str(len(response.content))
 
 
@@ -96,3 +95,60 @@ def test_embedded_url_cannot_break_out_of_script(tmp_path, monkeypatch):
     text = response.content.decode()
     assert "</script><script>alert(1)</script>" not in text
     assert "\\u003c/script\\u003e" in text
+
+
+
+def _middleware_module(monkeypatch, *, attach_error: bool = False):
+    injection = importlib.import_module("paperless_local_ai_ui.injection")
+
+    documents = ModuleType("documents")
+    documents.__path__ = []
+    views = ModuleType("documents.views")
+
+    class IndexView:
+        pass
+
+    views.IndexView = IndexView
+    documents.views = views
+    monkeypatch.setitem(sys.modules, "documents", documents)
+    monkeypatch.setitem(sys.modules, "documents.views", views)
+
+    attached = []
+
+    if attach_error:
+        def fail(_index_view):
+            raise RuntimeError("attach failed")
+
+        monkeypatch.setattr(injection, "patch_index_view", fail)
+    else:
+        monkeypatch.setattr(injection, "patch_index_view", attached.append)
+
+    sys.modules.pop("paperless_local_ai_ui.middleware", None)
+    module = importlib.import_module("paperless_local_ai_ui.middleware")
+    return module, attached, IndexView
+
+
+def test_middleware_marks_responses_after_successful_attach(monkeypatch):
+    module, attached, index_view = _middleware_module(monkeypatch)
+    response = Response(content=b"")
+
+    middleware = module.PaperlessLocalAiUiMiddleware(lambda _request: response)
+    result = middleware(None)
+
+    assert attached == [index_view]
+    assert result is response
+    assert result.headers["X-Paperless-Local-AI-UI"] == "ready"
+
+
+def test_middleware_does_not_claim_ready_when_attach_fails(monkeypatch):
+    module, _attached, _index_view = _middleware_module(
+        monkeypatch,
+        attach_error=True,
+    )
+    response = Response(content=b"")
+
+    middleware = module.PaperlessLocalAiUiMiddleware(lambda _request: response)
+    result = middleware(None)
+
+    assert result is response
+    assert "X-Paperless-Local-AI-UI" not in result.headers
