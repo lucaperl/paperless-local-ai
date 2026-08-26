@@ -1,5 +1,5 @@
 {
-  "version": "0.3.6",
+  "version": "0.3.7",
   "created": "2026-08-27",
   "source_files": {
     "rust/core/build.rs": "0f3157e332b38b94b0be05928688cfecc40f182fda237c84e79c301be5f37f49",
