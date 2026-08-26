@@ -238,7 +238,12 @@ def process(
         )
         result["correspondent"] = correspondent_resolution["resolved"]
         if route == "history_match":
-            result["tags"] = [tagging["tag"]]
+            history_tags = tagging.get("tags")
+            if isinstance(history_tags, list):
+                result["tags"] = list(history_tags)
+            else:
+                tag = tagging.get("tag")
+                result["tags"] = [tag] if tag else []
         else:
             result["tags"] = prune_parent_tag_names(result.get("tags", []), tax)
 

@@ -18,6 +18,9 @@ pub const OCR_MAX_SIDE_PIXELS_MAX: u32 = 4000;
 pub const OCR_RETRY_DELAYS_DEFAULT: &[u32] = &[15, 60, 300, 600];
 pub const OCR_RETRY_DELAYS_MAX_COUNT: usize = 10;
 pub const OCR_RETRY_DELAY_MAX_SECONDS: u32 = 86_400;
+pub const HISTORY_MATCH_SIMILARITY_DEFAULT: f64 = 0.62;
+pub const HISTORY_MIN_SUPPORT_DEFAULT: u64 = 2;
+pub const HISTORY_MIN_WINNER_SHARE_DEFAULT: f64 = 0.50;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConnectionsConfig {
@@ -31,6 +34,13 @@ pub struct WorkflowConfig {
     pub llm_error_tag: String,
     pub review_tag: String,
     pub extra_excluded_tags: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HistoryConfig {
+    pub match_similarity: f64,
+    pub min_support: u64,
+    pub min_winner_share: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -56,12 +66,13 @@ pub struct PaperlessUiConfig {
     pub control_center_url: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AppConfig {
     pub version: u64,
     pub updated_at: Option<String>,
     pub connections: ConnectionsConfig,
     pub workflow: WorkflowConfig,
+    pub history: HistoryConfig,
     pub ocr: OcrConfig,
     pub runtime: RuntimeConfig,
     pub paperless_ui: PaperlessUiConfig,
@@ -81,6 +92,11 @@ impl Default for AppConfig {
                 llm_error_tag: "LLM Error".into(),
                 review_tag: "Inbox".into(),
                 extra_excluded_tags: vec!["TODO".into()],
+            },
+            history: HistoryConfig {
+                match_similarity: HISTORY_MATCH_SIMILARITY_DEFAULT,
+                min_support: HISTORY_MIN_SUPPORT_DEFAULT,
+                min_winner_share: HISTORY_MIN_WINNER_SHARE_DEFAULT,
             },
             ocr: OcrConfig {
                 language: "en".into(),
@@ -159,7 +175,14 @@ impl AppConfig {
             .cloned()
             .expect("default app config serializes to an object");
 
-        for section in ["connections", "workflow", "ocr", "runtime", "paperless_ui"] {
+        for section in [
+            "connections",
+            "workflow",
+            "history",
+            "ocr",
+            "runtime",
+            "paperless_ui",
+        ] {
             copy_known_section(&mut merged, raw, section)?;
         }
         if let Some(version) = raw.get("version") {
@@ -210,6 +233,26 @@ impl AppConfig {
             }
         }
         self.workflow.extra_excluded_tags = extra;
+
+        if !self.history.match_similarity.is_finite()
+            || !(0.5..=1.0).contains(&self.history.match_similarity)
+        {
+            return Err(Error::Config(
+                "history.match_similarity must be between 0.5 and 1".into(),
+            ));
+        }
+        if !(2..=5).contains(&self.history.min_support) {
+            return Err(Error::Config(
+                "history.min_support must be between 2 and 5".into(),
+            ));
+        }
+        if !self.history.min_winner_share.is_finite()
+            || !(0.5..=1.0).contains(&self.history.min_winner_share)
+        {
+            return Err(Error::Config(
+                "history.min_winner_share must be between 0.5 and 1".into(),
+            ));
+        }
 
         self.ocr.language = nonempty(&self.ocr.language, "ocr.language")?;
         self.ocr.version = nonempty(&self.ocr.version, "ocr.version")?;
@@ -553,6 +596,9 @@ mod tests {
         assert_eq!(cfg.ocr.model_profile, "medium");
         assert_eq!(cfg.ocr.max_side_pixels, 3000);
         assert_eq!(cfg.ocr.retry_delays_seconds, vec![15, 60, 300, 600]);
+        assert_eq!(cfg.history.match_similarity, 0.62);
+        assert_eq!(cfg.history.min_support, 2);
+        assert_eq!(cfg.history.min_winner_share, 0.50);
     }
 
     #[test]
@@ -563,6 +609,36 @@ mod tests {
             assert!(tags.contains(tag));
         }
         assert!(!tags.contains("PaddleOCR"));
+    }
+
+    #[test]
+    fn history_matching_bounds_are_enforced() {
+        let mut cfg = AppConfig::default();
+        cfg.history.match_similarity = 1.01;
+        assert!(
+            cfg.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("match_similarity")
+        );
+
+        let mut cfg = AppConfig::default();
+        cfg.history.min_support = 6;
+        assert!(
+            cfg.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("min_support")
+        );
+
+        let mut cfg = AppConfig::default();
+        cfg.history.min_winner_share = -0.01;
+        assert!(
+            cfg.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("min_winner_share")
+        );
     }
 
     #[test]

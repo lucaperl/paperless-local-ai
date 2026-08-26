@@ -72,8 +72,86 @@ def test_confident_repeated_history_routes_without_llm():
     assert status["status"] == "Ready"
     route = index.route("salary statement employer september payroll gross net")
     assert route["route"] == "history_match"
+    assert route["tags"] == ["Work"]
     assert route["tag"] == "Work"
     assert route["support"] >= 2
+
+
+def test_confident_repeated_multi_tag_set_routes_without_llm():
+    docs = [
+        doc(1, "vehicle insurance tax renault registration alpha", [1, 2, 3]),
+        doc(2, "vehicle insurance tax renault registration beta", [1, 2, 3]),
+        doc(3, "salary statement employer payroll gross net", [3]),
+    ]
+    index = HistoryIndex()
+    index.refresh(FakeClient(docs), TAX, "Inbox", force=True)
+    route = index.route("vehicle insurance tax renault registration gamma")
+    assert route["route"] == "history_match"
+    assert route["tags"] == ["Bank", "Work"]
+    assert route["tag"] is None
+
+
+def test_history_never_synthesizes_unseen_tag_combinations():
+    docs = [
+        doc(1, "shared recurring notice alpha finance account", [1, 2]),
+        doc(2, "shared recurring notice beta finance account", [1, 2]),
+        doc(3, "shared recurring notice alpha employer work", [3]),
+        doc(4, "shared recurring notice beta employer work", [3]),
+    ]
+    index = HistoryIndex()
+    index.refresh(FakeClient(docs), TAX, "Inbox", force=True)
+
+    route = index.route(
+        "shared recurring notice gamma finance employer account work"
+    )
+
+    if route["route"] == "history_match":
+        selected = route["tags"]
+    else:
+        assert route["route"] == "llm_fallback"
+        selected = route.get("candidate_tags", [])
+
+    assert tuple(selected) in {("Bank",), ("Work",)}
+    assert selected != ["Bank", "Work"]
+
+
+def test_empty_tag_set_never_uses_history_fast_path():
+    docs = [
+        doc(1, "recurring document intentionally without content tags", []),
+        doc(2, "recurring document intentionally without content tags", []),
+    ]
+    index = HistoryIndex()
+    index.refresh(FakeClient(docs), TAX, "Inbox", force=True)
+
+    route = index.route(
+        "recurring document intentionally without content tags"
+    )
+
+    assert route["route"] == "llm_fallback"
+    assert route["candidate_tags"] == []
+
+
+def test_complete_set_over_max_tags_falls_back_to_llm():
+    docs = [
+        doc(1, "vehicle insurance tax renault registration alpha", [1, 2, 3]),
+        doc(2, "vehicle insurance tax renault registration beta", [1, 2, 3]),
+    ]
+    index = HistoryIndex({"match_similarity": 0.62, "min_support": 2, "min_winner_share": 0.50, "max_tags": 1})
+    index.refresh(FakeClient(docs), TAX, "Inbox", force=True)
+    route = index.route("vehicle insurance tax renault registration gamma")
+    assert route["route"] == "llm_fallback"
+    assert route["candidate_tags"] == ["Bank", "Work"]
+
+
+def test_configured_similarity_threshold_is_honored():
+    docs = [
+        doc(1, "salary statement employer august payroll gross net", [3]),
+        doc(2, "salary statement employer july payroll gross net", [3]),
+    ]
+    index = HistoryIndex({"match_similarity": 1.0, "min_support": 2, "min_winner_share": 0.50, "max_tags": 2})
+    index.refresh(FakeClient(docs), TAX, "Inbox", force=True)
+    route = index.route("salary statement employer september payroll gross net")
+    assert route["route"] == "llm_fallback"
 
 
 def test_ambiguous_history_falls_back_to_llm_with_positive_examples():

@@ -22,7 +22,7 @@ Do not turn it into a bundled Paperless distribution, an Ollama distribution, or
 - Normal metadata processing uses one structured LLM request per document.
 - Correspondent output is free-text extraction; local resolver logic decides whether an existing correspondent is safe to apply. Genuinely new correspondents are never auto-created.
 - The user-facing tag strategies are **Hybrid tagging** and **LLM direct**. Internal config values stay `history_assisted` and `llm_only` for stability.
-- Hybrid automatic reuse is confidence-gated and read-only with respect to historical Paperless metadata.
+- Hybrid automatic reuse is confidence-gated and read-only with respect to historical Paperless metadata. A confident route may reuse one complete reviewed leaf-tag set (including multiple tags); History never synthesizes an unseen tag combination.
 - Documents carrying the configured review tag are not trusted as retrieval/examples. The current document is excluded from its own lookup.
 - Tag Guidance affects LLM tag decisions only and must not change deterministic confident Hybrid matches.
 - Potential tag inconsistency diagnostics are advisory only and must never rewrite historical tags.
@@ -38,7 +38,7 @@ Classification prompt behavior is user-configurable in `/config/prompt-config.js
 
 Do not hide normal tag-classification policy in hardcoded runtime prose. The runtime may enforce structural invariants, schema constraints and route composition, but user-facing model instructions belong in editable prompt fields/presets.
 
-A confident Hybrid route must omit the Tagging prompt, Tag Guidance, retrieved examples, tag list and the `tags` property from the LLM schema. The application inserts the deterministic reviewed tag after base-result validation.
+A confident Hybrid route must omit the Tagging prompt, Tag Guidance, retrieved examples, tag list and the `tags` property from the LLM schema. The application inserts the deterministic complete reviewed leaf-tag set after base-result validation.
 
 ## Configuration ownership
 
@@ -48,7 +48,7 @@ Do not scatter settings.
 - Paperless-side OCR plugin values stay in the Paperless deployment because Paperless must know them at start.
 - Shared runtime: `/config/app-config.json`, owned by Control Center → App Settings.
 - Classification: `/config/prompt-config.json`, including prompt components, model settings, tagging strategy and per-tag guidance.
-- History similarity thresholds stay implementation constants unless a supported operator use case is explicitly added.
+- The supported History gate controls are versioned App Settings: minimum similarity, minimum support and minimum winner share. Other History implementation constants stay in code unless a supported operator use case is explicitly added.
 - Internal implementation constants stay code unless there is a supported operator use case.
 
 The Paperless API token and OCR service token must never be written to app-config/history or returned by the Control Center API.

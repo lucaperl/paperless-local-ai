@@ -8,6 +8,12 @@ import socket
 from pathlib import Path
 from typing import Any
 
+from app_config import (
+    HISTORY_MATCH_SIMILARITY_DEFAULT,
+    HISTORY_MIN_SUPPORT_DEFAULT,
+    HISTORY_MIN_WINNER_SHARE_DEFAULT,
+)
+
 
 HISTORY_CACHE_DIR = Path(os.getenv("PLAI_HISTORY_CACHE_DIR", "/data/history-cache"))
 HISTORY_CACHE_FILE = HISTORY_CACHE_DIR / "index.pkl"
@@ -23,24 +29,41 @@ HISTORY_PROTOCOL_MAX_BYTES = int(
     os.getenv("PLAI_HISTORY_PROTOCOL_MAX_BYTES", str(32 * 1024 * 1024))
 )
 HISTORY_CACHE_FORMAT_VERSION = 1
-HISTORY_ALGORITHM_VERSION = "tfidf-word12-char35-nearest-neighbors-cosine-v1"
+HISTORY_ALGORITHM_VERSION = "tfidf-word12-char35-nearest-neighbors-cosine-labelset-v2"
 HISTORY_APP_VERSION = os.getenv("APP_VERSION", "dev").strip() or "dev"
 
-FAST_SIMILARITY = 0.60
+FAST_SIMILARITY = HISTORY_MATCH_SIMILARITY_DEFAULT
 FAMILY_SIMILARITY = 0.50
 EXAMPLE_MIN_SIMILARITY = 0.08
 TOP_VOTE_NEIGHBORS = 5
 QUERY_NEIGHBORS = 30
-MIN_SUPPORT = 2
-MIN_WINNER_SHARE = 0.50
+MIN_SUPPORT = HISTORY_MIN_SUPPORT_DEFAULT
+MIN_WINNER_SHARE = HISTORY_MIN_WINNER_SHARE_DEFAULT
 MAX_EXAMPLES = 5
 MAX_EXAMPLES_PER_TAG_SET = 2
 MAX_DIAGNOSTIC_DOCS = 2000
 
-def history_algorithm_signature() -> dict[str, Any]:
+def history_matching_settings(
+    app_cfg: dict[str, Any] | None = None,
+    max_tags: int = 2,
+) -> dict[str, Any]:
+    history = app_cfg.get("history", {}) if isinstance(app_cfg, dict) else {}
+    return {
+        "match_similarity": float(history.get("match_similarity", FAST_SIMILARITY)),
+        "min_support": int(history.get("min_support", MIN_SUPPORT)),
+        "min_winner_share": float(history.get("min_winner_share", MIN_WINNER_SHARE)),
+        "max_tags": int(max_tags),
+    }
+
+
+def history_algorithm_signature(
+    matching: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Cache-relevant algorithm parameters that must invalidate derived status/index state."""
+    matching = matching or history_matching_settings()
     return {
         "version": HISTORY_ALGORITHM_VERSION,
+        "decision_unit": "complete_leaf_tag_set",
         "word_ngram_range": [1, 2],
         "char_analyzer": "char_wb",
         "char_ngram_range": [3, 5],
@@ -49,13 +72,14 @@ def history_algorithm_signature() -> dict[str, Any]:
         "retrieval_estimator": "NearestNeighbors",
         "retrieval_metric": "cosine",
         "retrieval_algorithm": "brute",
-        "fast_similarity": FAST_SIMILARITY,
+        "match_similarity": matching["match_similarity"],
         "family_similarity": FAMILY_SIMILARITY,
         "example_min_similarity": EXAMPLE_MIN_SIMILARITY,
         "top_vote_neighbors": TOP_VOTE_NEIGHBORS,
         "query_neighbors": QUERY_NEIGHBORS,
-        "min_support": MIN_SUPPORT,
-        "min_winner_share": MIN_WINNER_SHARE,
+        "min_support": matching["min_support"],
+        "min_winner_share": matching["min_winner_share"],
+        "max_tags": matching["max_tags"],
         "max_examples": MAX_EXAMPLES,
         "max_examples_per_tag_set": MAX_EXAMPLES_PER_TAG_SET,
         "max_diagnostic_docs": MAX_DIAGNOSTIC_DOCS,
@@ -206,7 +230,10 @@ def fetch_reviewed_documents(
     return entries
 
 
-def empty_history_status() -> dict[str, Any]:
+def empty_history_status(
+    matching: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    matching = matching or history_matching_settings()
     return {
         "status": "Not built",
         "reviewed_documents": 0,
@@ -223,9 +250,10 @@ def empty_history_status() -> dict[str, Any]:
         "last_updated": None,
         "last_error": None,
         "thresholds": {
-            "history_match_similarity": FAST_SIMILARITY,
-            "support": MIN_SUPPORT,
-            "winner_share": MIN_WINNER_SHARE,
+            "history_match_similarity": matching["match_similarity"],
+            "support": matching["min_support"],
+            "winner_share": matching["min_winner_share"],
+            "max_tags": matching["max_tags"],
             "inconsistency_similarity": FAMILY_SIMILARITY,
         },
     }
@@ -245,12 +273,14 @@ def cached_history_state(
     excluded_tag_names: str | list[str] | tuple[str, ...],
     *,
     paperless_url: str,
+    matching: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return lightweight cache/source health without reading or unpickling the cache blob."""
     metadata = _read_json(HISTORY_META_FILE)
     source = history_source_state(client, tax, excluded_tag_names)
 
-    status = empty_history_status()
+    matching = matching or history_matching_settings()
+    status = empty_history_status(matching)
     cache_state = "missing"
     stale = True
     if metadata and HISTORY_CACHE_FILE.exists():
@@ -260,7 +290,7 @@ def cached_history_state(
         expected = {
             "format_version": HISTORY_CACHE_FORMAT_VERSION,
             "app_version": HISTORY_APP_VERSION,
-            "algorithm": history_algorithm_signature(),
+            "algorithm": history_algorithm_signature(matching),
             "paperless_url": paperless_url,
             "source": source,
             "libraries": history_library_versions(),

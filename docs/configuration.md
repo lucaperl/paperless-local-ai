@@ -109,7 +109,7 @@ Three prompt fields are editable and versioned together:
 - **Base classification prompt** — title, document type, sender/issuer, date and `{{DOCUMENT_TEXT}}`.
 - **Tagging prompt** — tag-selection behavior and the dynamic tag context.
 
-The Tagging prompt is appended only when the LLM is responsible for tag selection. On a confident Hybrid match, the Tagging prompt is not sent and the generated structured schema contains no `tags` property. The reviewed tag is inserted after the base metadata result validates.
+The Tagging prompt is appended only when the LLM is responsible for tag selection. On a confident Hybrid match, the Tagging prompt is not sent and the generated structured schema contains no `tags` property. The complete reviewed leaf-tag set is inserted after the base metadata result validates.
 
 The Tagging prompt can use `{{TAGS_JSON}}`, `{{TAGS_LINES}}`, `{{MAX_TAGS}}`, `{{TAG_GUIDANCE}}` and `{{TAG_EXAMPLES}}`. The final rendered messages and schema are always visible under **Classification → Test → Preview prompts**.
 
@@ -118,10 +118,24 @@ English and German presets populate all three prompt fields. Loading a preset ch
 ### Tagging strategy
 
 **Hybrid tagging — Recommended for small models**
-Compares documents with reviewed examples and reuses a tag only when similarity and neighbor agreement are strong. Otherwise the LLM decides using Tag Guidance and relevant examples. [How Hybrid tagging works](tagging.md#hybrid-tagging).
+Compares documents with reviewed examples and reuses a complete known leaf-tag set only when similarity and neighbor agreement are strong. Otherwise the LLM decides using Tag Guidance and relevant examples. [How Hybrid tagging works](tagging.md#hybrid-tagging).
 
 **LLM direct — For more capable models**
 The configured model chooses tags for every document. Reviewed examples are not used for routing or retrieved prompt examples.
+
+### Advanced History matching
+
+The collapsed **Advanced History matching** section under **Classification → Tagging → History health** exposes the three supported confidence controls. They are stored in versioned App Settings even though they are shown next to the History diagnostics.
+
+| Setting | Default | Meaning |
+|---|---:|---|
+| Minimum similarity | `0.62` | the closest reviewed document must reach this cosine similarity before its complete leaf-tag set can be reused |
+| Minimum support | `2` | at least this many of the five nearest reviewed documents must carry the winning complete leaf-tag set |
+| Minimum winner share | `0.50` | the winning complete set must receive at least this share of the similarity-weighted neighborhood vote |
+
+Lower values increase automatic History reuse but also increase the risk of an incorrect tag set. The existing **Maximum LLM tags** setting also caps a History fast-path set: a reviewed set larger than that limit falls back to the LLM. History only reuses complete combinations that are present in reviewed documents; it never constructs an unseen combination from individually supported tags.
+
+Changing one of these values invalidates the derived History status/cache signature. The next Hybrid use rebuilds it automatically, or **Refresh reviewed history** can rebuild it immediately.
 
 ### Tag Guidance
 
@@ -145,7 +159,7 @@ History depth is based only on the number of reviewed examples for a tag:
 
 This is an evidence-depth indicator, not an accuracy score or match probability.
 
-The reuse estimate uses retrospective leave-one-out routing and counts only cases where the strict Hybrid gate reproduces the existing reviewed leaf-tag assignment. It does not predict future accuracy.
+The reuse estimate uses retrospective leave-one-out routing and counts only cases where the strict Hybrid gate reproduces the existing complete reviewed leaf-tag set. It does not predict future accuracy.
 
 Potential tag inconsistencies group at least three strongly similar reviewed documents when their leaf-tag assignments differ. They are review hints only and never change Paperless metadata.
 

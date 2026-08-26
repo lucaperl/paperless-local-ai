@@ -25,6 +25,7 @@ from history_common import (
     history_algorithm_signature,
     history_excluded_tag_names,
     history_library_versions,
+    history_matching_settings,
     history_source_state,
 )
 from history_runtime import HistoryIndex
@@ -35,6 +36,7 @@ _ACTIVE_INDEX: HistoryIndex | None = None
 _ACTIVE_STATUS: dict[str, Any] | None = None
 _ACTIVE_SOURCE: dict[str, Any] | None = None
 _ACTIVE_PAPERLESS_URL: str | None = None
+_ACTIVE_MATCHING: dict[str, Any] | None = None
 
 
 def log(message: str) -> None:
@@ -113,11 +115,12 @@ def _cache_lock():
 def _expected_metadata(
     source: dict[str, Any],
     paperless_url: str,
+    matching: dict[str, Any],
 ) -> dict[str, Any]:
     return {
         "format_version": HISTORY_CACHE_FORMAT_VERSION,
         "app_version": HISTORY_APP_VERSION,
-        "algorithm": history_algorithm_signature(),
+        "algorithm": history_algorithm_signature(matching),
         "paperless_url": paperless_url,
         "source": source,
         "libraries": _library_versions(),
@@ -128,10 +131,11 @@ def _cache_matches(
     metadata: dict[str, Any] | None,
     source: dict[str, Any],
     paperless_url: str,
+    matching: dict[str, Any],
 ) -> bool:
     if not metadata:
         return False
-    expected = _expected_metadata(source, paperless_url)
+    expected = _expected_metadata(source, paperless_url, matching)
     return all(metadata.get(key) == value for key, value in expected.items()) and isinstance(
         metadata.get("cache_sha256"), str
     )
@@ -140,9 +144,10 @@ def _cache_matches(
 def _load_cached_index(
     source: dict[str, Any],
     paperless_url: str,
+    matching: dict[str, Any],
 ) -> tuple[HistoryIndex, dict[str, Any]] | None:
     metadata = _read_json(HISTORY_META_FILE)
-    if not _cache_matches(metadata, source, paperless_url):
+    if not _cache_matches(metadata, source, paperless_url, matching):
         return None
     status = metadata.get("status")
     if not isinstance(status, dict) or not HISTORY_CACHE_FILE.exists():
@@ -165,7 +170,7 @@ def _load_cached_index(
     except Exception:
         return None
 
-    index = HistoryIndex()
+    index = HistoryIndex(matching)
     index.load_cache_payload(payload, status=status, source_signature=source)
     return index, status
 
@@ -176,8 +181,9 @@ def _build_and_store_index(
     excluded_tag_names: list[str],
     source: dict[str, Any],
     paperless_url: str,
+    matching: dict[str, Any],
 ) -> tuple[HistoryIndex, dict[str, Any]]:
-    index = HistoryIndex()
+    index = HistoryIndex(matching)
     status = index.refresh(client, tax, excluded_tag_names, force=True)
     if status.get("status") == "Error":
         raise RuntimeError(status.get("last_error") or "History rebuild failed")
@@ -188,7 +194,7 @@ def _build_and_store_index(
     persisted_status["stale"] = False
     persisted_status["cache_state"] = "ready"
     metadata = {
-        **_expected_metadata(source, paperless_url),
+        **_expected_metadata(source, paperless_url, matching),
         "cache_sha256": hashlib.sha256(data).hexdigest(),
         "status": persisted_status,
     }
@@ -200,12 +206,17 @@ def _build_and_store_index(
     return index, persisted_status
 
 
-def ensure_index(*, force: bool = False) -> tuple[HistoryIndex, dict[str, Any]]:
-    global _ACTIVE_INDEX, _ACTIVE_STATUS, _ACTIVE_SOURCE, _ACTIVE_PAPERLESS_URL
+def ensure_index(
+    *,
+    force: bool = False,
+    max_tags: int = 2,
+) -> tuple[HistoryIndex, dict[str, Any]]:
+    global _ACTIVE_INDEX, _ACTIVE_STATUS, _ACTIVE_SOURCE, _ACTIVE_PAPERLESS_URL, _ACTIVE_MATCHING
 
     client = PaperlessClient()
     app_cfg = load_app_config()
     paperless_url = app_cfg["connections"]["paperless_url"]
+    matching = history_matching_settings(app_cfg, max_tags)
     excluded = history_excluded_tag_names(app_cfg)
     tax = client.taxonomy()
     source = history_source_state(client, tax, excluded)
@@ -216,15 +227,17 @@ def ensure_index(*, force: bool = False) -> tuple[HistoryIndex, dict[str, Any]]:
         and _ACTIVE_STATUS is not None
         and _ACTIVE_SOURCE == source
         and _ACTIVE_PAPERLESS_URL == paperless_url
+        and _ACTIVE_MATCHING == matching
     ):
         return _ACTIVE_INDEX, _ACTIVE_STATUS
 
     if not force:
-        cached = _load_cached_index(source, paperless_url)
+        cached = _load_cached_index(source, paperless_url, matching)
         if cached is not None:
             _ACTIVE_INDEX, _ACTIVE_STATUS = cached
             _ACTIVE_SOURCE = source
             _ACTIVE_PAPERLESS_URL = paperless_url
+            _ACTIVE_MATCHING = matching
             return cached
 
     with _cache_lock():
@@ -233,17 +246,21 @@ def ensure_index(*, force: bool = False) -> tuple[HistoryIndex, dict[str, Any]]:
         tax = client.taxonomy()
         source = history_source_state(client, tax, excluded)
         if not force:
-            cached = _load_cached_index(source, paperless_url)
+            cached = _load_cached_index(source, paperless_url, matching)
             if cached is not None:
                 _ACTIVE_INDEX, _ACTIVE_STATUS = cached
                 _ACTIVE_SOURCE = source
                 _ACTIVE_PAPERLESS_URL = paperless_url
+                _ACTIVE_MATCHING = matching
                 return cached
         log(f"rebuilding history cache for {source['reviewed_documents']} reviewed document(s)")
-        built = _build_and_store_index(client, tax, excluded, source, paperless_url)
+        built = _build_and_store_index(
+            client, tax, excluded, source, paperless_url, matching
+        )
         _ACTIVE_INDEX, _ACTIVE_STATUS = built
         _ACTIVE_SOURCE = source
         _ACTIVE_PAPERLESS_URL = paperless_url
+        _ACTIVE_MATCHING = matching
         return built
 
 
@@ -259,13 +276,19 @@ def _handle(request: dict[str, Any]) -> dict[str, Any]:
     if op == "ping":
         return {"pid": os.getpid()}
     if op == "refresh":
-        _index, status = ensure_index(force=True)
+        max_tags = int(request.get("max_tags", 2))
+        if not 1 <= max_tags <= 10:
+            raise ValueError("max_tags must be between 1 and 10")
+        _index, status = ensure_index(force=True, max_tags=max_tags)
         return {"history": status}
     if op == "route_batch":
         documents = request.get("documents")
         if not isinstance(documents, list):
             raise ValueError("route_batch requires a documents list")
-        index, status = ensure_index(force=False)
+        max_tags = int(request.get("max_tags", 2))
+        if not 1 <= max_tags <= 10:
+            raise ValueError("max_tags must be between 1 and 10")
+        index, status = ensure_index(force=False, max_tags=max_tags)
         routes = []
         for document in documents:
             if not isinstance(document, dict) or "id" not in document:

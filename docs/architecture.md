@@ -6,7 +6,7 @@
 
 - **OCR quality before classification:** PP-OCRv6 Medium is the quality-focused default, with Small and Tiny profiles for lower inference cost.
 - **One structured LLM request per document:** title, document type, date and sender/issuer are extracted together; tags join that request only when the selected tag route needs an LLM decision.
-- **Hybrid tagging:** recurring reviewed patterns can reuse a tag behind a strict evidence gate; uncertain cases use an LLM fallback with Tag Guidance and relevant reviewed examples.
+- **Hybrid tagging:** recurring reviewed patterns can reuse a complete known leaf-tag set behind a strict evidence gate; cases without a confident observed-set match use an LLM fallback with Tag Guidance and relevant reviewed examples.
 - **Local correspondent resolution:** the LLM extracts one free-text sender/issuer; Rust resolves safe existing matches or exposes a plausible new name through Paperless Document Suggestions.
 - **Bounded resource usage:** PaddleOCR/OpenVINO, Hybrid-history work and Ollama share one AI resource lock; heavyweight OCR/history subprocesses and the Ollama model are released after use.
 
@@ -39,7 +39,7 @@ core-service metadata worker
       ↓
 Tagging strategy
   Hybrid tagging:
-    confident reviewed match → tag fixed locally
+    confident reviewed match → complete reviewed leaf-tag set fixed locally
     otherwise                → LLM tag fallback + reviewed examples
   LLM direct:
     LLM decides tags directly
@@ -110,7 +110,7 @@ Classification configuration owns three editable prompt components:
 2. **Base classification prompt** — the always-present metadata task and document text.
 3. **Tagging prompt** — tag-selection instructions plus placeholders for the current taxonomy, Tag Guidance and retrieved examples.
 
-The runtime composes the request according to the tag route. A confident Hybrid match sends only System + Base classification and builds a schema **without a `tags` property**. The reviewed tag is inserted after the base result validates. Hybrid fallback and LLM direct append the configured Tagging prompt and include constrained tags in the schema.
+The runtime composes the request according to the tag route. A confident Hybrid match sends only System + Base classification and builds a schema **without a `tags` property**. The complete reviewed leaf-tag set is inserted after the base result validates. Hybrid fallback and LLM direct append the configured Tagging prompt and include constrained tags in the schema.
 
 The application controls composition; the prompt text itself stays user-configurable. The Control Center preview shows the final messages and schema.
 
@@ -118,7 +118,7 @@ The application controls composition; the prompt text itself stays user-configur
 
 Hybrid tagging uses a read-only similarity index over reviewed Paperless documents. Full text is represented by equal-weight TF-IDF word 1–2-grams and `char_wb` character 3–5-grams.
 
-A tag is reused only when the nearest reviewed document has exactly one leaf tag, similarity is at least `0.60`, that tag wins the weighted top-five neighborhood, at least two neighbors support it, and its weighted share is at least `0.50`.
+History votes on complete reviewed leaf-tag sets rather than labels independently. A set is reused only when the nearest reviewed document reaches the configured similarity gate (default `0.62`), its complete set wins the similarity-weighted top-five neighborhood, enough neighbors carry that exact set (default support `2`), the set reaches the configured winner share (default `0.50`), and it does not exceed the configured maximum tag count. History never synthesizes an unseen combination; those cases fall back to the LLM.
 
 If the gate abstains, up to five relevant positive reviewed examples are supplied through the editable Tagging prompt. At most two examples with the same tag combination are used.
 
@@ -133,6 +133,8 @@ See [Tagging](tagging.md) for the detailed rationale, Paperless-native compariso
 ## History diagnostics
 
 The Control Center exposes:
+
+- supported History matching controls for minimum similarity, support and winner share;
 
 - reviewed-document count;
 - represented tags;

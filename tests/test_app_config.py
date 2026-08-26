@@ -1,5 +1,8 @@
 from app_config import (
     DEFAULT_CONFIG,
+    HISTORY_MATCH_SIMILARITY_DEFAULT,
+    HISTORY_MIN_SUPPORT_DEFAULT,
+    HISTORY_MIN_WINNER_SHARE_DEFAULT,
     OCR_MAX_SIDE_PIXELS_DEFAULT,
     OCR_MAX_SIDE_PIXELS_MAX,
     OCR_MAX_SIDE_PIXELS_MIN,
@@ -28,6 +31,39 @@ def test_default_config_is_valid():
     assert OCR_RETRY_DELAYS_MAX_COUNT == 10
     assert OCR_RETRY_DELAY_MAX_SECONDS == 86400
     assert cfg["runtime"]["poll_interval_seconds"] == 10
+    assert cfg["history"] == {
+        "match_similarity": 0.62,
+        "min_support": 2,
+        "min_winner_share": 0.50,
+    }
+    assert HISTORY_MATCH_SIMILARITY_DEFAULT == 0.62
+    assert HISTORY_MIN_SUPPORT_DEFAULT == 2
+    assert HISTORY_MIN_WINNER_SHARE_DEFAULT == 0.50
+
+
+def test_existing_config_without_history_settings_gets_safe_defaults():
+    raw = {key: value for key, value in DEFAULT_CONFIG.items() if key != "history"}
+    validated = validate_config(raw)
+    assert validated["history"] == DEFAULT_CONFIG["history"]
+
+
+def test_history_matching_bounds_are_enforced():
+    invalid = (
+        {"match_similarity": 0.49, "min_support": 2, "min_winner_share": 0.5},
+        {"match_similarity": 1.01, "min_support": 2, "min_winner_share": 0.5},
+        {"match_similarity": 0.62, "min_support": 1, "min_winner_share": 0.5},
+        {"match_similarity": 0.62, "min_support": 6, "min_winner_share": 0.5},
+        {"match_similarity": 0.62, "min_support": 2, "min_winner_share": 0.49},
+        {"match_similarity": 0.62, "min_support": 2, "min_winner_share": 1.01},
+    )
+    for history in invalid:
+        raw = {**DEFAULT_CONFIG, "history": history}
+        try:
+            validate_config(raw)
+        except ValueError as exc:
+            assert "history." in str(exc)
+        else:
+            raise AssertionError(f"history={history!r} must be rejected")
 
 
 def test_technical_tags_no_longer_include_ocr_queue_tags():
