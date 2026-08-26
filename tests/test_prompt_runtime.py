@@ -8,6 +8,7 @@ from prompt_runtime import (
     make_schema,
     normalize_result,
     prompt_hashes,
+    expand_tag_ids_with_ancestors,
     prune_parent_tag_names,
     render_prompts,
     validate_config,
@@ -55,6 +56,17 @@ def test_prompt_presets_include_editable_system_base_and_tagging_prompts():
         assert "{{TAGS_JSON}}" in preset["tagging_prompt"]
         assert "{{TAG_GUIDANCE}}" in preset["tagging_prompt"]
         assert "{{TAG_EXAMPLES}}" in preset["tagging_prompt"]
+
+
+def test_expand_tag_ids_with_ancestors_preserves_independent_root_and_nested_parent():
+    tax = {
+        "parent_by_id": {
+            1: None,
+            2: None,
+            3: 2,
+        }
+    }
+    assert expand_tag_ids_with_ancestors({1, 3}, tax) == {1, 2, 3}
 
 
 def test_month_normalizes_to_last_day():

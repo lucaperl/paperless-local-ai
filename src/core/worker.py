@@ -26,6 +26,7 @@ from prompt_runtime import (
     performance_from_raw,
     prompt_hashes,
     prune_parent_tag_names,
+    expand_tag_ids_with_ancestors,
     render_prompts,
     unload_ollama_model,
     validate_result,
@@ -82,8 +83,14 @@ def apply_metadata_and_finish(
     current_tag_ids = set(fresh.get("tags", []))
     managed_content_tag_ids = set(tax.get("content_tag_ids", []))
     final_tag_ids = current_tag_ids - managed_content_tag_ids
-    for name in result["tags"]:
-        final_tag_ids.add(tax["tag_by_name"][name])
+    selected_content_tag_ids = {
+        tax["tag_by_name"][name]
+        for name in result["tags"]
+    }
+    final_tag_ids |= expand_tag_ids_with_ancestors(
+        selected_content_tag_ids,
+        tax,
+    )
     final_tag_ids.discard(queue_tag)
     final_tag_ids.discard(error_tag)
 

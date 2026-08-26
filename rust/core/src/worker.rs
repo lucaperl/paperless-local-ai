@@ -4,7 +4,7 @@ use crate::control::finalize_model_result;
 use crate::error::{Error, Result};
 use crate::history::{self, history_error_context};
 use crate::ollama::performance_from_raw;
-use crate::paperless::{PaperlessDocument, Taxonomy};
+use crate::paperless::{PaperlessDocument, Taxonomy, expand_tag_ids_with_ancestors};
 use crate::prompt::{PromptConfig, TaggingContext, TaggingMode, prompt_hashes, render_prompts};
 use crate::state::CoreState;
 use serde_json::Value;
@@ -214,6 +214,7 @@ async fn apply_metadata_and_finish(
         .into_iter()
         .filter(|tag| !managed.contains(tag))
         .collect::<BTreeSet<_>>();
+    let mut selected_content_tags = Vec::new();
     for name in result
         .get("tags")
         .and_then(Value::as_array)
@@ -221,13 +222,17 @@ async fn apply_metadata_and_finish(
         .flatten()
         .filter_map(Value::as_str)
     {
-        final_tags.insert(
+        selected_content_tags.push(
             *taxonomy
                 .tag_by_name
                 .get(name)
                 .ok_or_else(|| Error::Invalid(format!("Unknown final tag {name:?}")))?,
         );
     }
+    final_tags.extend(expand_tag_ids_with_ancestors(
+        selected_content_tags,
+        taxonomy,
+    ));
     final_tags.remove(&queue_tag);
     final_tags.remove(&error_tag);
 

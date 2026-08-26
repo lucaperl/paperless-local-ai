@@ -257,6 +257,24 @@ fn required_i64(value: &Value, key: &str, source: &str) -> Result<i64> {
         .ok_or_else(|| Error::Invalid(format!("Missing integer field {key:?} in {source}")))
 }
 
+pub fn expand_tag_ids_with_ancestors(
+    tag_ids: impl IntoIterator<Item = i64>,
+    tax: &Taxonomy,
+) -> BTreeSet<i64> {
+    let mut result = BTreeSet::new();
+    for tag_id in tag_ids {
+        result.insert(tag_id);
+        let mut parent = tax.parent_by_id.get(&tag_id).copied().flatten();
+        while let Some(parent_id) = parent {
+            if !result.insert(parent_id) {
+                break;
+            }
+            parent = tax.parent_by_id.get(&parent_id).copied().flatten();
+        }
+    }
+    result
+}
+
 pub fn leaf_names_from_ids(tag_ids: &[i64], tax: &Taxonomy) -> Vec<String> {
     let content_ids = tax.content_tag_ids.iter().copied().collect::<BTreeSet<_>>();
     let selected = tag_ids
@@ -280,4 +298,52 @@ pub fn leaf_names_from_ids(tag_ids: &[i64], tax: &Taxonomy) -> Vec<String> {
         .collect::<Vec<_>>();
     result.sort();
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn nested_taxonomy() -> Taxonomy {
+        Taxonomy {
+            tag_by_name: BTreeMap::from([
+                ("Independent".to_owned(), 1),
+                ("Parent".to_owned(), 2),
+                ("Child".to_owned(), 3),
+            ]),
+            tag_by_id: BTreeMap::from([
+                (1, "Independent".to_owned()),
+                (2, "Parent".to_owned()),
+                (3, "Child".to_owned()),
+            ]),
+            parent_by_id: BTreeMap::from([(1, None), (2, None), (3, Some(2))]),
+            content_tag_ids: vec![1, 2, 3],
+            content_tags: vec![
+                "Independent".to_owned(),
+                "Parent".to_owned(),
+                "Child".to_owned(),
+            ],
+            tags: vec![],
+            correspondents: vec![],
+            document_types: vec![],
+        }
+    }
+
+    #[test]
+    fn expands_selected_leaf_tags_with_all_required_ancestors() {
+        let tax = nested_taxonomy();
+        assert_eq!(
+            expand_tag_ids_with_ancestors([1, 3], &tax),
+            BTreeSet::from([1, 2, 3]),
+        );
+    }
+
+    #[test]
+    fn leaf_pruning_still_removes_parent_when_child_is_selected() {
+        let tax = nested_taxonomy();
+        assert_eq!(
+            leaf_names_from_ids(&[1, 2, 3], &tax),
+            vec!["Child".to_owned(), "Independent".to_owned()],
+        );
+    }
 }
