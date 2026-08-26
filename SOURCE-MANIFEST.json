@@ -49,6 +49,6 @@
     "src/ocr/paperless_local_ai_ui/apps.py": "d8741137876a4fd856f971adb2d67024b47f85f2e665f2b0e52aa484265e7df9",
     "src/ocr/paperless_local_ai_ui/injection.py": "6cb961bccd5e6fa1b7497779149f9ed553455bde5748866aaf5710dc0ee77ac1",
     "src/ocr/paperless_local_ai_ui/middleware.py": "ca9ad5d6e6dab52cad3f626990a3a3ba897f611f4e0a565eb97d1f638f2d7d21",
-    "src/ocr/service.py": "1334a5b8a175e8a168c0c0b32cf3be1a95e752e5e62865c04922a7cf6f1a361e"
+    "src/ocr/service.py": "e189865e17ba6939ed4009942ce14c6f169b475ca2612c561c818220fd203212"
   }
 }

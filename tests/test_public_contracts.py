@@ -247,6 +247,10 @@ def test_ocr_heavy_worker_does_not_use_python_multiprocessing():
     assert "page_out_self_resident_file_cache" not in engine
     assert "os._exit" in engine
     assert "recycle_event.set()" in service
+    assert "CONTAINER_RECYCLE_IDLE_SECONDS = 300.0" in service
+    assert "container_recycle_idle_seconds" in service
+    assert "now - self._container_idle_since" in service
+    assert ">= CONTAINER_RECYCLE_IDLE_SECONDS" in service
     assert "server.handle_request()" in service
     assert "RESTART_POLICY_ARM_SECONDS = 11.0" in service
     assert "uptime >= RESTART_POLICY_ARM_SECONDS" in service

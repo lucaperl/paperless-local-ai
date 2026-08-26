@@ -53,7 +53,7 @@ Only potentially recoverable failures are retried. Invalid authentication, OCR-l
 
 Paperless defaults `PAPERLESS_WORKER_TIMEOUT` to 1800 seconds; if the configured total retry window substantially exceeds that, raise the Paperless timeout accordingly.
 
-HPI/OpenVINO, CPU/thread/RAM/shared-memory and OCR idle limits stay deployment settings because they affect container/runtime construction.
+HPI/OpenVINO, CPU/thread/RAM/shared-memory and the Paddle warm-session idle limit stay deployment settings because they affect container/runtime construction. The lightweight OCR service uses a fixed five-minute quiet period after the heavyweight OCR session has ended before its clean cold-idle container recycle; this recycle grace is an internal lifecycle safeguard rather than a normal tuning knob.
 
 ## Reference performance and resource tuning
 

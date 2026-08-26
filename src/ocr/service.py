@@ -49,6 +49,10 @@ INTEGRATION_TARGET = Path("/integration/ocrmypdf_plai.py")
 PAPERLESS_UI_SOURCE = Path("/app/paperless_local_ai_ui")
 PAPERLESS_UI_TARGET = Path("/integration/paperless_local_ai_ui")
 SESSION_IDLE_SECONDS = float(os.getenv("OCR_SESSION_IDLE_SECONDS", "5"))
+# The heavyweight Paddle worker releases ai.lock after the short warm-session
+# timeout above. Keep the lightweight HTTP service available much longer so
+# normal batch gaps do not collide with an intentional container recycle.
+CONTAINER_RECYCLE_IDLE_SECONDS = 300.0
 # Docker restart policies are documented as becoming active after a
 # container has remained up for at least 10 seconds. Keep a small margin
 # before an intentional recycle exit.
@@ -514,6 +518,7 @@ class PaddleSession:
         self._conn: _JsonSocketConnection | None = None
         self._lock_file: Any | None = None
         self._last_used = 0.0
+        self._container_idle_since = 0.0
         self._started_at = 0.0
         self._config: dict[str, Any] | None = None
         self._stop_event = threading.Event()
@@ -593,6 +598,7 @@ class PaddleSession:
             parent_conn.close()
             child_sock.close()
             self._release_global_lock()
+            self._container_idle_since = time.monotonic()
             raise
         child_sock.close()
         process = _SubprocessWorker(popen)
@@ -664,6 +670,7 @@ class PaddleSession:
             self._release_global_lock()
             self._started_at = 0.0
             self._last_used = 0.0
+            self._container_idle_since = time.monotonic()
         LOG.info("PaddleOCR session stopped (%s)", reason)
 
     def _raise_worker_ipc_failure(self, action: str, exc: BaseException) -> None:
@@ -680,8 +687,9 @@ class PaddleSession:
         with self._mutex:
             if self._recycle_event.is_set():
                 raise RetryableOCRError(
-                    "OCR service is recycling after the completed warm session"
+                    "OCR service is recycling after the extended idle period"
                 )
+            self._container_idle_since = 0.0
             config = self._current_ocr_config()
             lock_wait = 0.0
             started_new_session = False
@@ -760,13 +768,26 @@ class PaddleSession:
     def _housekeeping_loop(self) -> None:
         while not self._stop_event.wait(1.0):
             with self._mutex:
+                now = time.monotonic()
                 if self.session_active and not self.active:
                     self._stop("Paddle worker no longer alive")
-                elif self.active and time.monotonic() - self._last_used >= SESSION_IDLE_SECONDS:
+                elif self.active and now - self._last_used >= SESSION_IDLE_SECONDS:
                     self._stop(f"idle for {SESSION_IDLE_SECONDS:.0f}s")
                     LOG.info(
-                        "Completed OCR warm session; requesting service recycle "
-                        "so the container cgroup returns to cold idle"
+                        "Completed OCR warm session; Paddle worker stopped and "
+                        "global AI lock released"
+                    )
+                elif (
+                    not self.session_active
+                    and self._container_idle_since > 0
+                    and now - self._container_idle_since
+                    >= CONTAINER_RECYCLE_IDLE_SECONDS
+                ):
+                    LOG.info(
+                        "OCR service idle for %.0fs after last OCR activity; "
+                        "requesting service recycle so the container cgroup "
+                        "returns to cold idle",
+                        CONTAINER_RECYCLE_IDLE_SECONDS,
                     )
                     self._recycle_event.set()
                     return
@@ -879,6 +900,7 @@ class Handler(BaseHTTPRequestHandler):
                 "session_active": _session().session_active,
                 "session_age_seconds": _session().age_seconds,
                 "session_idle_seconds": SESSION_IDLE_SECONDS,
+                "container_recycle_idle_seconds": CONTAINER_RECYCLE_IDLE_SECONDS,
                 "page_timeout_seconds": PAGE_TIMEOUT_SECONDS,
                 "tmp_dir": str(TMP_DIR),
                 "text_detection_model": detection_model,
@@ -1128,7 +1150,7 @@ def main() -> None:
                 restart_wait_logged = True
 
         LOG.info(
-            "OCR service recycle requested after completed warm session; "
+            "OCR service recycle requested after extended idle period; "
             "exiting cleanly for container restart"
         )
     except KeyboardInterrupt:
