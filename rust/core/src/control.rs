@@ -4,6 +4,7 @@ use crate::correspondent::{CorrespondentResolution, resolve_correspondent};
 use crate::error::Error;
 use crate::history;
 use crate::ollama::performance_from_raw;
+use crate::paperless_ui;
 use crate::prompt::{
     PLACEHOLDERS, PromptConfig, TaggingContext, prompt_hashes, prompt_preset,
     prune_parent_tag_names, render_prompts, validate_result,
@@ -64,6 +65,7 @@ pub fn router(state: Arc<CoreState>) -> Router {
         .route("/api/app/save", post(app_save))
         .route("/api/app/history/restore", post(app_restore))
         .route("/api/app/connections/test", post(connection_test))
+        .route("/api/app/paperless-ui", post(paperless_ui_update))
         .route("/api/state", get(prompt_state))
         .route("/api/health", get(health))
         .route("/api/history", get(prompt_history))
@@ -115,6 +117,7 @@ async fn app_state(State(state): State<Arc<CoreState>>) -> ApiResult {
             "config_sha256": app_config_hash_value(&value),
             "history": state.app_config.list_history().map_err(ApiError::internal)?,
             "token_configured": !state.token.is_empty(),
+            "paperless_ui_integration_ready": paperless_ui::integration_package_ready(),
         }),
     ))
 }
@@ -232,6 +235,7 @@ async fn app_save(State(state): State<Arc<CoreState>>, body: Bytes) -> ApiResult
         .app_config
         .save(payload.get("config").unwrap_or(&Value::Null), "prompt-ui")
         .map_err(ApiError::bad)?;
+    paperless_ui::sync_if_available(&config).map_err(ApiError::internal)?;
     let value = serde_json::to_value(&config).map_err(ApiError::internal)?;
     Ok(json_response(
         StatusCode::OK,
@@ -241,6 +245,50 @@ async fn app_save(State(state): State<Arc<CoreState>>, body: Bytes) -> ApiResult
             "config_sha256": app_config_hash_value(&value),
             "history": state.app_config.list_history().map_err(ApiError::internal)?,
             "token_configured": !state.token.is_empty(),
+        }),
+    ))
+}
+
+async fn paperless_ui_update(State(state): State<Arc<CoreState>>, body: Bytes) -> ApiResult {
+    let payload = parse_body(&body)?;
+    let enabled = payload
+        .get("enabled")
+        .and_then(Value::as_bool)
+        .ok_or_else(|| ApiError::bad("enabled must be true or false"))?;
+    if enabled && !paperless_ui::storage_ready() {
+        return Err(ApiError::bad(
+            "Paperless UI integration storage is not mounted in core-service; update the deployment before enabling the shortcut",
+        ));
+    }
+
+    let current = state.app_config.load().map_err(ApiError::internal)?;
+    let mut raw = serde_json::to_value(&current).map_err(ApiError::internal)?;
+    let section = raw
+        .get_mut("paperless_ui")
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| ApiError::internal("paperless_ui config section missing"))?;
+    section.insert("enabled".into(), Value::Bool(enabled));
+    if let Some(url) = payload.get("control_center_url").and_then(Value::as_str) {
+        section.insert("control_center_url".into(), Value::String(url.to_owned()));
+    }
+
+    let config = state
+        .app_config
+        .save(&raw, "prompt-ui:paperless-ui")
+        .map_err(ApiError::bad)?;
+    if enabled {
+        paperless_ui::sync_required(&config).map_err(ApiError::bad)?;
+    } else {
+        paperless_ui::sync_if_available(&config).map_err(ApiError::internal)?;
+    }
+    Ok(json_response(
+        StatusCode::OK,
+        serde_json::json!({
+            "ok": true,
+            "config": config,
+            "history": state.app_config.list_history().map_err(ApiError::internal)?,
+            "token_configured": !state.token.is_empty(),
+            "paperless_ui_integration_ready": paperless_ui::integration_package_ready(),
         }),
     ))
 }
@@ -256,6 +304,7 @@ async fn app_restore(State(state): State<Arc<CoreState>>, body: Bytes) -> ApiRes
                 .unwrap_or_default(),
         )
         .map_err(ApiError::bad)?;
+    paperless_ui::sync_if_available(&config).map_err(ApiError::internal)?;
     Ok(json_response(
         StatusCode::OK,
         serde_json::json!({

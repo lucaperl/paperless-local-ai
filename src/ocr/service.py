@@ -46,6 +46,8 @@ MAX_REQUEST_BYTES = int(os.getenv("OCR_MAX_REQUEST_BYTES", str(100 * 1024 * 1024
 AI_LOCK_FILE = Path("/coordination/ai.lock")
 INTEGRATION_SOURCE = Path(os.getenv("OCR_PLUGIN_SOURCE", "/app/ocrmypdf_plai.py"))
 INTEGRATION_TARGET = Path("/integration/ocrmypdf_plai.py")
+PAPERLESS_UI_SOURCE = Path("/app/paperless_local_ai_ui")
+PAPERLESS_UI_TARGET = Path("/integration/paperless_local_ai_ui")
 SESSION_IDLE_SECONDS = float(os.getenv("OCR_SESSION_IDLE_SECONDS", "5"))
 # Docker restart policies are documented as becoming active after a
 # container has remained up for at least 10 seconds. Keep a small margin
@@ -803,6 +805,26 @@ def sync_integration_plugin() -> None:
     LOG.info("OCRmyPDF bridge ready at %s", INTEGRATION_TARGET)
 
 
+def sync_paperless_ui_integration() -> None:
+    if not PAPERLESS_UI_SOURCE.is_dir():
+        raise RuntimeError(f"Paperless UI integration source missing: {PAPERLESS_UI_SOURCE}")
+    PAPERLESS_UI_TARGET.mkdir(parents=True, exist_ok=True)
+    expected = set()
+    for source in PAPERLESS_UI_SOURCE.rglob("*.py"):
+        relative = source.relative_to(PAPERLESS_UI_SOURCE)
+        expected.add(relative)
+        target = PAPERLESS_UI_TARGET / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_name(target.name + ".tmp")
+        shutil.copyfile(source, tmp)
+        os.replace(tmp, target)
+        target.chmod(0o644)
+    for target in PAPERLESS_UI_TARGET.rglob("*.py"):
+        if target.relative_to(PAPERLESS_UI_TARGET) not in expected:
+            target.unlink()
+    LOG.info("Paperless UI integration ready at %s", PAPERLESS_UI_TARGET)
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "paperless-local-ai-ocr/0.2"
 
@@ -1076,6 +1098,7 @@ def main() -> None:
         raise RuntimeError("OCR_SERVICE_TOKEN must be set")
     TMP_DIR.mkdir(parents=True, exist_ok=True)
     sync_integration_plugin()
+    sync_paperless_ui_integration()
     set_idle_state()
 
     recycle_event = threading.Event()

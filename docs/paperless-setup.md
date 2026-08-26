@@ -81,6 +81,15 @@ volumes:
   - /path/to/paperless-local-ai/data/integration:/opt/paperless-local-ai:ro
 ```
 
+For the optional Paperless UI shortcut, `core-service` must also mount the same integration directory:
+
+```yaml
+volumes:
+  - /path/to/paperless-local-ai/data/integration:/integration
+```
+
+New installations using the current Compose examples already include this mount. Existing installations that predate this feature must add it manually because an image update does not rewrite the stored Compose or TrueNAS Custom App configuration. OCR itself continues to use the existing integration mount regardless of whether the UI shortcut is enabled.
+
 Add these environment values to Paperless:
 
 ```text
@@ -89,6 +98,15 @@ PLAI_OCR_TOKEN=<same secret as OCR_SERVICE_TOKEN>
 PLAI_OCR_TIMEOUT_SECONDS=1800
 PAPERLESS_OCR_USER_ARGS={"plugins":["/opt/paperless-local-ai/ocrmypdf_plai.py"],"pdf_renderer":"fpdf2","optimize":0}
 ```
+
+For the optional **paperless-local-ai** shortcut in the Paperless Settings header, the same read-only mount also exposes a tiny Django integration package. Add these Paperless environment values once:
+
+```text
+PYTHONPATH=/opt/paperless-local-ai
+PAPERLESS_APPS=paperless_local_ai_ui.apps.PaperlessLocalAiUiConfig
+```
+
+If `PAPERLESS_APPS` already contains another Django app, append this app to the existing comma-separated value instead of replacing it. The integration is inert by default. After Paperless has restarted with these values, enable or disable the shortcut with one click under **Control Center → App Settings → Connections → Paperless shortcut**; no further Paperless restart is needed. The button is shown only where Paperless itself exposes the admin Settings header and opens the configured Control Center URL in a new tab.
 
 The URL must be reachable from **inside the Paperless container**.
 
