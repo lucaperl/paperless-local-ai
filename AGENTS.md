@@ -19,6 +19,7 @@ Do not turn it into a bundled Paperless distribution, an Ollama distribution, or
 - Expensive OCR and LLM inference share `/coordination/ai.lock` and are serialized by default.
 - `/health.session_active=false` must mean the OCR service no longer owns the global AI slot.
 - OCR worker teardown and OCR container recycle are separate lifecycle boundaries: release the heavyweight Paddle worker and `ai.lock` after the short warm-session idle timeout, while keeping the lightweight OCR service available through an extended quiet period before cold-idle cgroup recycle.
+- Core heavy-work teardown and core container recycle are separate lifecycle boundaries: History helpers and Ollama must be released immediately after use, while the lightweight unified Rust core remains available through an extended quiet period before cold-idle cgroup recycle. New metadata work cancels a pending recycle, and Suggestion Bridge classification activity postpones an already scheduled recycle.
 - Normal metadata processing unloads the configured Ollama model before leaving the AI transaction.
 - Normal metadata processing uses one structured LLM request per document.
 - Correspondent output is free-text extraction; local resolver logic decides whether an existing correspondent is safe to apply. Genuinely new correspondents are never auto-created.

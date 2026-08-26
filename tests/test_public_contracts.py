@@ -278,17 +278,29 @@ def test_core_and_ocr_compose_healthchecks_use_dedicated_binary():
     assert "/plai-healthcheck /usr/local/bin/plai-healthcheck" in ocr_dockerfile
 
 
-def test_core_recycles_after_complete_heavy_work_boundaries():
+def test_core_recycles_only_after_extended_idle_grace():
     state = (ROOT / "rust/core/src/state.rs").read_text(encoding="utf-8")
     main = (ROOT / "rust/core/src/main.rs").read_text(encoding="utf-8")
     worker = (ROOT / "rust/core/src/worker.rs").read_text(encoding="utf-8")
     control = (ROOT / "rust/core/src/control.rs").read_text(encoding="utf-8")
-    assert "pub struct RecycleSignal" in state
+    bridge = (ROOT / "rust/core/src/bridge.rs").read_text(encoding="utf-8")
+
+    assert "CORE_CONTAINER_RECYCLE_IDLE_SECONDS: u64 = 300" in state
+    assert "pub fn cancel(&self)" in state
+    assert "pub fn schedule(&self)" in state
+    assert "pub fn postpone_if_scheduled(&self) -> bool" in state
+    assert "recycle.subscribe()" in main
     assert "CoreEvent::Recycle" in main
     assert "RESTART_POLICY_ARM_SECONDS: u64 = 11" in main
-    assert "had_jobs && state.recycle.request()" in worker
-    assert "history::refresh_history(&state.history, config.max_tags, true)" in control
-    assert "History refresh completed; requesting clean core restart" in control
+    assert "state.recycle.cancel()" in worker
+    assert "state.recycle.schedule()" in worker
+    assert "core recycle scheduled after {}s idle" in worker
+    assert "container_recycle_idle_seconds" in control
+    assert "container_recycle_scheduled" in control
+    assert "state.recycle.cancel()" in control
+    assert "state.recycle.schedule()" in control
+    assert "History refresh completed; core recycle scheduled after {}s idle" in control
+    assert "state.recycle.postpone_if_scheduled()" in bridge
 
 
 def test_single_app_data_directory_in_compose():

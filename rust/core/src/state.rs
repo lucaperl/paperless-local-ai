@@ -10,38 +10,47 @@ use crate::prompt::PromptConfigStore;
 use crate::review::ReviewStore;
 use serde_json::Value;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Instant;
-use tokio::sync::{Mutex, Notify};
+use std::time::{Duration, Instant};
+use tokio::sync::{Mutex, watch};
+
+pub const CORE_CONTAINER_RECYCLE_IDLE_SECONDS: u64 = 300;
 
 pub struct RecycleSignal {
-    requested: AtomicBool,
-    notify: Notify,
+    deadline: watch::Sender<Option<Instant>>,
 }
 
 impl Default for RecycleSignal {
     fn default() -> Self {
-        Self {
-            requested: AtomicBool::new(false),
-            notify: Notify::new(),
-        }
+        let (deadline, _receiver) = watch::channel(None);
+        Self { deadline }
     }
 }
 
 impl RecycleSignal {
-    pub fn request(&self) -> bool {
-        if self.requested.swap(true, Ordering::AcqRel) {
+    pub fn cancel(&self) {
+        self.deadline.send_replace(None);
+    }
+
+    pub fn schedule(&self) {
+        self.deadline.send_replace(Some(
+            Instant::now() + Duration::from_secs(CORE_CONTAINER_RECYCLE_IDLE_SECONDS),
+        ));
+    }
+
+    pub fn postpone_if_scheduled(&self) -> bool {
+        if !self.is_scheduled() {
             return false;
         }
-        self.notify.notify_one();
+        self.schedule();
         true
     }
 
-    pub async fn wait(&self) {
-        if self.requested.load(Ordering::Acquire) {
-            return;
-        }
-        self.notify.notified().await;
+    pub fn is_scheduled(&self) -> bool {
+        self.deadline.borrow().is_some()
+    }
+
+    pub fn subscribe(&self) -> watch::Receiver<Option<Instant>> {
+        self.deadline.subscribe()
     }
 }
 
@@ -107,13 +116,38 @@ impl CoreState {
 
 #[cfg(test)]
 mod tests {
-    use super::RecycleSignal;
+    use super::{CORE_CONTAINER_RECYCLE_IDLE_SECONDS, RecycleSignal};
+    use std::time::{Duration, Instant};
 
-    #[tokio::test]
-    async fn recycle_signal_is_idempotent_and_retains_early_notification() {
+    #[test]
+    fn recycle_signal_supports_schedule_cancel_and_postpone() {
         let signal = RecycleSignal::default();
-        assert!(signal.request());
-        assert!(!signal.request());
-        signal.wait().await;
+        let receiver = signal.subscribe();
+
+        assert!(!signal.is_scheduled());
+        assert!((*receiver.borrow()).is_none());
+
+        signal.schedule();
+
+        let first = (*receiver.borrow()).expect("scheduled deadline");
+        let now = Instant::now();
+
+        assert!(signal.is_scheduled());
+        assert!(first > now);
+        assert!(first <= now + Duration::from_secs(CORE_CONTAINER_RECYCLE_IDLE_SECONDS));
+
+        assert!(signal.postpone_if_scheduled());
+
+        let second = (*receiver.borrow()).expect("postponed deadline");
+        assert!(second >= first);
+
+        signal.cancel();
+
+        assert!(!signal.is_scheduled());
+        assert!((*receiver.borrow()).is_none());
+        assert!(!signal.postpone_if_scheduled());
+
+        signal.schedule();
+        assert!(signal.is_scheduled());
     }
 }

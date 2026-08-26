@@ -465,6 +465,8 @@ async fn show(body: Bytes) -> Response {
 }
 
 async fn chat(State(state): State<Arc<CoreState>>, body: Bytes) -> Response {
+    state.recycle.postpone_if_scheduled();
+
     let payload = match parse_object_body(&body) {
         Ok(payload) => payload,
         Err((status, error)) => return json_response(status, error),

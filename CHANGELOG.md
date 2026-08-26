@@ -5,6 +5,7 @@
 ### Fixed
 
 - separate Paddle worker teardown from OCR container recycle: the heavyweight worker and `ai.lock` are still released after the short warm-session idle timeout, while the lightweight OCR service remains available for five minutes after the heavyweight OCR session has ended before its clean cgroup recycle, avoiding normal batch imports colliding with an intentional restart.
+- separate metadata/history heavy-work cleanup from unified core container recycle: History helpers and Ollama are still released immediately, while the lightweight Rust core remains available for a five-minute quiet period before its clean cgroup recycle. New metadata work cancels the pending recycle and Suggestion Bridge classification activity postpones it, avoiding Paperless suggestion requests colliding with an intentional core restart.
 
 ## 0.3.6 - 2026-08-26
 
