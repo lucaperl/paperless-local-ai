@@ -112,6 +112,11 @@ def inject_response(response):
             return response
         if "text/html" not in response.get("Content-Type", ""):
             return response
+
+        # Present whenever Paperless has successfully loaded this Django
+        # integration, even while the optional shortcut itself is disabled.
+        response["X-Paperless-Local-AI-UI"] = "ready"
+
         control_center_url = _control_center_url()
         if control_center_url is None:
             return response

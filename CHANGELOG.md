@@ -4,7 +4,7 @@
 
 ### Added
 
-- Optional Paperless-ngx Settings shortcut to open `paperless-local-ai`, controlled from the Control Center without a browser extension or additional service.
+- Optional Paperless-ngx Settings shortcut to open `paperless-local-ai`, with Paperless-side setup verification and guided configuration from the Control Center, without a browser extension or additional service.
 
 ## 0.3.5 - 2026-08-25
 

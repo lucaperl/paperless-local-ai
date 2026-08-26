@@ -51,6 +51,7 @@ def test_disabled_is_noop(tmp_path, monkeypatch):
     response = Response()
     original = response.content
     assert module.inject_response(response).content == original
+    assert response.headers["X-Paperless-Local-AI-UI"] == "ready"
 
 
 def test_enabled_injects_settings_link_script(tmp_path, monkeypatch):
@@ -66,6 +67,7 @@ def test_enabled_injects_settings_link_script(tmp_path, monkeypatch):
     assert 'document.createTextNode("paperless-local-ai")' in text
     assert "https://plai.example/" in text
     assert 'href === "admin/"' in text
+    assert response.headers["X-Paperless-Local-AI-UI"] == "ready"
     assert response.headers["Content-Length"] == str(len(response.content))
 
 
