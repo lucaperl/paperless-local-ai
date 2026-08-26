@@ -46,8 +46,9 @@
     "src/ocr/ocrmypdf_plai.py": "9a02361f15f931484fa20d96b958336cef155f6c74bd4384c361828faa569b57",
     "src/ocr/paddle_engine.py": "5829a8eafbcf28772ddaedfef11f249eaef62a717bf7121cb09b850b5caed435",
     "src/ocr/paperless_local_ai_ui/__init__.py": "af38528d3d4e1efa14f975a3a7f2c34ca28aacebe87167605740f002443d360d",
-    "src/ocr/paperless_local_ai_ui/apps.py": "2e55de5b54c17a6c20c54611bf8346de97db69cf1b5a91ef77143c5e72512789",
-    "src/ocr/paperless_local_ai_ui/injection.py": "c79a0205b20d9f36aee0c7694bc9894e880c3d4a38e15319baabf19757874a2f",
+    "src/ocr/paperless_local_ai_ui/apps.py": "d8741137876a4fd856f971adb2d67024b47f85f2e665f2b0e52aa484265e7df9",
+    "src/ocr/paperless_local_ai_ui/injection.py": "6cb961bccd5e6fa1b7497779149f9ed553455bde5748866aaf5710dc0ee77ac1",
+    "src/ocr/paperless_local_ai_ui/middleware.py": "ca9ad5d6e6dab52cad3f626990a3a3ba897f611f4e0a565eb97d1f638f2d7d21",
     "src/ocr/service.py": "1334a5b8a175e8a168c0c0b32cf3be1a95e752e5e62865c04922a7cf6f1a361e"
   }
 }
