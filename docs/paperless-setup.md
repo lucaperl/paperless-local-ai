@@ -30,7 +30,7 @@ If you do not want to use Paperless' Inbox-tag behavior, explicitly add the conf
 
 ### Paperless matching algorithms
 
-For an exclusive paperless-local-ai metadata workflow, set **Matching algorithm â†’ None** for every Paperless object whose automatic assignment is owned by paperless-local-ai:
+For an exclusive paperless-local-ai metadata workflow, set **Matching algorithm → None** for every Paperless object whose automatic assignment is owned by paperless-local-ai:
 
 - content tags that paperless-local-ai may assign;
 - document types;
@@ -59,7 +59,7 @@ If only selected documents should be classified, add Paperless workflow conditio
 The metadata handoff is:
 
 ```text
-Document Added â†’ LLM â†’ core-service metadata worker â†’ Inbox/review
+Document Added → LLM → core-service metadata worker → Inbox/review
 ```
 
 On metadata-processing errors, the LLM queue tag is removed and the configured LLM error tag is applied.
@@ -106,7 +106,7 @@ PYTHONPATH=/opt/paperless-local-ai
 PAPERLESS_APPS=paperless_local_ai_ui.apps.PaperlessLocalAiUiConfig
 ```
 
-If `PAPERLESS_APPS` already contains another Django app, append this app to the existing comma-separated value instead of replacing it. The integration is inert by default. After Paperless has restarted with these values, enable or disable the shortcut with one click under **Control Center â†’ App Settings â†’ Connections â†’ Paperless shortcut**; no further Paperless restart is needed. The button is shown only where Paperless itself exposes the admin Settings header and opens the configured Control Center URL in a new tab.
+If `PAPERLESS_APPS` already contains another Django app, append this app to the existing comma-separated value instead of replacing it. The integration is inert by default. After Paperless has restarted with these values, enable or disable the shortcut with one click under **Control Center → App Settings → Connections → Paperless shortcut**; no further Paperless restart is needed. The button is shown only where Paperless itself exposes the admin Settings header and opens the configured Control Center URL in a new tab.
 
 The URL must be reachable from **inside the Paperless container**.
 
@@ -121,13 +121,13 @@ Paperless passes its requested OCR language to the plugin. `ocr-service` checks 
 Common aliases are normalized, including:
 
 ```text
-deu / ger â†’ de
-eng       â†’ en
-ita       â†’ it
-fra / fre â†’ fr
-spa       â†’ es
-por       â†’ pt
-nld / dut â†’ nl
+deu / ger → de
+eng       → en
+ita       → it
+fra / fre → fr
+spa       → es
+por       → pt
+nld / dut → nl
 ```
 
 If the two configurations disagree, the OCR request fails closed with `ocr_language_mismatch`.
@@ -174,7 +174,7 @@ Paperless must be able to reach the suggestion bridge. For the default host port
 http://<bridge-host>:30149
 ```
 
-For the tested Paperless-ngx 3.0.5 setup, configure **Application Configuration â†’ AI** as follows:
+For the tested Paperless-ngx 3.0.5 setup, configure **Application Configuration → AI** as follows:
 
 ```text
 Enable AI features:        on
