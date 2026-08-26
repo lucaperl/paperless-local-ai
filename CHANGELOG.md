@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.7 - 2026-08-27
+
 ### Fixed
 
 - separate Paddle worker teardown from OCR container recycle: the heavyweight worker and `ai.lock` are still released after the short warm-session idle timeout, while the lightweight OCR service remains available for five minutes after the heavyweight OCR session has ended before its clean cgroup recycle, avoiding normal batch imports colliding with an intentional restart.
