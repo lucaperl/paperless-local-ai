@@ -27,6 +27,7 @@ from history_common import (
     _leaf_names_from_ids,
     empty_history_status,
     fetch_reviewed_documents,
+    history_matching_settings,
     history_source_state,
 )
 
@@ -53,8 +54,9 @@ def _status_for_count(count: int) -> str:
 class HistoryIndex:
     """Read-only TF-IDF similarity index over reviewed Paperless documents."""
 
-    def __init__(self) -> None:
+    def __init__(self, matching: dict[str, Any] | None = None) -> None:
         self._lock = threading.RLock()
+        self._matching = matching or history_matching_settings()
         self._entries: list[dict[str, Any]] = []
         self._word_vectorizer: TfidfVectorizer | None = None
         self._char_vectorizer: TfidfVectorizer | None = None
@@ -64,7 +66,7 @@ class HistoryIndex:
         self._last_checked_monotonic = 0.0
         self._refreshed_at: str | None = None
         self._last_error: str | None = None
-        self._status: dict[str, Any] = empty_history_status()
+        self._status: dict[str, Any] = empty_history_status(self._matching)
 
     @staticmethod
     def _source_state(client, tax, excluded_tag_names):
@@ -138,11 +140,11 @@ class HistoryIndex:
                 break
         return result
 
-    @staticmethod
-    def _decision(neighbors: list[tuple[dict[str, Any], float]]) -> dict[str, Any]:
+    def _decision(self, neighbors: list[tuple[dict[str, Any], float]]) -> dict[str, Any]:
         if not neighbors:
             return {
                 "confident": False,
+                "tags": [],
                 "tag": None,
                 "top_similarity": 0.0,
                 "support": 0,
@@ -150,34 +152,31 @@ class HistoryIndex:
             }
         top = neighbors[0]
         vote_neighbors = neighbors[:TOP_VOTE_NEIGHBORS]
-        weights: defaultdict[str, float] = defaultdict(float)
-        supports: Counter[str] = Counter()
+        weights: defaultdict[tuple[str, ...], float] = defaultdict(float)
+        supports: Counter[tuple[str, ...]] = Counter()
         for entry, similarity in vote_neighbors:
-            for tag in entry["tags"]:
-                weights[tag] += similarity
-                supports[tag] += 1
-        if not weights:
-            return {
-                "confident": False,
-                "tag": None,
-                "top_similarity": top[1],
-                "support": 0,
-                "winner_share": 0.0,
-            }
-        winner = max(weights, key=lambda tag: (weights[tag], supports[tag], tag))
+            tag_set = tuple(entry["tags"])
+            weights[tag_set] += similarity
+            supports[tag_set] += 1
+        winner = max(
+            weights,
+            key=lambda tag_set: (weights[tag_set], supports[tag_set], tag_set),
+        )
         total_weight = sum(weights.values())
         share = weights[winner] / total_weight if total_weight else 0.0
-        top_tags = top[0]["tags"]
+        top_tags = tuple(top[0]["tags"])
         confident = (
-            top[1] >= FAST_SIMILARITY
-            and len(top_tags) == 1
-            and top_tags[0] == winner
-            and supports[winner] >= MIN_SUPPORT
-            and share >= MIN_WINNER_SHARE
+            top[1] >= self._matching["match_similarity"]
+            and top_tags == winner
+            and len(winner) <= self._matching["max_tags"]
+            and supports[winner] >= self._matching["min_support"]
+            and share >= self._matching["min_winner_share"]
         )
+        winner_tags = list(winner)
         return {
             "confident": confident,
-            "tag": winner,
+            "tags": winner_tags,
+            "tag": winner_tags[0] if len(winner_tags) == 1 else None,
             "top_similarity": round(top[1], 4),
             "support": int(supports[winner]),
             "winner_share": round(share, 4),
@@ -268,7 +267,7 @@ class HistoryIndex:
             decision = self._decision(neighbors)
             if decision["confident"]:
                 routed += 1
-                if self._entries[int(source_index)]["tags"] == [decision["tag"]]:
+                if self._entries[int(source_index)]["tags"] == decision["tags"]:
                     agreement += 1
 
         sample_size = len(sample_indices)
@@ -377,7 +376,11 @@ class HistoryIndex:
                 self._source_signature = source_signature
                 self._last_error = None
                 self._status = {
-                    "status": "Ready" if len(entries) >= MIN_SUPPORT else "Not enough history",
+                    "status": (
+                        "Ready"
+                        if len(entries) >= self._matching["min_support"]
+                        else "Not enough history"
+                    ),
                     "reviewed_documents": len(entries),
                     "tags_represented": represented,
                     "eligible_tags": len(tax.get("tags", [])),
@@ -392,9 +395,10 @@ class HistoryIndex:
                     "last_updated": self._refreshed_at,
                     "last_error": None,
                     "thresholds": {
-                        "history_match_similarity": FAST_SIMILARITY,
-                        "support": MIN_SUPPORT,
-                        "winner_share": MIN_WINNER_SHARE,
+                        "history_match_similarity": self._matching["match_similarity"],
+                        "support": self._matching["min_support"],
+                        "winner_share": self._matching["min_winner_share"],
+                        "max_tags": self._matching["max_tags"],
                         "inconsistency_similarity": FAMILY_SIMILARITY,
                     },
                 }
@@ -481,6 +485,7 @@ class HistoryIndex:
             if decision["confident"]:
                 return {
                     "route": "history_match",
+                    "tags": decision["tags"],
                     "tag": decision["tag"],
                     "similarity": decision["top_similarity"],
                     "support": decision["support"],
@@ -495,6 +500,7 @@ class HistoryIndex:
                 "similarity": decision["top_similarity"],
                 "support": decision["support"],
                 "winner_share": decision["winner_share"],
+                "candidate_tags": decision.get("tags", []),
                 "candidate_tag": decision.get("tag"),
                 "examples": self._examples(neighbors),
             }

@@ -1,5 +1,8 @@
 use crate::ai_lock;
-use crate::app_config::AppConfig;
+use crate::app_config::{
+    AppConfig, HISTORY_MATCH_SIMILARITY_DEFAULT, HISTORY_MIN_SUPPORT_DEFAULT,
+    HISTORY_MIN_WINNER_SHARE_DEFAULT,
+};
 use crate::error::{Error, Result};
 use crate::paperless::{PaperlessClient, PaperlessDocument, Taxonomy};
 use crate::prompt::{PromptConfig, TaggingContext, TaggingMode};
@@ -27,15 +30,16 @@ pub const HISTORY_META_FILE: &str = "/data/history-cache/index-meta.json";
 pub const HISTORY_BROKER_SOCKET: &str = "/coordination/history-broker.sock";
 pub const HISTORY_PROTOCOL_MAX_BYTES: usize = 32 * 1024 * 1024;
 pub const HISTORY_CACHE_FORMAT_VERSION: u64 = 1;
-pub const HISTORY_ALGORITHM_VERSION: &str = "tfidf-word12-char35-nearest-neighbors-cosine-v1";
+pub const HISTORY_ALGORITHM_VERSION: &str =
+    "tfidf-word12-char35-nearest-neighbors-cosine-labelset-v2";
 
-pub const FAST_SIMILARITY: f64 = 0.60;
+pub const FAST_SIMILARITY: f64 = HISTORY_MATCH_SIMILARITY_DEFAULT;
 pub const FAMILY_SIMILARITY: f64 = 0.50;
 pub const EXAMPLE_MIN_SIMILARITY: f64 = 0.08;
 pub const TOP_VOTE_NEIGHBORS: u64 = 5;
 pub const QUERY_NEIGHBORS: u64 = 30;
-pub const MIN_SUPPORT: u64 = 2;
-pub const MIN_WINNER_SHARE: f64 = 0.50;
+pub const MIN_SUPPORT: u64 = HISTORY_MIN_SUPPORT_DEFAULT;
+pub const MIN_WINNER_SHARE: f64 = HISTORY_MIN_WINNER_SHARE_DEFAULT;
 pub const MAX_EXAMPLES: u64 = 5;
 pub const MAX_EXAMPLES_PER_TAG_SET: u64 = 2;
 pub const MAX_DIAGNOSTIC_DOCS: u64 = 2000;
@@ -397,6 +401,7 @@ pub fn llm_only_context() -> TaggingContext {
         route: "llm_only".into(),
         llm_decides: true,
         tag: None,
+        tags: vec![],
         examples: vec![],
         extra: BTreeMap::new(),
     }
@@ -411,6 +416,7 @@ pub fn history_error_context(error: impl Into<String>) -> TaggingContext {
         route: "llm_fallback".into(),
         llm_decides: true,
         tag: None,
+        tags: vec![],
         examples: vec![],
         extra,
     }
@@ -437,6 +443,7 @@ pub async fn history_contexts_for_documents(
 
     let payload = serde_json::json!({
         "op": "route_batch",
+        "max_tags": config.max_tags,
         "documents": documents.iter().map(|document| serde_json::json!({
             "id": document.id,
             "content": document.content.as_deref().unwrap_or_default(),
@@ -508,10 +515,15 @@ pub async fn history_context_for_document(
         .unwrap_or_else(|| history_error_context("No history route was prepared for this document"))
 }
 
-pub async fn refresh_history(manager: &HistoryManager, shutdown_after: bool) -> Result<Value> {
+pub async fn refresh_history(
+    manager: &HistoryManager,
+    max_tags: usize,
+    shutdown_after: bool,
+) -> Result<Value> {
     let result = manager
         .request(serde_json::json!({
             "op": "refresh",
+            "max_tags": max_tags,
             "shutdown_after": shutdown_after,
         }))
         .await?;
@@ -527,10 +539,11 @@ pub async fn cached_history_state(
     tax: &Taxonomy,
     app: &AppConfig,
     app_version: &str,
+    max_tags: usize,
 ) -> Result<Value> {
     let metadata = read_json(Path::new(HISTORY_META_FILE));
     let source = history_source_state(client, tax, app).await?;
-    let mut status = empty_history_status();
+    let mut status = empty_history_status_for(app, max_tags);
     let mut cache_state = "missing";
     let mut stale = true;
 
@@ -545,7 +558,7 @@ pub async fn cached_history_state(
         let metadata_matches = metadata.get("format_version").and_then(Value::as_u64)
             == Some(HISTORY_CACHE_FORMAT_VERSION)
             && metadata.get("app_version").and_then(Value::as_str) == Some(app_version)
-            && metadata.get("algorithm") == Some(&history_algorithm_signature())
+            && metadata.get("algorithm") == Some(&history_algorithm_signature_for(app, max_tags))
             && metadata.get("paperless_url").and_then(Value::as_str)
                 == Some(app.connections.paperless_url.as_str())
             && metadata.get("source") == Some(&source)
@@ -654,9 +667,10 @@ fn taxonomy_signature(tax: &Taxonomy) -> Value {
     )
 }
 
-pub fn history_algorithm_signature() -> Value {
+pub fn history_algorithm_signature_for(app: &AppConfig, max_tags: usize) -> Value {
     serde_json::json!({
         "version": HISTORY_ALGORITHM_VERSION,
+        "decision_unit": "complete_leaf_tag_set",
         "word_ngram_range": [1, 2],
         "char_analyzer": "char_wb",
         "char_ngram_range": [3, 5],
@@ -665,20 +679,25 @@ pub fn history_algorithm_signature() -> Value {
         "retrieval_estimator": "NearestNeighbors",
         "retrieval_metric": "cosine",
         "retrieval_algorithm": "brute",
-        "fast_similarity": FAST_SIMILARITY,
+        "match_similarity": app.history.match_similarity,
         "family_similarity": FAMILY_SIMILARITY,
         "example_min_similarity": EXAMPLE_MIN_SIMILARITY,
         "top_vote_neighbors": TOP_VOTE_NEIGHBORS,
         "query_neighbors": QUERY_NEIGHBORS,
-        "min_support": MIN_SUPPORT,
-        "min_winner_share": MIN_WINNER_SHARE,
+        "min_support": app.history.min_support,
+        "min_winner_share": app.history.min_winner_share,
+        "max_tags": max_tags,
         "max_examples": MAX_EXAMPLES,
         "max_examples_per_tag_set": MAX_EXAMPLES_PER_TAG_SET,
         "max_diagnostic_docs": MAX_DIAGNOSTIC_DOCS,
     })
 }
 
-pub fn empty_history_status() -> Value {
+pub fn history_algorithm_signature() -> Value {
+    history_algorithm_signature_for(&AppConfig::default(), 2)
+}
+
+pub fn empty_history_status_for(app: &AppConfig, max_tags: usize) -> Value {
     serde_json::json!({
         "status": "Not built",
         "reviewed_documents": 0,
@@ -695,12 +714,17 @@ pub fn empty_history_status() -> Value {
         "last_updated": null,
         "last_error": null,
         "thresholds": {
-            "history_match_similarity": FAST_SIMILARITY,
-            "support": MIN_SUPPORT,
-            "winner_share": MIN_WINNER_SHARE,
+            "history_match_similarity": app.history.match_similarity,
+            "support": app.history.min_support,
+            "winner_share": app.history.min_winner_share,
+            "max_tags": max_tags,
             "inconsistency_similarity": FAMILY_SIMILARITY,
         },
     })
+}
+
+pub fn empty_history_status() -> Value {
+    empty_history_status_for(&AppConfig::default(), 2)
 }
 
 fn read_json(path: &Path) -> Option<Value> {
@@ -798,7 +822,8 @@ mod tests {
     #[test]
     fn algorithm_signature_keeps_released_thresholds() {
         let signature = history_algorithm_signature();
-        assert_eq!(signature["fast_similarity"], 0.60);
+        assert_eq!(signature["decision_unit"], "complete_leaf_tag_set");
+        assert_eq!(signature["match_similarity"], 0.62);
         assert_eq!(signature["min_support"], 2);
         assert_eq!(signature["min_winner_share"], 0.50);
         assert_eq!(signature["max_examples"], 5);

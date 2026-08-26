@@ -56,6 +56,7 @@ def history_contexts_for_documents(
             }
             for document in documents
         ],
+        "max_tags": int(config.get("max_tags", 2)),
         "shutdown_after": shutdown_after,
     }
     try:
@@ -90,10 +91,13 @@ def history_context_for_document(
     )[int(document["id"])]
 
 
-def refresh_history(*, shutdown_after: bool = False) -> dict[str, Any]:
+def refresh_history(
+    *, max_tags: int = 2, shutdown_after: bool = False
+) -> dict[str, Any]:
     result = history_broker_request(
         {
             "op": "refresh",
+            "max_tags": int(max_tags),
             "shutdown_after": shutdown_after,
         }
     )

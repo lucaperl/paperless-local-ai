@@ -510,9 +510,16 @@ async fn tagging_state_impl(state: &CoreState, force: bool) -> std::result::Resu
     let app = state.app_config.load()?;
     let taxonomy = state.paperless.taxonomy().await?;
     let history = if force {
-        history::refresh_history(&state.history, true).await?
+        history::refresh_history(&state.history, config.max_tags, true).await?
     } else {
-        history::cached_history_state(&state.paperless, &taxonomy, &app, &state.app_version).await?
+        history::cached_history_state(
+            &state.paperless,
+            &taxonomy,
+            &app,
+            &state.app_version,
+            config.max_tags,
+        )
+        .await?
     };
     Ok(serde_json::json!({
         "tagging_mode": config.tagging_mode,
@@ -711,7 +718,12 @@ pub fn finalize_model_result(
         );
         result["correspondent"] = Value::String(resolution.resolved.clone());
         if tagging.route == "history_match" {
-            result["tags"] = serde_json::json!([tagging.tag.clone().unwrap_or_default()]);
+            let history_tags = if !tagging.tags.is_empty() || tagging.tag.is_none() {
+                tagging.tags.clone()
+            } else {
+                vec![tagging.tag.clone().unwrap_or_default()]
+            };
+            result["tags"] = serde_json::json!(history_tags);
         } else {
             let names = result
                 .get("tags")
@@ -805,6 +817,7 @@ mod tests {
             route: "history_match".into(),
             llm_decides: false,
             tag: Some("Finance".into()),
+            tags: vec!["Finance".into()],
             examples: vec![],
             extra: Default::default(),
         };
@@ -818,6 +831,33 @@ mod tests {
             finalize_model_result(result, &taxonomy(), &config, &tagging, false);
         assert!(errors.is_empty());
         assert_eq!(result["tags"], serde_json::json!(["Finance"]));
+    }
+
+    #[test]
+    fn fast_path_inserts_complete_history_tag_set_after_validation() {
+        let config = PromptConfig {
+            tagging_mode: TaggingMode::HistoryAssisted,
+            ..PromptConfig::default()
+        };
+        let tagging = TaggingContext {
+            mode: "history_assisted".into(),
+            route: "history_match".into(),
+            llm_decides: false,
+            tag: None,
+            tags: vec!["Bank".into(), "Finance".into()],
+            examples: vec![],
+            extra: Default::default(),
+        };
+        let result = serde_json::json!({
+            "title": "Invoice March 2026",
+            "document_type": "Invoice",
+            "correspondent": "Example GmbH",
+            "created": "2026-03-31",
+        });
+        let (result, errors, _) =
+            finalize_model_result(result, &taxonomy(), &config, &tagging, false);
+        assert!(errors.is_empty());
+        assert_eq!(result["tags"], serde_json::json!(["Bank", "Finance"]));
     }
 
     #[test]

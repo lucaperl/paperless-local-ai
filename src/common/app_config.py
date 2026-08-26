@@ -3,6 +3,7 @@ from __future__ import annotations
 import fcntl
 import hashlib
 import json
+import math
 import os
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -21,6 +22,9 @@ OCR_MAX_SIDE_PIXELS_MAX = 4000
 OCR_RETRY_DELAYS_DEFAULT = (15, 60, 300, 600)
 OCR_RETRY_DELAYS_MAX_COUNT = 10
 OCR_RETRY_DELAY_MAX_SECONDS = 86400
+HISTORY_MATCH_SIMILARITY_DEFAULT = 0.62
+HISTORY_MIN_SUPPORT_DEFAULT = 2
+HISTORY_MIN_WINNER_SHARE_DEFAULT = 0.50
 
 
 DEFAULT_CONFIG = {
@@ -35,6 +39,11 @@ DEFAULT_CONFIG = {
         "llm_error_tag": "LLM Error",
         "review_tag": "Inbox",
         "extra_excluded_tags": ["TODO"],
+    },
+    "history": {
+        "match_similarity": HISTORY_MATCH_SIMILARITY_DEFAULT,
+        "min_support": HISTORY_MIN_SUPPORT_DEFAULT,
+        "min_winner_share": HISTORY_MIN_WINNER_SHARE_DEFAULT,
     },
     "ocr": {
         "language": "en",
@@ -99,6 +108,15 @@ def _positive_int(value, name, minimum=1, maximum=None):
     return value
 
 
+def _bounded_float(value, name, minimum, maximum):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ConfigError(f"{name} must be numeric")
+    value = float(value)
+    if not math.isfinite(value) or not minimum <= value <= maximum:
+        raise ConfigError(f"{name} must be between {minimum} and {maximum}")
+    return value
+
+
 def _retry_delays(value):
     if not isinstance(value, list):
         raise ConfigError("ocr.retry_delays_seconds must be a list of integer seconds")
@@ -126,7 +144,7 @@ def validate_config(raw):
     # Only copy fields that belong to the current schema. This intentionally
     # drops removed pre-0.2 OCR queue/error keys instead of carrying dead
     # configuration forward.
-    for section in ("connections", "workflow", "ocr", "runtime", "paperless_ui"):
+    for section in ("connections", "workflow", "history", "ocr", "runtime", "paperless_ui"):
         incoming = raw.get(section, {})
         if not isinstance(incoming, dict):
             raise ConfigError(f"{section} must be an object")
@@ -180,6 +198,17 @@ def validate_config(raw):
             dedup.append(item)
             seen.add(key)
     workflow["extra_excluded_tags"] = dedup
+
+    history = cfg["history"]
+    history["match_similarity"] = _bounded_float(
+        history["match_similarity"], "history.match_similarity", 0.50, 1.0
+    )
+    history["min_support"] = _positive_int(
+        history["min_support"], "history.min_support", 2, 5
+    )
+    history["min_winner_share"] = _bounded_float(
+        history["min_winner_share"], "history.min_winner_share", 0.50, 1.0
+    )
 
     ocr = cfg["ocr"]
     for key in ("language", "version", "model_profile", "device"):

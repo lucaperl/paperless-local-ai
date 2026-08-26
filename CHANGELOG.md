@@ -5,6 +5,12 @@
 ### Added
 
 - Optional Paperless-ngx Settings shortcut to open `paperless-local-ai`, with Paperless-side setup verification and guided configuration from the Control Center, without a browser extension or additional service.
+- Advanced Hybrid History matching controls for minimum similarity, neighborhood support and winner share, stored with versioned App Settings and documented directly from the Control Center.
+
+### Changed
+
+- Hybrid History now votes on complete reviewed leaf-tag sets and can safely reuse reviewed multi-tag combinations; combinations not established by reviewed History continue to fall back to the LLM instead of being synthesized by History.
+- raise the default confident-History similarity gate from `0.60` to `0.62`; the default support and weighted winner-share gates remain `2` and `0.50`.
 
 ## 0.3.5 - 2026-08-25
 

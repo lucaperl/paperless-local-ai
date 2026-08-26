@@ -8,7 +8,7 @@
 
 Hybrid tagging combines a confidence-gated reviewed-document lookup with an LLM fallback.
 
-For each document, `paperless-local-ai` compares the full Paperless text with documents that have already passed human review. A reviewed tag is reused only when the nearest document is sufficiently similar **and** the nearest neighborhood agrees strongly enough. If any gate fails, the LLM chooses tags instead and receives the current Tag Guidance plus a small set of relevant reviewed examples.
+For each document, `paperless-local-ai` compares the full Paperless text with documents that have already passed human review. A complete reviewed leaf-tag set is reused only when the nearest document is sufficiently similar **and** the nearest neighborhood agrees strongly enough on that exact set. The set may contain one or multiple tags. History never combines individually supported tags into a new, unseen combination. If any gate fails, the LLM chooses tags instead and receives the current Tag Guidance plus a small set of relevant reviewed examples.
 
 This creates an explicit abstention/fallback path: uncertain historical evidence is not treated as a tag decision.
 
@@ -47,17 +47,23 @@ The retrieval index uses full Paperless document text. Its vector representation
 - TF-IDF word n-grams 1–2;
 - TF-IDF `char_wb` character n-grams 3–5.
 
-A reviewed tag is reused only when **all** of these conditions hold:
+History treats each reviewed document's **complete leaf-tag set** as one decision unit. Parent tags automatically present alongside selected children are pruned first. Each of the five nearest reviewed documents casts one similarity-weighted vote for its complete set; History does not vote for labels independently and therefore cannot synthesize an unseen combination.
 
-- nearest reviewed-document similarity is at least `0.60`;
-- the nearest document has exactly one leaf content tag;
-- that tag is also the weighted winner among the five nearest reviewed documents;
-- at least two of those neighbors support the winning tag;
-- the winning tag receives at least `0.50` of the weighted tag vote.
+A reviewed set is reused only when **all** of these conditions hold:
 
-If any condition fails, Hybrid tagging abstains and routes tag selection to the LLM.
+- nearest reviewed-document similarity reaches the configured **Minimum similarity**; default `0.62`;
+- the nearest document's complete leaf-tag set is also the weighted winning set among the five nearest reviewed documents;
+- at least the configured **Minimum support** neighbors carry that exact set; default `2`;
+- the winning set receives at least the configured **Minimum winner share** of the similarity-weighted set vote; default `0.50`;
+- the complete set contains no more tags than the configured **Maximum LLM tags** limit.
 
-The thresholds are conservative implementation constants rather than user-facing tuning knobs.
+If any condition fails, Hybrid tagging abstains and routes tag selection to the LLM. This includes plausible combinations whose individual tags have historical support but whose complete combination has not been established by reviewed History.
+
+### Advanced History matching
+
+The three confidence values above are exposed under **Control Center → Classification → Tagging → History health → Advanced History matching** and are saved as versioned App Settings. Lowering them increases automatic History coverage but also increases the risk of accepting an incorrect complete tag set. Supported ranges are `0.50?1.00` for similarity, `2?5` for support and `0.50?1.00` for winner share. The remaining retrieval, example-selection and inconsistency-diagnostic constants are implementation details rather than user-facing tuning knobs.
+
+Changing one of these controls changes the History algorithm signature, so cached diagnostics are considered stale until the index is rebuilt automatically on the next Hybrid use or manually with **Refresh reviewed history**.
 
 ## LLM fallback and retrieved examples
 
@@ -81,7 +87,7 @@ The application decides only **whether** the Tagging prompt is needed:
 | Hybrid fallback | System + Base classification + Tagging | included |
 | LLM direct | System + Base classification + Tagging | included |
 
-On a confident Hybrid match, Tag Guidance, retrieved examples, the tag list, the Tagging prompt and the `tags` schema field are all omitted. The application inserts the reviewed tag after validating the base LLM result.
+On a confident Hybrid match, Tag Guidance, retrieved examples, the tag list, the Tagging prompt and the `tags` schema field are all omitted. The application inserts the complete reviewed leaf-tag set after validating the base LLM result.
 
 **Preview prompts** shows the exact rendered system/user messages and schema for a selected Paperless document.
 
@@ -116,7 +122,7 @@ History health is diagnostic information about the reviewed evidence available t
 
 - **Reviewed documents** — documents currently eligible as trusted retrieval history.
 - **Tags represented** — how many current content tags have at least one reviewed example.
-- **Retrospective history reuse** — leave-one-out evaluation. Each reviewed document is temporarily treated as new; it counts only when the strict Hybrid gate fires and reproduces its existing reviewed leaf-tag assignment. This is not a prediction of future accuracy.
+- **Retrospective history reuse** — leave-one-out evaluation. Each reviewed document is temporarily treated as new; it counts only when the strict Hybrid gate fires and reproduces its existing complete reviewed leaf-tag set. This is not a prediction of future accuracy.
 - **History depth by tag** — how many reviewed examples currently exist for each tag.
 - **Potential tag inconsistencies** — review hints for groups of strongly similar reviewed documents with different leaf-tag assignments.
 
@@ -153,7 +159,7 @@ For Paperless-ngx **3.0.5**, the native classifier trains on non-Inbox documents
 | Core method | trained supervised classifier | confidence-gated nearest-reviewed-document retrieval + LLM fallback |
 | Text features | word CountVectorizer, 1–2-grams | equal-weight word TF-IDF 1–2 + character `char_wb` TF-IDF 3–5 |
 | Tag training/evidence | tags configured with Automatic matching | reviewed content tags; no Paperless Automatic matching requirement |
-| Decision control | classifier prediction | explicit similarity + neighborhood support/agreement gate |
+| Decision control | classifier prediction | explicit whole-tag-set similarity + neighborhood support/agreement gate |
 | Uncertain historical evidence | native classifier behavior | explicit abstention to the configured LLM |
 | LLM examples | not part of the native classifier | nearest reviewed documents become few-shot examples on fallback |
 | Personal tag instructions | learned implicitly from labeled documents | optional explicit Tag Guidance plus reviewed examples |

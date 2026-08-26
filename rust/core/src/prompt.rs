@@ -649,6 +649,8 @@ pub struct TaggingContext {
     #[serde(default)]
     pub tag: Option<String>,
     #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
     pub examples: Vec<TagExample>,
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
@@ -662,6 +664,7 @@ impl TaggingContext {
                 route: "llm_only".into(),
                 llm_decides: true,
                 tag: None,
+                tags: vec![],
                 examples: vec![],
                 extra: BTreeMap::new(),
             },
@@ -670,6 +673,7 @@ impl TaggingContext {
                 route: "llm_fallback".into(),
                 llm_decides: true,
                 tag: None,
+                tags: vec![],
                 examples: vec![],
                 extra: BTreeMap::new(),
             },
@@ -1261,6 +1265,7 @@ mod tests {
             route: "history_match".into(),
             llm_decides: false,
             tag: Some("Finance".into()),
+            tags: vec!["Finance".into()],
             examples: vec![],
             extra: BTreeMap::new(),
         };

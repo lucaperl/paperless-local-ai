@@ -61,6 +61,11 @@ def test_control_center_keeps_complete_ui_contract():
         "For more capable models",
         "How Hybrid tagging works",
         "History health",
+        "Advanced History matching",
+        "Minimum similarity",
+        "Minimum support",
+        "Minimum winner share",
+        "Save History matching",
         "Retrospective history reuse",
         "History depth by tag",
         "Potential tag inconsistencies",
@@ -137,9 +142,11 @@ def test_history_runtime_is_confidence_gated():
     common = (ROOT / "src/core/history_common.py").read_text(encoding="utf-8")
     runtime = (ROOT / "src/core/history_runtime.py").read_text(encoding="utf-8")
     combined = common + "\n" + runtime
-    assert "FAST_SIMILARITY = 0.60" in combined
-    assert "MIN_SUPPORT = 2" in combined
-    assert "MIN_WINNER_SHARE = 0.50" in combined
+    assert "HISTORY_MATCH_SIMILARITY_DEFAULT = 0.62" in (ROOT / "src/common/app_config.py").read_text(encoding="utf-8")
+    assert "HISTORY_MIN_SUPPORT_DEFAULT = 2" in (ROOT / "src/common/app_config.py").read_text(encoding="utf-8")
+    assert "HISTORY_MIN_WINNER_SHARE_DEFAULT = 0.50" in (ROOT / "src/common/app_config.py").read_text(encoding="utf-8")
+    assert "complete_leaf_tag_set" in combined
+    assert "tuple(entry[\"tags\"])" in runtime
     assert "MAX_EXAMPLES = 5" in combined
     assert "MAX_EXAMPLES_PER_TAG_SET = 2" in combined
     assert "EXAMPLE_MIN_SIMILARITY = 0.08" in combined
@@ -276,7 +283,7 @@ def test_core_recycles_after_complete_heavy_work_boundaries():
     assert "CoreEvent::Recycle" in main
     assert "RESTART_POLICY_ARM_SECONDS: u64 = 11" in main
     assert "had_jobs && state.recycle.request()" in worker
-    assert "history::refresh_history(&state.history, true)" in control
+    assert "history::refresh_history(&state.history, config.max_tags, true)" in control
     assert "History refresh completed; requesting clean core restart" in control
 
 
