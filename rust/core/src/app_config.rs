@@ -51,6 +51,12 @@ pub struct RuntimeConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PaperlessUiConfig {
+    pub enabled: bool,
+    pub control_center_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AppConfig {
     pub version: u64,
     pub updated_at: Option<String>,
@@ -58,6 +64,7 @@ pub struct AppConfig {
     pub workflow: WorkflowConfig,
     pub ocr: OcrConfig,
     pub runtime: RuntimeConfig,
+    pub paperless_ui: PaperlessUiConfig,
 }
 
 impl Default for AppConfig {
@@ -87,6 +94,10 @@ impl Default for AppConfig {
                 poll_interval_seconds: 10,
                 review_prune_interval_seconds: 3600,
                 dry_run: false,
+            },
+            paperless_ui: PaperlessUiConfig {
+                enabled: false,
+                control_center_url: String::new(),
             },
         }
     }
@@ -148,7 +159,7 @@ impl AppConfig {
             .cloned()
             .expect("default app config serializes to an object");
 
-        for section in ["connections", "workflow", "ocr", "runtime"] {
+        for section in ["connections", "workflow", "ocr", "runtime", "paperless_ui"] {
             copy_known_section(&mut merged, raw, section)?;
         }
         if let Some(version) = raw.get("version") {
@@ -252,6 +263,20 @@ impl AppConfig {
         if !(60..=86_400).contains(&self.runtime.review_prune_interval_seconds) {
             return Err(Error::Config(
                 "runtime.review_prune_interval_seconds must be >= 60 and <= 86400".into(),
+            ));
+        }
+
+        self.paperless_ui.control_center_url =
+            self.paperless_ui.control_center_url.trim().to_owned();
+        if !self.paperless_ui.control_center_url.is_empty() {
+            self.paperless_ui.control_center_url = http_url(
+                &self.paperless_ui.control_center_url,
+                "paperless_ui.control_center_url",
+            )?;
+        }
+        if self.paperless_ui.enabled && self.paperless_ui.control_center_url.is_empty() {
+            return Err(Error::Config(
+                "paperless_ui.control_center_url is required when enabled".into(),
             ));
         }
         Ok(())

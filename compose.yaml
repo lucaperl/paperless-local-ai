@@ -8,6 +8,7 @@ x-core-volumes: &core-volumes
   - ${APP_DATA_DIR:-./data}/config:/config
   - ${APP_DATA_DIR:-./data}/core:/data
   - ${APP_DATA_DIR:-./data}/coordination:/coordination
+  - ${APP_DATA_DIR:-./data}/integration:/integration
 
 services:
   ocr-service:

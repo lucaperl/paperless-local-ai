@@ -13,6 +13,7 @@ pub mod json_compat;
 pub mod ocr_recovery;
 pub mod ollama;
 pub mod paperless;
+pub mod paperless_ui;
 pub mod prompt;
 pub mod review;
 pub mod state;

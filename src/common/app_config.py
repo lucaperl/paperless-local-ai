@@ -49,6 +49,10 @@ DEFAULT_CONFIG = {
         "review_prune_interval_seconds": 3600,
         "dry_run": False,
     },
+    "paperless_ui": {
+        "enabled": False,
+        "control_center_url": "",
+    },
 }
 
 
@@ -122,7 +126,7 @@ def validate_config(raw):
     # Only copy fields that belong to the current schema. This intentionally
     # drops removed pre-0.2 OCR queue/error keys instead of carrying dead
     # configuration forward.
-    for section in ("connections", "workflow", "ocr", "runtime"):
+    for section in ("connections", "workflow", "ocr", "runtime", "paperless_ui"):
         incoming = raw.get(section, {})
         if not isinstance(incoming, dict):
             raise ConfigError(f"{section} must be an object")
@@ -217,6 +221,19 @@ def validate_config(raw):
     )
     if not isinstance(runtime["dry_run"], bool):
         raise ConfigError("runtime.dry_run must be true or false")
+
+    paperless_ui = cfg["paperless_ui"]
+    if not isinstance(paperless_ui["enabled"], bool):
+        raise ConfigError("paperless_ui.enabled must be true or false")
+    url = paperless_ui.get("control_center_url", "")
+    if not isinstance(url, str):
+        raise ConfigError("paperless_ui.control_center_url must be a string")
+    url = url.strip()
+    if url:
+        url = _validate_url(url, "paperless_ui.control_center_url")
+    if paperless_ui["enabled"] and not url:
+        raise ConfigError("paperless_ui.control_center_url is required when enabled")
+    paperless_ui["control_center_url"] = url
 
     return cfg
 

@@ -15,6 +15,7 @@ x-core-volumes: &core-volumes
   - /mnt/YOUR_POOL/paperless-local-ai/config:/config
   - /mnt/YOUR_POOL/paperless-local-ai/core:/data
   - /mnt/YOUR_POOL/paperless-local-ai/coordination:/coordination
+  - /mnt/YOUR_POOL/paperless-local-ai/integration:/integration
 
 services:
   ocr-service:
