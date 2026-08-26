@@ -9,7 +9,7 @@ use crate::prompt::{
     PLACEHOLDERS, PromptConfig, TaggingContext, prompt_hashes, prompt_preset,
     prune_parent_tag_names, render_prompts, validate_result,
 };
-use crate::state::CoreState;
+use crate::state::{CORE_CONTAINER_RECYCLE_IDLE_SECONDS, CoreState};
 use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
@@ -492,6 +492,8 @@ async fn health(State(state): State<Arc<CoreState>>) -> ApiResult {
             "config_version": config.version,
             "model": config.model,
             "tagging_mode": config.tagging_mode,
+            "container_recycle_idle_seconds": CORE_CONTAINER_RECYCLE_IDLE_SECONDS,
+            "container_recycle_scheduled": state.recycle.is_scheduled(),
         }),
     ))
 }
@@ -539,20 +541,19 @@ async fn tagging_state_get(State(state): State<Arc<CoreState>>) -> ApiResult {
 }
 
 async fn tagging_refresh(State(state): State<Arc<CoreState>>) -> ApiResult {
-    let value = tagging_state_impl(&state, true)
-        .await
-        .map_err(ApiError::internal)?;
-    let response = json_response(StatusCode::OK, value);
+    state.recycle.cancel();
 
-    let recycle_state = Arc::clone(&state);
-    tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_secs(1)).await;
-        if recycle_state.recycle.request() {
-            println!("[CORE] History refresh completed; requesting clean core restart");
-        }
-    });
+    let result = tagging_state_impl(&state, true).await;
 
-    Ok(response)
+    state.recycle.schedule();
+
+    let value = result.map_err(ApiError::internal)?;
+    println!(
+        "[CORE] History refresh completed; core recycle scheduled after {}s idle",
+        CORE_CONTAINER_RECYCLE_IDLE_SECONDS
+    );
+
+    Ok(json_response(StatusCode::OK, value))
 }
 
 async fn prompt_validate(body: Bytes) -> ApiResult {

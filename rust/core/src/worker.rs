@@ -6,7 +6,7 @@ use crate::history::{self, history_error_context};
 use crate::ollama::performance_from_raw;
 use crate::paperless::{PaperlessDocument, Taxonomy, expand_tag_ids_with_ancestors};
 use crate::prompt::{PromptConfig, TaggingContext, TaggingMode, prompt_hashes, render_prompts};
-use crate::state::CoreState;
+use crate::state::{CORE_CONTAINER_RECYCLE_IDLE_SECONDS, CoreState};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeSet, HashMap};
@@ -491,6 +491,12 @@ pub async fn run(state: Arc<CoreState>, mut shutdown: watch::Receiver<bool>) -> 
                 .cloned()
                 .unwrap_or_default();
 
+            let had_queue_items = !docs.is_empty();
+            if had_queue_items {
+                state.recycle.cancel();
+                log("[RECYCLE] Metadata work started; pending core recycle cancelled");
+            }
+
             let mut routing_docs = Vec::new();
             let mut routed_hashes = HashMap::new();
             for item in docs {
@@ -509,7 +515,6 @@ pub async fn run(state: Arc<CoreState>, mut shutdown: watch::Receiver<bool>) -> 
             }
 
             let routed_ids = routing_docs.iter().map(|document| document.id).collect::<Vec<_>>();
-            let had_jobs = !routed_ids.is_empty();
             let routing_config = state.prompt_config.load()?;
             let mut tagging_by_id = history::history_contexts_for_documents(
                 &state.history,
@@ -556,8 +561,12 @@ pub async fn run(state: Arc<CoreState>, mut shutdown: watch::Receiver<bool>) -> 
                 }
             }
 
-            if had_jobs && state.recycle.request() {
-                log("[RECYCLE] Metadata batch completed; requesting clean core restart");
+            if had_queue_items {
+                state.recycle.schedule();
+                log(format!(
+                    "[RECYCLE] Metadata batch completed; core recycle scheduled after {}s idle",
+                    CORE_CONTAINER_RECYCLE_IDLE_SECONDS
+                ));
             }
             Ok::<(), Error>(())
         }

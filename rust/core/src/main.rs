@@ -2,7 +2,12 @@
 
 mod healthcheck_probe;
 
-use plai_core::{bridge, control, error::Error, state::CoreState, worker};
+use plai_core::{
+    bridge, control,
+    error::Error,
+    state::{CORE_CONTAINER_RECYCLE_IDLE_SECONDS, CoreState},
+    worker,
+};
 use std::future::Future;
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -142,15 +147,54 @@ async fn async_main() -> Result<u8, Error> {
     }
 
     let recycle_tx = event_tx.clone();
-    let recycle_state = Arc::clone(&state);
+    let mut recycle_rx = state.recycle.subscribe();
     let recycle_handle = tokio::spawn(async move {
-        recycle_state.recycle.wait().await;
-        let minimum_uptime = Duration::from_secs(RESTART_POLICY_ARM_SECONDS);
-        let remaining = minimum_uptime.saturating_sub(service_started_at.elapsed());
-        if !remaining.is_zero() {
-            tokio::time::sleep(remaining).await;
+        loop {
+            let deadline = *recycle_rx.borrow_and_update();
+
+            let Some(deadline) = deadline else {
+                if recycle_rx.changed().await.is_err() {
+                    return;
+                }
+                continue;
+            };
+
+            let wait = deadline.saturating_duration_since(Instant::now());
+
+            tokio::select! {
+                _ = tokio::time::sleep(wait) => {
+                    let still_due = recycle_rx
+                        .borrow()
+                        .as_ref()
+                        .is_some_and(|current| *current <= Instant::now());
+
+                    if !still_due {
+                        continue;
+                    }
+
+                    let minimum_uptime =
+                        Duration::from_secs(RESTART_POLICY_ARM_SECONDS);
+                    let remaining =
+                        minimum_uptime.saturating_sub(service_started_at.elapsed());
+
+                    if !remaining.is_zero() {
+                        tokio::time::sleep(remaining).await;
+                    }
+
+                    println!(
+                        "[CORE] idle for {}s after heavy work; requesting clean core recycle",
+                        CORE_CONTAINER_RECYCLE_IDLE_SECONDS
+                    );
+                    let _ = recycle_tx.send(CoreEvent::Recycle);
+                    return;
+                }
+                changed = recycle_rx.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                }
+            }
         }
-        let _ = recycle_tx.send(CoreEvent::Recycle);
     });
 
     let signal_tx = event_tx.clone();
@@ -186,7 +230,9 @@ async fn async_main() -> Result<u8, Error> {
             0
         }
         CoreEvent::Recycle => {
-            println!("[CORE] completed heavy work; recycling cleanly for container restart");
+            println!(
+                "[CORE] extended idle period elapsed; recycling cleanly for container restart"
+            );
             0
         }
         CoreEvent::ComponentStopped { name, error } => {

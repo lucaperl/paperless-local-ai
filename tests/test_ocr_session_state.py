@@ -122,19 +122,70 @@ class _OneHousekeepingTick:
         return self.calls > 1
 
 
-def test_idle_worker_stop_requests_container_recycle():
+def test_idle_worker_stop_does_not_immediately_recycle_container():
+    now = time.monotonic()
+
     session = PaddleSession.__new__(PaddleSession)
     session._mutex = threading.RLock()
     session._process = _AliveWorker()
     session._lock_file = object()
-    session._last_used = time.monotonic() - service.SESSION_IDLE_SECONDS - 1.0
+    session._last_used = now - service.SESSION_IDLE_SECONDS - 1.0
+    session._container_idle_since = 0.0
     session._recycle_event = threading.Event()
     session._stop_event = _OneHousekeepingTick()
 
     stopped = []
-    session._stop = lambda reason: stopped.append(reason)
+
+    def fake_stop(reason):
+        stopped.append(reason)
+        session._process = None
+        session._lock_file = None
+        session._container_idle_since = now
+
+    session._stop = fake_stop
 
     session._housekeeping_loop()
 
     assert stopped == [f"idle for {service.SESSION_IDLE_SECONDS:.0f}s"]
+    assert session._container_idle_since == now
+    assert not session._recycle_event.is_set()
+
+
+def test_container_recycle_is_not_requested_before_extended_idle(monkeypatch):
+    now = 1000.0
+    monkeypatch.setattr(service.time, "monotonic", lambda: now)
+
+    session = PaddleSession.__new__(PaddleSession)
+    session._mutex = threading.RLock()
+    session._process = None
+    session._lock_file = None
+    session._last_used = 0.0
+    session._container_idle_since = (
+        now - service.CONTAINER_RECYCLE_IDLE_SECONDS + 1.0
+    )
+    session._recycle_event = threading.Event()
+    session._stop_event = _OneHousekeepingTick()
+
+    session._housekeeping_loop()
+
+    assert not session._recycle_event.is_set()
+
+
+def test_container_recycle_is_requested_after_extended_idle(monkeypatch):
+    now = 1000.0
+    monkeypatch.setattr(service.time, "monotonic", lambda: now)
+
+    session = PaddleSession.__new__(PaddleSession)
+    session._mutex = threading.RLock()
+    session._process = None
+    session._lock_file = None
+    session._last_used = 0.0
+    session._container_idle_since = (
+        now - service.CONTAINER_RECYCLE_IDLE_SECONDS - 1.0
+    )
+    session._recycle_event = threading.Event()
+    session._stop_event = _OneHousekeepingTick()
+
+    session._housekeeping_loop()
+
     assert session._recycle_event.is_set()
