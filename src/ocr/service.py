@@ -784,7 +784,7 @@ class PaddleSession:
                     >= CONTAINER_RECYCLE_IDLE_SECONDS
                 ):
                     LOG.info(
-                        "OCR service idle for %.0fs after last OCR activity; "
+                        "OCR service idle for %.0fs after Paddle worker became idle; "
                         "requesting service recycle so the container cgroup "
                         "returns to cold idle",
                         CONTAINER_RECYCLE_IDLE_SECONDS,
