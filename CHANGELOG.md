@@ -7,6 +7,11 @@
 - Optional Paperless-ngx Settings shortcut to open `paperless-local-ai`, with Paperless-side setup verification and guided configuration from the Control Center, without a browser extension or additional service.
 - Advanced Hybrid History matching controls for minimum similarity, neighborhood support and winner share, stored with versioned App Settings and documented directly from the Control Center.
 
+### Fixed
+
+- preserve required Paperless parent tags when writing nested content tags back to a document, while keeping LLM and Hybrid History decisions leaf-only.
+- make the stale History notice cover both reviewed-document changes and matching-setting changes.
+
 ### Changed
 
 - Hybrid History now votes on complete reviewed leaf-tag sets and can reuse reviewed multi-tag combinations; History never synthesizes new combinations, and cases without a confident observed-set match fall back to the LLM.

@@ -532,6 +532,25 @@ def compact_content(content: str, config: dict[str, Any]) -> tuple[str, bool]:
     return content[:head_len] + "\n\n[... MIDDLE SECTION TRUNCATED ...]\n\n" + content[-tail_len:], True
 
 
+def expand_tag_ids_with_ancestors(
+    tag_ids: list[int] | set[int],
+    tax: dict[str, Any],
+) -> set[int]:
+    result: set[int] = set()
+    parent_by_id = tax.get("parent_by_id", {})
+    for tag_id in tag_ids:
+        current = int(tag_id)
+        result.add(current)
+        parent = parent_by_id.get(current)
+        while parent:
+            parent = int(parent)
+            if parent in result:
+                break
+            result.add(parent)
+            parent = parent_by_id.get(parent)
+    return result
+
+
 def prune_parent_tag_names(names: list[str], tax: dict[str, Any]) -> list[str]:
     selected_ids = {
         tax["tag_by_name"][name]
