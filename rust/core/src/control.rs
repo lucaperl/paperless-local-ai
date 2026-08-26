@@ -66,6 +66,7 @@ pub fn router(state: Arc<CoreState>) -> Router {
         .route("/api/app/history/restore", post(app_restore))
         .route("/api/app/connections/test", post(connection_test))
         .route("/api/app/paperless-ui", post(paperless_ui_update))
+        .route("/api/app/paperless-ui/status", get(paperless_ui_status))
         .route("/api/state", get(prompt_state))
         .route("/api/health", get(health))
         .route("/api/history", get(prompt_history))
@@ -260,8 +261,25 @@ async fn paperless_ui_update(State(state): State<Arc<CoreState>>, body: Bytes) -
             "Paperless UI integration storage is not mounted in core-service; update the deployment before enabling the shortcut",
         ));
     }
+    if enabled && !paperless_ui::integration_package_ready() {
+        return Err(ApiError::bad(
+            "Paperless UI integration files are not published yet; wait for ocr-service to publish them and recheck setup",
+        ));
+    }
 
     let current = state.app_config.load().map_err(ApiError::internal)?;
+    if enabled {
+        let setup = paperless_ui_setup_check(&state, &current).await;
+        if !setup.get("ok").and_then(Value::as_bool).unwrap_or(false) {
+            let detail = setup
+                .get("detail")
+                .and_then(Value::as_str)
+                .unwrap_or("Paperless UI integration is not ready");
+            return Err(ApiError::bad(format!(
+                "Paperless shortcut setup is not ready: {detail}"
+            )));
+        }
+    }
     let mut raw = serde_json::to_value(&current).map_err(ApiError::internal)?;
     let section = raw
         .get_mut("paperless_ui")
@@ -313,6 +331,68 @@ async fn app_restore(State(state): State<Arc<CoreState>>, body: Bytes) -> ApiRes
             "history": state.app_config.list_history().map_err(ApiError::internal)?,
             "token_configured": !state.token.is_empty(),
         }),
+    ))
+}
+
+async fn paperless_ui_setup_check(state: &CoreState, config: &AppConfig) -> Value {
+    if !paperless_ui::integration_package_ready() {
+        return serde_json::json!({
+            "ok": false,
+            "reachable": false,
+            "package_ready": false,
+            "detail": "Integration files are not published yet.",
+        });
+    }
+
+    match state
+        .http
+        .inner()
+        .get(config.connections.paperless_url.clone())
+        .header("Accept", "text/html")
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+    {
+        Ok(response) => {
+            let ready = response
+                .headers()
+                .get("x-paperless-local-ai-ui")
+                .and_then(|value| value.to_str().ok())
+                == Some("ready");
+            let status = response.status().as_u16();
+            if ready {
+                serde_json::json!({
+                    "ok": true,
+                    "reachable": true,
+                    "package_ready": true,
+                    "detail": format!("Paperless integration verified · HTTP {status}"),
+                })
+            } else {
+                serde_json::json!({
+                    "ok": false,
+                    "reachable": true,
+                    "package_ready": true,
+                    "detail": format!(
+                        "Paperless is reachable, but the UI integration is not loaded · HTTP {status}"
+                    ),
+                })
+            }
+        }
+        Err(error) => serde_json::json!({
+            "ok": false,
+            "reachable": false,
+            "package_ready": true,
+            "detail": format!("reqwest::Error: {error}"),
+        }),
+    }
+}
+
+async fn paperless_ui_status(State(state): State<Arc<CoreState>>) -> ApiResult {
+    let config = state.app_config.ensure().map_err(ApiError::internal)?;
+    Ok(json_response(
+        StatusCode::OK,
+        paperless_ui_setup_check(&state, &config).await,
     ))
 }
 

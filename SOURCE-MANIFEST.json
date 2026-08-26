@@ -8,7 +8,7 @@
     "rust/core/src/assets.rs": "71c629b3f6cb21c49c3ecb64bf62bbc09cd4c1e8e54c8b4fcc0a432c6b4a2e4b",
     "rust/core/src/bin/plai-healthcheck.rs": "38cf5722ad306b2a775a320e32dca78bf3ba03ce0cfc93de1cf9a3d07180c7aa",
     "rust/core/src/bridge.rs": "0b511d12a24140a92c57ebbe5a813c998adeb03ef03959ad94fc005bd7e1b1d5",
-    "rust/core/src/control.rs": "0cf36007ebbb9c03fe8a69f7c0224d98acf36008e6a5f7e9e571f11d1fd23c59",
+    "rust/core/src/control.rs": "e437b513960306c39e85a6e0b175854c2dd003e0f8bf585795367b6296d40f4e",
     "rust/core/src/correspondent.rs": "369901030ace0f84df3e6d2bd59a29277c9afa603f6e3957a4867c9a8a9acf88",
     "rust/core/src/error.rs": "2da7179c4ef13ae34177ee2c11b42958f0401e9baf053c4ca02a1a51ec318b67",
     "rust/core/src/healthcheck_probe.rs": "7175c62c13b714f8d73d18ad3f33a8ddf811d82cd30e220fa57b48d44136cd02",
@@ -39,7 +39,7 @@
     "src/core/history_engine.py": "634b989508ae3b0b2fc621129c508de9e1f638f60aaf571a1f62f337ce5c1dd4",
     "src/core/history_runtime.py": "a65612fbeb46d072578c2ada8496b648381bafeca206e62563a5bfd2aef9cdaf",
     "src/core/prompt_runtime.py": "c9a7514cfad9e8d89710b544445a3d668eba32200001e71dc12674a675c64c3d",
-    "src/core/prompt_ui.py": "c1fa8ff97a822187ecdd795f94b6b447342ffcf55b10ab6f9fc3bf5bdfe271f1",
+    "src/core/prompt_ui.py": "0f6528328c8c725b274904f966e2604ad44b98d4e62ccdc9d45af9732945f203",
     "src/core/review_store.py": "208c4ba12d25f4a53a4353d1c84ff086cf30752ee2007b4dc4b764527ae51e95",
     "src/core/suggestion_bridge.py": "09461923ab9c72c662e16643d0e0f015cc817f4997aeb2c8bed686f93d9cc577",
     "src/core/worker.py": "d2b0964b14142f70559a8392c78f1bf3a48380dff1e4e85457f695c3ae71b05e",
@@ -47,7 +47,7 @@
     "src/ocr/paddle_engine.py": "5829a8eafbcf28772ddaedfef11f249eaef62a717bf7121cb09b850b5caed435",
     "src/ocr/paperless_local_ai_ui/__init__.py": "af38528d3d4e1efa14f975a3a7f2c34ca28aacebe87167605740f002443d360d",
     "src/ocr/paperless_local_ai_ui/apps.py": "2e55de5b54c17a6c20c54611bf8346de97db69cf1b5a91ef77143c5e72512789",
-    "src/ocr/paperless_local_ai_ui/injection.py": "64610416b0212b7d111aa633e571de7970221185142d48daa1777e64b6a984f4",
+    "src/ocr/paperless_local_ai_ui/injection.py": "c79a0205b20d9f36aee0c7694bc9894e880c3d4a38e15319baabf19757874a2f",
     "src/ocr/service.py": "1334a5b8a175e8a168c0c0b32cf3be1a95e752e5e62865c04922a7cf6f1a361e"
   }
 }
