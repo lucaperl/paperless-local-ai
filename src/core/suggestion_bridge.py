@@ -43,6 +43,57 @@ def empty_classification():
     return {"title": "", "tags": [], "correspondents": [], "document_types": [], "storage_paths": [], "dates": []}
 
 
+TAXONOMY_FIELDS = ("tags", "correspondents", "document_types", "storage_paths")
+
+
+def _resolve_local_schema_ref(schema, node):
+    if not isinstance(node, dict):
+        return {}
+    reference = node.get("$ref")
+    if not isinstance(reference, str) or not reference.startswith("#/"):
+        return node
+
+    target = schema
+    for part in reference[2:].split("/"):
+        part = part.replace("~1", "/").replace("~0", "~")
+        if not isinstance(target, dict) or part not in target:
+            return node
+        target = target[part]
+    return target if isinstance(target, dict) else node
+
+
+def uses_taxonomy_choice_schema(payload):
+    schema = payload.get("format")
+    if not isinstance(schema, dict):
+        return False
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        return False
+
+    for field in TAXONOMY_FIELDS:
+        resolved = _resolve_local_schema_ref(schema, properties.get(field))
+        choice_properties = resolved.get("properties") if isinstance(resolved, dict) else None
+        if not isinstance(choice_properties, dict):
+            return False
+        if "existing_ids" not in choice_properties or "new_names" not in choice_properties:
+            return False
+    return True
+
+
+def adapt_classification_to_request_schema(result, payload):
+    if not uses_taxonomy_choice_schema(payload):
+        return result
+
+    adapted = dict(result)
+    for field in TAXONOMY_FIELDS:
+        names = adapted.get(field)
+        adapted[field] = {
+            "existing_ids": [],
+            "new_names": list(names) if isinstance(names, list) else [],
+        }
+    return adapted
+
+
 def extract_user_prompt(payload):
     messages = payload.get("messages")
     if not isinstance(messages, list):
@@ -307,6 +358,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             log(f"[ERROR] Classification: {type(exc).__name__}: {exc}")
             self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": f"suggestion bridge failed: {type(exc).__name__}"}); return
+        result = adapt_classification_to_request_schema(result, payload)
         model = str(payload.get("model") or MODEL_NAME)
         content = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
         log(f"[CHAT] kind={meta['kind']} document_id={meta['matched_document_id']} match={meta['match']}")

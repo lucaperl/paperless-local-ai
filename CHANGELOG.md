@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.3.8 - 2026-08-28
+
+### Fixed
+
+- adapt the native Paperless suggestion bridge to the nested taxonomy-choice response schema introduced by Paperless-ngx 3.1, while preserving the Paperless-ngx 3.0.5 list response contract by negotiating against each Ollama request's JSON schema.
+
 ## 0.3.7 - 2026-08-27
 
 ### Fixed

@@ -21,6 +21,63 @@ const LOCALIZATION_MARKER: &str =
 const TAXONOMY_CACHE_SECONDS: u64 = 60;
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 
+const TAXONOMY_FIELDS: [&str; 4] = ["tags", "correspondents", "document_types", "storage_paths"];
+
+fn schema_node_for_property<'a>(schema: &'a Value, node: &'a Value) -> &'a Value {
+    let Some(reference) = node.get("$ref").and_then(Value::as_str) else {
+        return node;
+    };
+    let Some(pointer) = reference.strip_prefix('#') else {
+        return node;
+    };
+    schema.pointer(pointer).unwrap_or(node)
+}
+
+fn uses_taxonomy_choice_schema(payload: &Value) -> bool {
+    let Some(schema) = payload.get("format").filter(|value| value.is_object()) else {
+        return false;
+    };
+    let Some(properties) = schema.get("properties").and_then(Value::as_object) else {
+        return false;
+    };
+
+    TAXONOMY_FIELDS.iter().all(|field| {
+        let Some(node) = properties.get(*field) else {
+            return false;
+        };
+        let resolved = schema_node_for_property(schema, node);
+        let Some(choice_properties) = resolved.get("properties").and_then(Value::as_object) else {
+            return false;
+        };
+        choice_properties.contains_key("existing_ids")
+            && choice_properties.contains_key("new_names")
+    })
+}
+
+fn adapt_classification_to_request_schema(mut result: Value, payload: &Value) -> Value {
+    if !uses_taxonomy_choice_schema(payload) {
+        return result;
+    }
+
+    let Some(root) = result.as_object_mut() else {
+        return result;
+    };
+    for field in TAXONOMY_FIELDS {
+        let new_names = match root.remove(field) {
+            Some(Value::Array(names)) => names,
+            _ => Vec::new(),
+        };
+        root.insert(
+            field.to_owned(),
+            serde_json::json!({
+                "existing_ids": [],
+                "new_names": new_names,
+            }),
+        );
+    }
+    result
+}
+
 pub fn router(state: Arc<CoreState>) -> Router {
     Router::new()
         .route("/health", get(health))
@@ -488,6 +545,7 @@ async fn chat(State(state): State<Arc<CoreState>>, body: Bytes) -> Response {
                 );
             }
         };
+    let result = adapt_classification_to_request_schema(result, &payload);
     let model = payload
         .get("model")
         .and_then(Value::as_str)
@@ -539,5 +597,86 @@ mod tests {
     fn numeric_string_ids_are_supported_like_python_int() {
         assert_eq!(value_i64(&Value::String("42".into())), Some(42));
         assert_eq!(value_i64(&Value::from(7)), Some(7));
+    }
+
+    #[test]
+    fn keeps_legacy_taxonomy_list_schema() {
+        let payload = serde_json::json!({
+            "format": {
+                "type": "object",
+                "properties": {
+                    "tags": {"type": "array"},
+                    "correspondents": {"type": "array"},
+                    "document_types": {"type": "array"},
+                    "storage_paths": {"type": "array"}
+                }
+            }
+        });
+        let result = serde_json::json!({
+            "title": "",
+            "tags": ["Synthetic tag"],
+            "correspondents": ["Synthetic Sender"],
+            "document_types": [],
+            "storage_paths": [],
+            "dates": []
+        });
+
+        assert!(!uses_taxonomy_choice_schema(&payload));
+        assert_eq!(
+            adapt_classification_to_request_schema(result.clone(), &payload),
+            result
+        );
+    }
+
+    #[test]
+    fn adapts_paperless_31_taxonomy_choice_schema() {
+        let payload = serde_json::json!({
+            "format": {
+                "$defs": {
+                    "TaxonomyChoice": {
+                        "type": "object",
+                        "properties": {
+                            "existing_ids": {"type": "array", "items": {"type": "integer"}},
+                            "new_names": {"type": "array", "items": {"type": "string"}}
+                        }
+                    }
+                },
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "tags": {"$ref": "#/$defs/TaxonomyChoice"},
+                    "correspondents": {"$ref": "#/$defs/TaxonomyChoice"},
+                    "document_types": {"$ref": "#/$defs/TaxonomyChoice"},
+                    "storage_paths": {"$ref": "#/$defs/TaxonomyChoice"},
+                    "dates": {"type": "array"}
+                }
+            }
+        });
+        let result = serde_json::json!({
+            "title": "",
+            "tags": ["Synthetic tag"],
+            "correspondents": ["Synthetic Sender"],
+            "document_types": ["Synthetic Type"],
+            "storage_paths": [],
+            "dates": ["2026-08-28"]
+        });
+
+        assert!(uses_taxonomy_choice_schema(&payload));
+        let adapted = adapt_classification_to_request_schema(result, &payload);
+        assert_eq!(
+            adapted["correspondents"],
+            serde_json::json!({
+                "existing_ids": [],
+                "new_names": ["Synthetic Sender"]
+            })
+        );
+        assert_eq!(
+            adapted["tags"],
+            serde_json::json!({
+                "existing_ids": [],
+                "new_names": ["Synthetic tag"]
+            })
+        );
+        assert_eq!(adapted["dates"], serde_json::json!(["2026-08-28"]));
     }
 }
