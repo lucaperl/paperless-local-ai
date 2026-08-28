@@ -61,7 +61,7 @@ Keep externally documented ports, secrets and integration contracts stable unles
 
 ## Compatibility
 
-The OCRmyPDF plugin and native suggestion bridge are verified against Paperless-ngx 3.0.5; the plugin targets OCRmyPDF 17.4.2's native `generate_ocr()` / `OcrElement` contract.
+The OCRmyPDF plugin and native suggestion bridge are verified against Paperless-ngx 3.1.0; the plugin targets OCRmyPDF 17.7.1's native `generate_ocr()` / `OcrElement` contract.
 
 Hybrid tagging uses documented Paperless REST document/tag fields and depends on the configured review-tag workflow semantics. Do not broaden compatibility claims without integration testing the target Paperless release.
 

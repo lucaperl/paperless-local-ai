@@ -79,7 +79,7 @@ The core image defaults to `/usr/local/bin/plai-core`. It retains `/app/core_ser
 
 The OCR image writes `ocrmypdf_plai.py` into the persistent `/integration` mount at startup. Paperless mounts that directory read-only and loads the plugin through `PAPERLESS_OCR_USER_ARGS`.
 
-The plugin is verified against OCRmyPDF **17.4.2** as bundled by Paperless-ngx **3.0.5**. It implements OCRmyPDF 17's native `generate_ocr()` interface and returns `OcrElement` geometry directly.
+The plugin is verified against OCRmyPDF **17.7.1** as bundled by Paperless-ngx **3.1.0**. It implements OCRmyPDF 17's native `generate_ocr()` interface and returns `OcrElement` geometry directly.
 
 ## OCR service lifecycle
 
@@ -151,7 +151,7 @@ One optional description is stored per Paperless tag ID. Guidance is supplied on
 
 ## Paperless native classifier
 
-Paperless-ngx 3.0.5 includes its own trained automatic classifier. Hybrid tagging uses a separate retrieval/gating layer because this workflow needs an explicit similarity/support decision, a deliberate LLM fallback and the same nearest reviewed documents as prompt examples. This is an integration/control choice rather than a universal accuracy claim. See [Paperless native classifier vs Hybrid tagging](tagging.md#paperless-native-classifier-vs-hybrid-tagging).
+Paperless-ngx 3.1.0 includes its own trained automatic classifier. Hybrid tagging uses a separate retrieval/gating layer because this workflow needs an explicit similarity/support decision, a deliberate LLM fallback and the same nearest reviewed documents as prompt examples. This is an integration/control choice rather than a universal accuracy claim. See [Paperless native classifier vs Hybrid tagging](tagging.md#paperless-native-classifier-vs-hybrid-tagging).
 
 ## Correspondent resolution
 
@@ -180,4 +180,4 @@ integration/   generated OCRmyPDF plugin consumed by Paperless
 
 ## Suggestion bridge identity
 
-For Paperless-ngx 3.0.5, open correspondent review records are matched by a SHA-256 signature of normalized document content used by Paperless' no-RAG AI classifier. Ambiguous matches fail closed. Filename matching is deliberately not used because Paperless' internal model filename and normal REST filename fields are not equivalent.
+For Paperless-ngx 3.1.0, open correspondent review records are matched by a SHA-256 signature of normalized document content used by Paperless' no-RAG AI classifier. Ambiguous matches fail closed. Filename matching is deliberately not used because Paperless' internal model filename and normal REST filename fields are not equivalent.

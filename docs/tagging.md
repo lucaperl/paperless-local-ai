@@ -152,7 +152,7 @@ A finding is a **review hint, not an error detector**. Similar documents can leg
 
 Paperless-ngx already includes its own automatic metadata classifier. `paperless-local-ai` does not claim that Hybrid tagging is universally more accurate. The two approaches solve the integration problem differently.
 
-For Paperless-ngx **3.0.5**, the native classifier trains on non-Inbox documents. Tag labels come from tags whose matching algorithm is **Automatic**. Document text is vectorized with a word `CountVectorizer` using 1–2-grams (`min_df=0.01`), and tag labels are learned with scikit-learn's `MLPClassifier` through a label/multilabel binarizer. See the [Paperless 3.0.5 classifier source](https://github.com/paperless-ngx/paperless-ngx/blob/v3.0.5/src/documents/classifier.py).
+For Paperless-ngx **3.1.0**, the native classifier trains on non-Inbox documents. Tag labels come from tags whose matching algorithm is **Automatic**. Document text is vectorized with a word `CountVectorizer` using 1–2-grams (`min_df=0.01`), and tag labels are learned with scikit-learn's `MLPClassifier` through a label/multilabel binarizer. See the [Paperless 3.0.5 classifier source](https://github.com/paperless-ngx/paperless-ngx/blob/v3.1.0/src/documents/classifier.py).
 
 | | Paperless native automatic classifier | `paperless-local-ai` Hybrid tagging |
 |---|---|---|
