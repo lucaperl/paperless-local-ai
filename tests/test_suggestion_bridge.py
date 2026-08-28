@@ -121,3 +121,84 @@ def test_live_prompt_content_resolution_fails_closed_for_identical_docs(monkeypa
 
     assert record is None
     assert reason == "content+prompt ambiguous (2)"
+
+
+def _paperless_31_format_schema():
+    return {
+        "$defs": {
+            "TaxonomyChoice": {
+                "type": "object",
+                "properties": {
+                    "existing_ids": {"type": "array", "items": {"type": "integer"}},
+                    "new_names": {"type": "array", "items": {"type": "string"}},
+                },
+            },
+        },
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+            "tags": {"$ref": "#/$defs/TaxonomyChoice"},
+            "correspondents": {"$ref": "#/$defs/TaxonomyChoice"},
+            "document_types": {"$ref": "#/$defs/TaxonomyChoice"},
+            "storage_paths": {"$ref": "#/$defs/TaxonomyChoice"},
+            "dates": {"type": "array"},
+        },
+    }
+
+
+def test_schema_adapter_keeps_paperless_305_list_contract():
+    result = {
+        "title": "",
+        "tags": ["Synthetic tag"],
+        "correspondents": ["Synthetic Sender"],
+        "document_types": [],
+        "storage_paths": [],
+        "dates": [],
+    }
+    payload = {
+        "format": {
+            "type": "object",
+            "properties": {
+                "tags": {"type": "array"},
+                "correspondents": {"type": "array"},
+                "document_types": {"type": "array"},
+                "storage_paths": {"type": "array"},
+            },
+        },
+    }
+
+    assert suggestion_bridge.uses_taxonomy_choice_schema(payload) is False
+    assert suggestion_bridge.adapt_classification_to_request_schema(result, payload) == result
+
+
+def test_schema_adapter_converts_paperless_31_taxonomy_choices():
+    result = {
+        "title": "",
+        "tags": ["Synthetic tag"],
+        "correspondents": ["Synthetic Sender"],
+        "document_types": ["Synthetic Type"],
+        "storage_paths": [],
+        "dates": ["2026-08-28"],
+    }
+    payload = {"format": _paperless_31_format_schema()}
+
+    assert suggestion_bridge.uses_taxonomy_choice_schema(payload) is True
+    adapted = suggestion_bridge.adapt_classification_to_request_schema(result, payload)
+
+    assert adapted["tags"] == {
+        "existing_ids": [],
+        "new_names": ["Synthetic tag"],
+    }
+    assert adapted["correspondents"] == {
+        "existing_ids": [],
+        "new_names": ["Synthetic Sender"],
+    }
+    assert adapted["document_types"] == {
+        "existing_ids": [],
+        "new_names": ["Synthetic Type"],
+    }
+    assert adapted["storage_paths"] == {
+        "existing_ids": [],
+        "new_names": [],
+    }
+    assert adapted["dates"] == ["2026-08-28"]
