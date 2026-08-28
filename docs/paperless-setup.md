@@ -114,7 +114,7 @@ After Paperless has restarted with these values, the Control Center verifies tha
 
 The URL must be reachable from **inside the Paperless container**.
 
-The plugin is verified against OCRmyPDF **17.4.2** in Paperless-ngx **3.0.5**.
+The plugin is verified against OCRmyPDF **17.7.1** in Paperless-ngx **3.1.0**.
 
 For pages that OCRmyPDF sends to the plugin, PaddleOCR handles OCR inference instead of Tesseract. Native-text pages can stay on Paperless/OCRmyPDF's normal text path without unnecessary OCR.
 
@@ -178,7 +178,7 @@ Paperless must be able to reach the suggestion bridge. For the default host port
 http://<bridge-host>:30149
 ```
 
-For the tested Paperless-ngx 3.0.5 setup, configure **Application Configuration → AI** as follows:
+For the tested Paperless-ngx 3.1.0 setup, configure **Application Configuration → AI** as follows:
 
 ```text
 Enable AI features:        on

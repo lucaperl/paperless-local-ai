@@ -6,8 +6,8 @@ Compatibility claims are intentionally narrow: an environment is listed as teste
 
 | Component | Tested reference |
 |---|---|
-| Paperless-ngx | **3.0.5** |
-| OCRmyPDF inside Paperless | **17.4.2** |
+| Paperless-ngx | **3.1.0** |
+| OCRmyPDF inside Paperless | **17.7.1** |
 | Deployment | Docker Compose v2 / TrueNAS Custom App |
 | TrueNAS SCALE | **25.10.6** |
 | Platform | **linux/amd64** |
@@ -24,13 +24,13 @@ Compatibility claims are intentionally narrow: an environment is listed as teste
 
 The OCR integration uses OCRmyPDF's plugin API and is version-sensitive.
 
-The included plugin is verified against OCRmyPDF **17.4.2**, specifically the native `OcrEngine.generate_ocr()` / `OcrElement` interface used by Paperless-ngx **3.0.5**.
+The included plugin is verified against OCRmyPDF **17.7.1**, specifically the native `OcrEngine.generate_ocr()` / `OcrElement` interface used by Paperless-ngx **3.1.0**.
 
 A newer Paperless/OCRmyPDF release should be treated as unverified until the plugin contract is checked.
 
 The new-correspondent suggestion bridge is also version-sensitive because it depends on Paperless' AI classification-suggestion request shape. It supports the list-based taxonomy response contract used by Paperless-ngx **3.0.5** and the nested `existing_ids` / `new_names` taxonomy-choice schema introduced by Paperless-ngx **3.1.0**. The bridge derives the response shape from each request schema instead of hardcoding a Paperless version.
 
-This does not by itself broaden the tested OCR/plugin reference environment above; newer Paperless/OCRmyPDF combinations remain unverified until the OCR plugin contract is checked.
+The tested reference environment above is verified end to end with Paperless-ngx **3.1.0** and OCRmyPDF **17.7.1**, including the OCR plugin and Paperless AI Suggestions bridge. Other Paperless/OCRmyPDF combinations remain unverified until the relevant integration contracts are checked.
 
 Paperless 2.x is not a supported target for this OCR/plugin path.
 

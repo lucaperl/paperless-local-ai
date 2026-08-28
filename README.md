@@ -132,7 +132,7 @@ Prompts and model settings can be previewed and tested against an existing Paper
 
 Paperless-ngx · Ollama · Docker Compose or TrueNAS SCALE · linux/amd64
 
-Tested reference: **Paperless-ngx 3.0.5 · OCRmyPDF 17.4.2 · TrueNAS SCALE 25.10.6 · Ollama 0.32.11**. See [Compatibility](docs/compatibility.md) for the exact tested scope.
+Tested reference: **Paperless-ngx 3.1.0 · OCRmyPDF 17.7.1 · TrueNAS SCALE 25.10.6 · Ollama 0.32.11**. See [Compatibility](docs/compatibility.md) for the exact tested scope.
 
 ## Install
 
