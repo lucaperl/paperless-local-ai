@@ -9,6 +9,8 @@
 
 Title, document type, date and sender/issuer are extracted in one structured LLM request. Content tags can use **Hybrid tagging**, which combines reviewed-document similarity with an LLM fallback, or **LLM direct**, where the model selects tags for every document. Sender names are resolved locally against existing Paperless correspondents. If the optional Paperless Suggestions integration is configured, plausible new names are exposed there for review; otherwise unmatched names remain for manual review. New correspondents are never auto-created.
 
+**[Try the live Control Center demo](https://lucaperl.github.io/paperless-local-ai/demo/)** — an interactive browser-only preview using synthetic Paperless, Ollama and OCR data.
+
 ## Highlights
 
 - **Improved scan OCR with PaddleOCR** — PP-OCRv6 Medium is the quality-focused default, with Small and Tiny profiles when lower inference cost matters.

@@ -1,0 +1,69 @@
+name: deploy-control-center-demo
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/core/prompt_ui.py"
+      - "src/core/prompt_runtime.py"
+      - "src/common/app_config.py"
+      - "demo/**"
+      - "scripts/build_demo.py"
+      - "VERSION"
+      - ".github/workflows/pages-demo.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build static Control Center demo
+        run: python3 scripts/build_demo.py --output _site/demo
+
+      - name: Add Pages root redirect
+        run: |
+          cat > _site/index.html <<'EOF'
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <meta http-equiv="refresh" content="0; url=./demo/">
+            <title>paperless-local-ai demo</title>
+          </head>
+          <body>
+            <p><a href="./demo/">Open the paperless-local-ai Control Center demo</a></p>
+          </body>
+          </html>
+          EOF
+          touch _site/.nojekyll
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

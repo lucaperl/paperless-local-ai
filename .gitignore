@@ -9,3 +9,4 @@ __pycache__/
 *.log
 .DS_Store
 /target/
+/_site/

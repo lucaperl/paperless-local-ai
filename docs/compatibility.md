@@ -28,7 +28,9 @@ The included plugin is verified against OCRmyPDF **17.4.2**, specifically the na
 
 A newer Paperless/OCRmyPDF release should be treated as unverified until the plugin contract is checked.
 
-The new-correspondent suggestion bridge is also version-sensitive because it depends on Paperless' AI classification-suggestion request shape. Its tested target is Paperless-ngx **3.0.5**.
+The new-correspondent suggestion bridge is also version-sensitive because it depends on Paperless' AI classification-suggestion request shape. It supports the list-based taxonomy response contract used by Paperless-ngx **3.0.5** and the nested `existing_ids` / `new_names` taxonomy-choice schema introduced by Paperless-ngx **3.1.0**. The bridge derives the response shape from each request schema instead of hardcoding a Paperless version.
+
+This does not by itself broaden the tested OCR/plugin reference environment above; newer Paperless/OCRmyPDF combinations remain unverified until the OCR plugin contract is checked.
 
 Paperless 2.x is not a supported target for this OCR/plugin path.
 
