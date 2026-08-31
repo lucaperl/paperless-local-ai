@@ -214,6 +214,9 @@ def test_correspondent_is_resolved_without_second_llm_stage():
     app_config = (ROOT / "src/common/app_config.py").read_text(encoding="utf-8")
     assert "CORRESPONDENT_MATCH_SIMILARITY_DEFAULT = 0.91" in app_config
     assert "CORRESPONDENT_MATCH_MARGIN_DEFAULT = 0.04" in app_config
+    assert "CORRESPONDENT_MATCH_SIMILARITY_MIN" not in app_config
+    assert "CORRESPONDENT_MATCH_MARGIN_MAX" not in app_config
+    assert "FUZZY_MIN_NORMALIZED_LENGTH" not in resolver
     assert "simulate_correspondent_match" in resolver
     assert 'app_cfg["correspondent_matching"]' in worker
     assert not (ROOT / "src/core/correspondent_runtime.py").exists()

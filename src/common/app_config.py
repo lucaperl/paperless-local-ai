@@ -27,8 +27,6 @@ HISTORY_MIN_SUPPORT_DEFAULT = 2
 HISTORY_MIN_WINNER_SHARE_DEFAULT = 0.50
 CORRESPONDENT_MATCH_SIMILARITY_DEFAULT = 0.91
 CORRESPONDENT_MATCH_MARGIN_DEFAULT = 0.04
-CORRESPONDENT_MATCH_SIMILARITY_MIN = 0.80
-CORRESPONDENT_MATCH_MARGIN_MAX = 0.20
 
 
 DEFAULT_CONFIG = {
@@ -150,14 +148,14 @@ def validate_correspondent_matching(raw):
         "minimum_similarity": _bounded_float(
             raw.get("minimum_similarity", CORRESPONDENT_MATCH_SIMILARITY_DEFAULT),
             "correspondent_matching.minimum_similarity",
-            CORRESPONDENT_MATCH_SIMILARITY_MIN,
+            0.0,
             1.0,
         ),
         "minimum_margin": _bounded_float(
             raw.get("minimum_margin", CORRESPONDENT_MATCH_MARGIN_DEFAULT),
             "correspondent_matching.minimum_margin",
             0.0,
-            CORRESPONDENT_MATCH_MARGIN_MAX,
+            1.0,
         ),
     }
 

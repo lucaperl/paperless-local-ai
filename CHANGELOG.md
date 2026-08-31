@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.4.0 - 2026-08-31
+
+### Changed
+
+- allow correspondent minimum similarity and minimum winner margin to be configured across their complete `0-100` ranges while keeping the existing conservative `91% / 4 pp` defaults.
+- remove the fixed eight-character fuzzy-matching gate so every plausible non-exact sender, including short names and acronyms, is ranked against existing Paperless correspondents using the configured similarity and winner-margin thresholds; this adds no additional LLM request or sender-processing stage.
+
 ## 0.3.9 - 2026-08-31
 
 ### Added

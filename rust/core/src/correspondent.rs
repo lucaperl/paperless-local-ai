@@ -8,7 +8,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub const FUZZY_MATCH_THRESHOLD: f64 = CORRESPONDENT_MATCH_SIMILARITY_DEFAULT;
 pub const FUZZY_MATCH_MARGIN: f64 = CORRESPONDENT_MATCH_MARGIN_DEFAULT;
-pub const FUZZY_MIN_NORMALIZED_LENGTH: usize = 8;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CorrespondentResolution {
@@ -31,8 +30,6 @@ pub struct CorrespondentMatchSimulation {
     pub candidate: String,
     pub normalized_candidate: String,
     pub normalized_length: usize,
-    pub fuzzy_min_normalized_length: usize,
-    pub length_pass: bool,
     pub minimum_similarity: f64,
     pub minimum_margin: f64,
     pub thresholds_applied: bool,
@@ -129,8 +126,7 @@ pub fn resolve_correspondent_with_settings(
     let runner_up = scored.get(1).map_or(0.0, |item| item.0);
     let margin = best_score - runner_up;
 
-    if normalized_candidate.chars().count() >= FUZZY_MIN_NORMALIZED_LENGTH
-        && !best_name.is_empty()
+    if !best_name.is_empty()
         && best_score >= matching.minimum_similarity
         && margin >= matching.minimum_margin
     {
@@ -182,8 +178,6 @@ pub fn simulate_correspondent_match(
         candidate,
         normalized_candidate: normalized_candidate.clone(),
         normalized_length: normalized_candidate.chars().count(),
-        fuzzy_min_normalized_length: FUZZY_MIN_NORMALIZED_LENGTH,
-        length_pass: normalized_candidate.chars().count() >= FUZZY_MIN_NORMALIZED_LENGTH,
         minimum_similarity: matching.minimum_similarity,
         minimum_margin: matching.minimum_margin,
         thresholds_applied: !matches!(resolution.status.as_str(), "existing_exact" | "empty"),
@@ -440,6 +434,25 @@ mod tests {
         );
         assert_eq!(r.status, "existing_fuzzy");
         assert_eq!(r.resolved, "Beispielwerke Energieversorgung GmbH");
+    }
+
+    #[test]
+    fn short_sender_can_use_fuzzy_matching_when_thresholds_allow_it() {
+        let settings = CorrespondentMatchingConfig {
+            minimum_similarity: 0.60,
+            minimum_margin: 0.04,
+        };
+        let existing = vec!["ABCD e.V.".into(), "Example Insurance AG".into()];
+
+        let result = resolve_correspondent_with_settings("ABCD", &existing, &settings);
+
+        assert_eq!(result.status, "existing_fuzzy");
+        assert_eq!(result.resolved, "ABCD e.V.");
+
+        let simulation = simulate_correspondent_match("ABCD", &existing, &settings, 3);
+
+        assert_eq!(simulation.normalized_length, 4);
+        assert_eq!(simulation.resolution.status, "existing_fuzzy");
     }
 
     #[test]

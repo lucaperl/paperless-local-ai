@@ -165,9 +165,9 @@ The main LLM request extracts the sender/issuer without restricting it to existi
 4. exposes other plausible names through the suggestion bridge for human review;
 5. leaves empty/unreliable extraction unresolved.
 
-The two fuzzy thresholds are versioned App Settings. **App Settings → Matching** also includes a read-only simulator that runs the same resolver against the current Paperless correspondent list and returns the top three candidates plus both decision gates. Unique normalized exact matches bypass the fuzzy thresholds.
+The two fuzzy thresholds are versioned App Settings and support their complete natural `0.0-1.0` ranges. **App Settings → Matching** also includes a read-only simulator that runs the same resolver against the current Paperless correspondent list and returns the top three candidates plus both decision gates. Unique normalized exact matches bypass the fuzzy thresholds.
 
-The resolver is intentionally fail-closed: an uncertain name is preferable as a review suggestion rather than being mapped automatically to the wrong existing correspondent. New correspondents are never auto-created.
+There is no additional minimum-name-length fuzzy gate: every plausible non-exact sender is scored. The defaults remain conservative, while installations that prefer best-effort correspondent population during human review can deliberately lower the thresholds without adding another LLM call. New correspondents are never auto-created.
 
 ## Configuration and state
 

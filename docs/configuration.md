@@ -176,10 +176,10 @@ The classification request extracts the actual sender/issuer as a short free-tex
 
 | Setting | Default | Supported range | Meaning |
 |---|---:|---:|---|
-| Minimum similarity | `91%` | `80–100%` | the best existing correspondent must reach this name-similarity score |
-| Minimum winner margin | `4 pp` | `0–20 pp` | the best match must be at least this many percentage points ahead of the second-best match |
+| Minimum similarity | `91%` | `0-100%` | the best existing correspondent must reach this name-similarity score |
+| Minimum winner margin | `4 pp` | `0-100 pp` | the best match must be at least this many percentage points ahead of the second-best match |
 
-Both fuzzy conditions must pass, and fuzzy matching also keeps the existing minimum normalized-name length safeguard. Lower values are more permissive; higher values are more conservative. A unique normalized exact match bypasses the fuzzy thresholds.
+Both fuzzy conditions must pass. There is no separate minimum-name-length gate: every plausible non-exact sender is ranked against the existing Paperless correspondents, including short names and acronyms. Lower values are more permissive and favor recall during review; higher values are more conservative. A unique normalized exact match bypasses the fuzzy thresholds.
 
 The collapsed **Test correspondent matching** panel uses the current unsaved values and the current Paperless correspondent list. It returns the exact production decision, the three closest candidates, their similarity scores, the winner margin and pass/fail status for each gate. The test is read-only: it does not call Ollama, create a correspondent or modify any Paperless document.
 

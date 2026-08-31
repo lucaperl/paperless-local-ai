@@ -258,11 +258,11 @@ function validateCorrespondentMatching(raw) {
   const value = raw || {};
   const minimum_similarity = Number(value.minimum_similarity ?? 0.91);
   const minimum_margin = Number(value.minimum_margin ?? 0.04);
-  if (!Number.isFinite(minimum_similarity) || minimum_similarity < 0.80 || minimum_similarity > 1) {
-    throw new Error("correspondent_matching.minimum_similarity must be between 0.8 and 1");
+  if (!Number.isFinite(minimum_similarity) || minimum_similarity < 0 || minimum_similarity > 1) {
+    throw new Error("correspondent_matching.minimum_similarity must be between 0 and 1");
   }
-  if (!Number.isFinite(minimum_margin) || minimum_margin < 0 || minimum_margin > 0.20) {
-    throw new Error("correspondent_matching.minimum_margin must be between 0 and 0.2");
+  if (!Number.isFinite(minimum_margin) || minimum_margin < 0 || minimum_margin > 1) {
+    throw new Error("correspondent_matching.minimum_margin must be between 0 and 1");
   }
   return {minimum_similarity, minimum_margin};
 }
@@ -351,14 +351,12 @@ function simulateDemoCorrespondentMatch(candidateRaw, matchingRaw) {
   let resolution;
   if (!plausible) resolution = {extracted:candidate,status:"empty",resolved:"",suggestion:"",match_score:null,runner_up_score:null};
   else if (exact.length === 1) resolution = {extracted:candidate,status:"existing_exact",resolved:exact[0],suggestion:"",match_score:1,runner_up_score:null};
-  else if (normalized.length >= 8 && scored.length && best >= matching.minimum_similarity && best - gateRunner >= matching.minimum_margin) resolution = {extracted:candidate,status:"existing_fuzzy",resolved:scored[0][1],suggestion:"",match_score:Number(best.toFixed(4)),runner_up_score:Number(gateRunner.toFixed(4))};
+  else if (scored.length && best >= matching.minimum_similarity && best - gateRunner >= matching.minimum_margin) resolution = {extracted:candidate,status:"existing_fuzzy",resolved:scored[0][1],suggestion:"",match_score:Number(best.toFixed(4)),runner_up_score:Number(gateRunner.toFixed(4))};
   else resolution = {extracted:candidate,status:"new_suggestion",resolved:"",suggestion:candidate,match_score:best==null?null:Number(best.toFixed(4)),runner_up_score:runner==null?null:Number(runner.toFixed(4))};
   return {
     candidate,
     normalized_candidate: normalized,
     normalized_length: normalized.length,
-    fuzzy_min_normalized_length: 8,
-    length_pass: normalized.length >= 8,
     minimum_similarity: matching.minimum_similarity,
     minimum_margin: matching.minimum_margin,
     thresholds_applied: !["existing_exact","empty"].includes(resolution.status),
