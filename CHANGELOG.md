@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.3.9 - 2026-08-31
+
 ### Added
 
 - add versioned correspondent matching controls for minimum similarity and minimum winner margin under App Settings, with a 0.91 similarity / 0.04 winner-margin default.
