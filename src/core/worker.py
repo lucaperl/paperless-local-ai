@@ -239,9 +239,12 @@ def process(
     }
 
     if not validation_errors:
+        matching = app_cfg["correspondent_matching"]
         correspondent_resolution = resolve_correspondent(
             result.get("correspondent", ""),
             tax["correspondents"],
+            minimum_similarity=matching["minimum_similarity"],
+            minimum_margin=matching["minimum_margin"],
         )
         result["correspondent"] = correspondent_resolution["resolved"]
         if route == "history_match":
@@ -277,6 +280,7 @@ def process(
             "content_head_ratio": config["content_head_ratio"],
             "max_tags": config["max_tags"],
             "tagging_mode": config["tagging_mode"],
+            "correspondent_matching": dict(app_cfg["correspondent_matching"]),
         },
         "tagging": tagging,
         "suggestion": result,

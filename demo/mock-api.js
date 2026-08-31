@@ -254,6 +254,19 @@ function validatePromptConfig(raw) {
   return clone(raw);
 }
 
+function validateCorrespondentMatching(raw) {
+  const value = raw || {};
+  const minimum_similarity = Number(value.minimum_similarity ?? 0.91);
+  const minimum_margin = Number(value.minimum_margin ?? 0.04);
+  if (!Number.isFinite(minimum_similarity) || minimum_similarity < 0.80 || minimum_similarity > 1) {
+    throw new Error("correspondent_matching.minimum_similarity must be between 0.8 and 1");
+  }
+  if (!Number.isFinite(minimum_margin) || minimum_margin < 0 || minimum_margin > 0.20) {
+    throw new Error("correspondent_matching.minimum_margin must be between 0 and 0.2");
+  }
+  return {minimum_similarity, minimum_margin};
+}
+
 function validateAppConfig(raw) {
   if (!raw || typeof raw !== "object") throw new Error("App configuration must be a JSON object.");
   for (const key of ["paperless_url", "ollama_url"]) {
@@ -266,7 +279,96 @@ function validateAppConfig(raw) {
   if (new Set(technical.map(x => x.toLowerCase())).size !== technical.length) {
     throw new Error("Technical workflow tags must have distinct names");
   }
-  return clone(raw);
+  const candidate = clone(raw);
+  candidate.correspondent_matching = validateCorrespondentMatching(raw.correspondent_matching);
+  return candidate;
+}
+
+function normalizeCorrespondentName(value) {
+  const folded = String(value || "").normalize("NFKC").toLowerCase().replace(/ß/g, "ss");
+  return (folded.match(/[\p{L}\p{N}_]+/gu) || []).join(" ");
+}
+
+function plausibleCorrespondentCandidate(value) {
+  const candidate = String(value || "").trim().replace(/\s+/g, " ");
+  const normalized = normalizeCorrespondentName(candidate);
+  if (!candidate || candidate.length > 255 || normalized.length < 2 || normalized.split(/\s+/).length > 20) return false;
+  if (["unknown", "unbekannt", "none", "null", "n a", "nicht erkennbar", "kein absender"].includes(normalized)) return false;
+  return /\p{L}/u.test(candidate);
+}
+
+function sequenceMatcherRatio(aText, bText) {
+  const a = Array.from(aText), b = Array.from(bText), b2j = new Map();
+  b.forEach((ch, i) => { if (!b2j.has(ch)) b2j.set(ch, []); b2j.get(ch).push(i); });
+  if (b.length >= 200) {
+    const ntest = Math.floor(b.length / 100) + 1;
+    for (const [ch, indexes] of [...b2j.entries()]) if (indexes.length > ntest) b2j.delete(ch);
+  }
+  const findLongest = (alo, ahi, blo, bhi) => {
+    let bestI = alo, bestJ = blo, bestSize = 0, j2len = new Map();
+    for (let i = alo; i < ahi; i += 1) {
+      const next = new Map();
+      for (const j of b2j.get(a[i]) || []) {
+        if (j < blo) continue;
+        if (j >= bhi) break;
+        const size = (j > 0 ? (j2len.get(j - 1) || 0) : 0) + 1;
+        next.set(j, size);
+        if (size > bestSize) { bestI = i + 1 - size; bestJ = j + 1 - size; bestSize = size; }
+      }
+      j2len = next;
+    }
+    while (bestI > alo && bestJ > blo && a[bestI - 1] === b[bestJ - 1]) { bestI -= 1; bestJ -= 1; bestSize += 1; }
+    while (bestI + bestSize < ahi && bestJ + bestSize < bhi && a[bestI + bestSize] === b[bestJ + bestSize]) bestSize += 1;
+    return {a: bestI, b: bestJ, size: bestSize};
+  };
+  const queue = [[0, a.length, 0, b.length]], matches = [];
+  while (queue.length) {
+    const [alo, ahi, blo, bhi] = queue.pop();
+    const m = findLongest(alo, ahi, blo, bhi);
+    if (!m.size) continue;
+    if (alo < m.a && blo < m.b) queue.push([alo, m.a, blo, m.b]);
+    if (m.a + m.size < ahi && m.b + m.size < bhi) queue.push([m.a + m.size, ahi, m.b + m.size, bhi]);
+    matches.push(m);
+  }
+  matches.sort((x, y) => x.a - y.a || x.b - y.b || x.size - y.size);
+  let totalMatches = 0, aStart = 0, bStart = 0, size = 0;
+  for (const m of matches) {
+    if (aStart + size === m.a && bStart + size === m.b) size += m.size;
+    else { totalMatches += size; aStart = m.a; bStart = m.b; size = m.size; }
+  }
+  totalMatches += size;
+  return a.length + b.length === 0 ? 1 : (2 * totalMatches) / (a.length + b.length);
+}
+
+function simulateDemoCorrespondentMatch(candidateRaw, matchingRaw) {
+  const matching = validateCorrespondentMatching(matchingRaw);
+  const candidate = String(candidateRaw || "").trim().replace(/\s+/g, " ");
+  const normalized = normalizeCorrespondentName(candidate);
+  const plausible = plausibleCorrespondentCandidate(candidate);
+  const exact = plausible ? CORRESPONDENTS.filter(name => normalizeCorrespondentName(name) === normalized) : [];
+  const scored = plausible ? CORRESPONDENTS.map(name => [sequenceMatcherRatio(normalized, normalizeCorrespondentName(name)), name]).sort((x, y) => y[0] - x[0] || y[1].localeCompare(x[1])) : [];
+  const best = scored[0]?.[0] ?? null, runner = scored[1]?.[0] ?? null, gateRunner = runner ?? 0;
+  let resolution;
+  if (!plausible) resolution = {extracted:candidate,status:"empty",resolved:"",suggestion:"",match_score:null,runner_up_score:null};
+  else if (exact.length === 1) resolution = {extracted:candidate,status:"existing_exact",resolved:exact[0],suggestion:"",match_score:1,runner_up_score:null};
+  else if (normalized.length >= 8 && scored.length && best >= matching.minimum_similarity && best - gateRunner >= matching.minimum_margin) resolution = {extracted:candidate,status:"existing_fuzzy",resolved:scored[0][1],suggestion:"",match_score:Number(best.toFixed(4)),runner_up_score:Number(gateRunner.toFixed(4))};
+  else resolution = {extracted:candidate,status:"new_suggestion",resolved:"",suggestion:candidate,match_score:best==null?null:Number(best.toFixed(4)),runner_up_score:runner==null?null:Number(runner.toFixed(4))};
+  return {
+    candidate,
+    normalized_candidate: normalized,
+    normalized_length: normalized.length,
+    fuzzy_min_normalized_length: 8,
+    length_pass: normalized.length >= 8,
+    minimum_similarity: matching.minimum_similarity,
+    minimum_margin: matching.minimum_margin,
+    thresholds_applied: !["existing_exact","empty"].includes(resolution.status),
+    similarity_pass: best == null ? null : best >= matching.minimum_similarity,
+    margin_pass: best == null ? null : best - gateRunner >= matching.minimum_margin,
+    winner_margin: best == null || runner == null ? null : Number((best-runner).toFixed(4)),
+    existing_count: CORRESPONDENTS.length,
+    candidates: scored.slice(0,3).map(([score,name]) => ({name,score:Number(score.toFixed(4))})),
+    resolution
+  };
 }
 
 function savePromptConfig(raw) {
@@ -532,6 +634,10 @@ async function api(path, opts = {}) {
     if (!item || !item.config) throw new Error("Demo app-history version not found");
     const config = saveAppConfig(item.config);
     return {ok: true, config, history: publicHistory(state.appHistory), token_configured: true, paperless_ui_integration_ready: true};
+  }
+  if (path === "/api/app/correspondent-matching/test" && method === "POST") {
+    await sleep(120);
+    return {simulation: simulateDemoCorrespondentMatch(body.candidate, body.matching)};
   }
   if (path === "/api/app/connections/test" && method === "POST") {
     validateAppConfig(body.config);

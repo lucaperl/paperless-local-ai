@@ -21,6 +21,10 @@ pub const OCR_RETRY_DELAY_MAX_SECONDS: u32 = 86_400;
 pub const HISTORY_MATCH_SIMILARITY_DEFAULT: f64 = 0.62;
 pub const HISTORY_MIN_SUPPORT_DEFAULT: u64 = 2;
 pub const HISTORY_MIN_WINNER_SHARE_DEFAULT: f64 = 0.50;
+pub const CORRESPONDENT_MATCH_SIMILARITY_DEFAULT: f64 = 0.91;
+pub const CORRESPONDENT_MATCH_MARGIN_DEFAULT: f64 = 0.04;
+pub const CORRESPONDENT_MATCH_SIMILARITY_MIN: f64 = 0.80;
+pub const CORRESPONDENT_MATCH_MARGIN_MAX: f64 = 0.20;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConnectionsConfig {
@@ -41,6 +45,41 @@ pub struct HistoryConfig {
     pub match_similarity: f64,
     pub min_support: u64,
     pub min_winner_share: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CorrespondentMatchingConfig {
+    pub minimum_similarity: f64,
+    pub minimum_margin: f64,
+}
+
+impl Default for CorrespondentMatchingConfig {
+    fn default() -> Self {
+        Self {
+            minimum_similarity: CORRESPONDENT_MATCH_SIMILARITY_DEFAULT,
+            minimum_margin: CORRESPONDENT_MATCH_MARGIN_DEFAULT,
+        }
+    }
+}
+
+impl CorrespondentMatchingConfig {
+    pub fn validate(&self) -> Result<()> {
+        if !self.minimum_similarity.is_finite()
+            || !(CORRESPONDENT_MATCH_SIMILARITY_MIN..=1.0).contains(&self.minimum_similarity)
+        {
+            return Err(Error::Config(format!(
+                "correspondent_matching.minimum_similarity must be between {CORRESPONDENT_MATCH_SIMILARITY_MIN} and 1"
+            )));
+        }
+        if !self.minimum_margin.is_finite()
+            || !(0.0..=CORRESPONDENT_MATCH_MARGIN_MAX).contains(&self.minimum_margin)
+        {
+            return Err(Error::Config(format!(
+                "correspondent_matching.minimum_margin must be between 0 and {CORRESPONDENT_MATCH_MARGIN_MAX}"
+            )));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -73,6 +112,7 @@ pub struct AppConfig {
     pub connections: ConnectionsConfig,
     pub workflow: WorkflowConfig,
     pub history: HistoryConfig,
+    pub correspondent_matching: CorrespondentMatchingConfig,
     pub ocr: OcrConfig,
     pub runtime: RuntimeConfig,
     pub paperless_ui: PaperlessUiConfig,
@@ -98,6 +138,7 @@ impl Default for AppConfig {
                 min_support: HISTORY_MIN_SUPPORT_DEFAULT,
                 min_winner_share: HISTORY_MIN_WINNER_SHARE_DEFAULT,
             },
+            correspondent_matching: CorrespondentMatchingConfig::default(),
             ocr: OcrConfig {
                 language: "en".into(),
                 version: "PP-OCRv6".into(),
@@ -179,6 +220,7 @@ impl AppConfig {
             "connections",
             "workflow",
             "history",
+            "correspondent_matching",
             "ocr",
             "runtime",
             "paperless_ui",
@@ -253,6 +295,8 @@ impl AppConfig {
                 "history.min_winner_share must be between 0.5 and 1".into(),
             ));
         }
+
+        self.correspondent_matching.validate()?;
 
         self.ocr.language = nonempty(&self.ocr.language, "ocr.language")?;
         self.ocr.version = nonempty(&self.ocr.version, "ocr.version")?;
@@ -599,6 +643,8 @@ mod tests {
         assert_eq!(cfg.history.match_similarity, 0.62);
         assert_eq!(cfg.history.min_support, 2);
         assert_eq!(cfg.history.min_winner_share, 0.50);
+        assert_eq!(cfg.correspondent_matching.minimum_similarity, 0.91);
+        assert_eq!(cfg.correspondent_matching.minimum_margin, 0.04);
     }
 
     #[test]
@@ -638,6 +684,27 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("min_winner_share")
+        );
+    }
+
+    #[test]
+    fn correspondent_matching_bounds_are_enforced() {
+        let mut cfg = AppConfig::default();
+        cfg.correspondent_matching.minimum_similarity = 0.79;
+        assert!(
+            cfg.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("correspondent_matching.minimum_similarity")
+        );
+
+        let mut cfg = AppConfig::default();
+        cfg.correspondent_matching.minimum_margin = 0.21;
+        assert!(
+            cfg.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("correspondent_matching.minimum_margin")
         );
     }
 

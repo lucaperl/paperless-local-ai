@@ -1,6 +1,10 @@
 use crate::ai_lock;
-use crate::app_config::{AppConfig, config_hash_value as app_config_hash_value};
-use crate::correspondent::{CorrespondentResolution, resolve_correspondent};
+use crate::app_config::{
+    AppConfig, CorrespondentMatchingConfig, config_hash_value as app_config_hash_value,
+};
+use crate::correspondent::{
+    CorrespondentResolution, resolve_correspondent_with_settings, simulate_correspondent_match,
+};
 use crate::error::Error;
 use crate::history;
 use crate::ollama::performance_from_raw;
@@ -65,6 +69,10 @@ pub fn router(state: Arc<CoreState>) -> Router {
         .route("/api/app/save", post(app_save))
         .route("/api/app/history/restore", post(app_restore))
         .route("/api/app/connections/test", post(connection_test))
+        .route(
+            "/api/app/correspondent-matching/test",
+            post(correspondent_matching_test),
+        )
         .route("/api/app/paperless-ui", post(paperless_ui_update))
         .route("/api/app/paperless-ui/status", get(paperless_ui_status))
         .route("/api/state", get(prompt_state))
@@ -464,6 +472,43 @@ async fn connection_test(State(state): State<Arc<CoreState>>, body: Bytes) -> Ap
     ))
 }
 
+async fn correspondent_matching_test(
+    State(state): State<Arc<CoreState>>,
+    body: Bytes,
+) -> ApiResult {
+    let payload = parse_body(&body)?;
+    let candidate = payload
+        .get("candidate")
+        .and_then(Value::as_str)
+        .ok_or_else(|| ApiError::bad("candidate must be a string"))?;
+    let matching: CorrespondentMatchingConfig = serde_json::from_value(
+        payload.get("matching").cloned().unwrap_or(Value::Null),
+    )
+    .map_err(|error| ApiError::bad(format!("invalid correspondent matching settings: {error}")))?;
+    matching.validate().map_err(ApiError::bad)?;
+    let objects = state
+        .paperless
+        .all_objects("/api/correspondents/")
+        .await
+        .map_err(ApiError::internal)?;
+    let mut correspondents = objects
+        .iter()
+        .map(|value| {
+            value
+                .get("name")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .ok_or_else(|| ApiError::internal("Paperless correspondent without a name"))
+        })
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    correspondents.sort();
+    let simulation = simulate_correspondent_match(candidate, &correspondents, &matching, 3);
+    Ok(json_response(
+        StatusCode::OK,
+        serde_json::json!({"simulation": simulation}),
+    ))
+}
+
 async fn prompt_state(State(state): State<Arc<CoreState>>) -> ApiResult {
     let config = state.prompt_config.ensure().map_err(ApiError::internal)?;
     let connections = state
@@ -619,6 +664,11 @@ async fn preview_or_test(state: &CoreState, payload: Value, run_model: bool) -> 
         Some(config) => PromptConfig::from_value(config).map_err(ApiError::bad)?,
         None => state.prompt_config.load().map_err(ApiError::internal)?,
     };
+    let correspondent_matching = state
+        .app_config
+        .load()
+        .map_err(ApiError::internal)?
+        .correspondent_matching;
     let taxonomy = state
         .paperless
         .taxonomy()
@@ -685,6 +735,7 @@ async fn preview_or_test(state: &CoreState, payload: Value, run_model: bool) -> 
         &config,
         &tagging,
         rendered.tags_enabled,
+        &correspondent_matching,
     );
     base["suggestion"] = result;
     base["validation_errors"] = serde_json::json!(errors);
@@ -699,6 +750,7 @@ pub fn finalize_model_result(
     config: &PromptConfig,
     tagging: &TaggingContext,
     tags_enabled: bool,
+    correspondent_matching: &CorrespondentMatchingConfig,
 ) -> (Value, Vec<String>, CorrespondentResolution) {
     let errors = validate_result(&result, taxonomy, config, tags_enabled);
     let mut resolution = CorrespondentResolution {
@@ -710,12 +762,13 @@ pub fn finalize_model_result(
         runner_up_score: None,
     };
     if errors.is_empty() {
-        resolution = resolve_correspondent(
+        resolution = resolve_correspondent_with_settings(
             result
                 .get("correspondent")
                 .and_then(Value::as_str)
                 .unwrap_or_default(),
             &taxonomy.correspondents,
+            correspondent_matching,
         );
         result["correspondent"] = Value::String(resolution.resolved.clone());
         if tagging.route == "history_match" {
@@ -828,8 +881,14 @@ mod tests {
             "correspondent": "Example GmbH",
             "created": "2026-03-31",
         });
-        let (result, errors, _) =
-            finalize_model_result(result, &taxonomy(), &config, &tagging, false);
+        let (result, errors, _) = finalize_model_result(
+            result,
+            &taxonomy(),
+            &config,
+            &tagging,
+            false,
+            &CorrespondentMatchingConfig::default(),
+        );
         assert!(errors.is_empty());
         assert_eq!(result["tags"], serde_json::json!(["Finance"]));
     }
@@ -855,8 +914,14 @@ mod tests {
             "correspondent": "Example GmbH",
             "created": "2026-03-31",
         });
-        let (result, errors, _) =
-            finalize_model_result(result, &taxonomy(), &config, &tagging, false);
+        let (result, errors, _) = finalize_model_result(
+            result,
+            &taxonomy(),
+            &config,
+            &tagging,
+            false,
+            &CorrespondentMatchingConfig::default(),
+        );
         assert!(errors.is_empty());
         assert_eq!(result["tags"], serde_json::json!(["Bank", "Finance"]));
     }

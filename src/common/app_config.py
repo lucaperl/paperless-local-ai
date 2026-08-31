@@ -25,6 +25,10 @@ OCR_RETRY_DELAY_MAX_SECONDS = 86400
 HISTORY_MATCH_SIMILARITY_DEFAULT = 0.62
 HISTORY_MIN_SUPPORT_DEFAULT = 2
 HISTORY_MIN_WINNER_SHARE_DEFAULT = 0.50
+CORRESPONDENT_MATCH_SIMILARITY_DEFAULT = 0.91
+CORRESPONDENT_MATCH_MARGIN_DEFAULT = 0.04
+CORRESPONDENT_MATCH_SIMILARITY_MIN = 0.80
+CORRESPONDENT_MATCH_MARGIN_MAX = 0.20
 
 
 DEFAULT_CONFIG = {
@@ -44,6 +48,10 @@ DEFAULT_CONFIG = {
         "match_similarity": HISTORY_MATCH_SIMILARITY_DEFAULT,
         "min_support": HISTORY_MIN_SUPPORT_DEFAULT,
         "min_winner_share": HISTORY_MIN_WINNER_SHARE_DEFAULT,
+    },
+    "correspondent_matching": {
+        "minimum_similarity": CORRESPONDENT_MATCH_SIMILARITY_DEFAULT,
+        "minimum_margin": CORRESPONDENT_MATCH_MARGIN_DEFAULT,
     },
     "ocr": {
         "language": "en",
@@ -135,6 +143,25 @@ def _retry_delays(value):
     ]
 
 
+def validate_correspondent_matching(raw):
+    if not isinstance(raw, dict):
+        raise ConfigError("correspondent_matching must be an object")
+    return {
+        "minimum_similarity": _bounded_float(
+            raw.get("minimum_similarity", CORRESPONDENT_MATCH_SIMILARITY_DEFAULT),
+            "correspondent_matching.minimum_similarity",
+            CORRESPONDENT_MATCH_SIMILARITY_MIN,
+            1.0,
+        ),
+        "minimum_margin": _bounded_float(
+            raw.get("minimum_margin", CORRESPONDENT_MATCH_MARGIN_DEFAULT),
+            "correspondent_matching.minimum_margin",
+            0.0,
+            CORRESPONDENT_MATCH_MARGIN_MAX,
+        ),
+    }
+
+
 def validate_config(raw):
     if not isinstance(raw, dict):
         raise ConfigError("App configuration must be a JSON object")
@@ -144,7 +171,15 @@ def validate_config(raw):
     # Only copy fields that belong to the current schema. This intentionally
     # drops removed pre-0.2 OCR queue/error keys instead of carrying dead
     # configuration forward.
-    for section in ("connections", "workflow", "history", "ocr", "runtime", "paperless_ui"):
+    for section in (
+        "connections",
+        "workflow",
+        "history",
+        "correspondent_matching",
+        "ocr",
+        "runtime",
+        "paperless_ui",
+    ):
         incoming = raw.get(section, {})
         if not isinstance(incoming, dict):
             raise ConfigError(f"{section} must be an object")
@@ -208,6 +243,10 @@ def validate_config(raw):
     )
     history["min_winner_share"] = _bounded_float(
         history["min_winner_share"], "history.min_winner_share", 0.50, 1.0
+    )
+
+    cfg["correspondent_matching"] = validate_correspondent_matching(
+        cfg["correspondent_matching"]
     )
 
     ocr = cfg["ocr"]

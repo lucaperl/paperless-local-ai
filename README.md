@@ -20,7 +20,7 @@ Title, document type, date and sender/issuer are extracted in one structured LLM
 - **One LLM request per document** — title, type, date and sender/issuer are produced together; tags are included in the same request only on an LLM tag route.
 - **Optional Paperless-native correspondent review** — local resolution applies safe existing matches; the optional Suggestions integration can expose plausible new senders through Document Suggestions.
 - **Designed for CPU-only systems** — OCR, Hybrid-history work and LLM inference are serialized; heavyweight OCR/history/model runtimes are released after use.
-- **Control Center** — configure connections, workflow tags, OCR, prompts, model settings, tagging strategy, per-tag guidance, history health, Dry Run and configuration history from one UI.
+- **Control Center** — configure connections, workflow tags, correspondent matching (with a read-only live tester), OCR, prompts, model settings, tagging strategy, per-tag guidance, history health, Dry Run and configuration history from one UI.
 
 ## Why this architecture
 
@@ -113,7 +113,21 @@ The Tagging prompt is appended only when the active route requires an LLM tag de
 
 ## Correspondents
 
-The structured metadata request extracts the actual sender/issuer as free text. Local resolution applies a safe existing match or leaves the field empty when no reliable existing correspondent can be resolved. If the optional suggestion bridge is configured in Paperless, a plausible unmatched sender can additionally appear in **Paperless Document Suggestions** for review. Without that integration, existing-correspondent matching still works and unmatched senders are handled manually during review.
+The structured metadata request extracts the actual sender/issuer as free text. Local resolution first checks for a unique normalized exact match. Otherwise it compares the extracted name with current Paperless correspondents and applies a fuzzy match only when **both** the configured minimum similarity and minimum winner margin pass. Defaults are **91% similarity** and **4 percentage points winner margin**. The similarity default is intentionally slightly more permissive than the previous hard-coded 93% threshold, while the ambiguity margin stays unchanged. The controls and a read-only live tester are under **App Settings → Matching**.
+
+The winner margin is the difference between the best and second-best similarity scores. It prevents a high score from being treated as safe when two existing correspondents are almost equally plausible. Plausible unmatched names can appear in **Paperless Document Suggestions** when the optional suggestion bridge is configured; new correspondents are never auto-created.
+
+### Correspondent matching examples
+
+All names below are synthetic. Scores are calculated with the same name-similarity metric used by the matcher.
+
+| Case | Extracted sender | Best existing match | Second-best | Decision with 91% / 4 pp |
+|---|---|---:|---:|---|
+| Clear match | `Musterwerke Energi GmbH` | `Musterwerke Energie GmbH` · **97.87%** | `Musterwerke Netz GmbH` · 86.36% | **Match** · winner margin 11.51 pp |
+| Clear winner, below similarity threshold | `Musterwerke Versorgung` | `Musterwerke Versorgung GmbH` · **89.80%** | `Musterwerke Netz GmbH` · 65.12% | **No match** · similarity is below 91% |
+| High similarity, but ambiguous | `Beispielwerke Main GmbH` | `Beispielwerke Mainz GmbH` · **97.87%** | `Beispielwerke Mainau GmbH` · 95.83% | **No match** · winner margin is only 2.04 pp |
+
+Lowering **Minimum similarity** accepts more name variation. Lowering **Minimum winner margin** accepts closer races between candidates. Raising either value makes automatic matching more conservative. Unique normalized exact matches do not use the fuzzy thresholds.
 
 ## Control Center
 
@@ -121,6 +135,7 @@ The Control Center configures:
 
 - Paperless and Ollama connections;
 - classification queue/error/review tags;
+- correspondent similarity/winner-margin thresholds and the read-only matching tester;
 - OCR language, PaddleOCR model, maximum OCR image side, retry schedule and recovery state;
 - metadata Dry Run and worker timing;
 - model settings and all three classification prompt components;

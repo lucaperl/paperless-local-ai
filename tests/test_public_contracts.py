@@ -55,6 +55,10 @@ def test_control_center_keeps_complete_ui_contract():
         "Classification",
         "App Settings",
         "Pipeline &amp; Tags",
+        "Correspondent matching",
+        "Minimum winner margin",
+        "Test correspondent matching",
+        "/api/app/correspondent-matching/test",
         "Hybrid tagging",
         "LLM direct",
         "Recommended for small models",
@@ -207,7 +211,11 @@ def test_correspondent_is_resolved_without_second_llm_stage():
     assert "correspondent_runtime" not in worker
     assert "correspondent_fallback" not in worker
     assert '"correspondent": {"type": "string"}' in runtime
-    assert "FUZZY_MATCH_THRESHOLD = 0.93" in resolver
+    app_config = (ROOT / "src/common/app_config.py").read_text(encoding="utf-8")
+    assert "CORRESPONDENT_MATCH_SIMILARITY_DEFAULT = 0.91" in app_config
+    assert "CORRESPONDENT_MATCH_MARGIN_DEFAULT = 0.04" in app_config
+    assert "simulate_correspondent_match" in resolver
+    assert 'app_cfg["correspondent_matching"]' in worker
     assert not (ROOT / "src/core/correspondent_runtime.py").exists()
 
 

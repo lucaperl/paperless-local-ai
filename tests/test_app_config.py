@@ -1,4 +1,6 @@
 from app_config import (
+    CORRESPONDENT_MATCH_MARGIN_DEFAULT,
+    CORRESPONDENT_MATCH_SIMILARITY_DEFAULT,
     DEFAULT_CONFIG,
     HISTORY_MATCH_SIMILARITY_DEFAULT,
     HISTORY_MIN_SUPPORT_DEFAULT,
@@ -39,12 +41,41 @@ def test_default_config_is_valid():
     assert HISTORY_MATCH_SIMILARITY_DEFAULT == 0.62
     assert HISTORY_MIN_SUPPORT_DEFAULT == 2
     assert HISTORY_MIN_WINNER_SHARE_DEFAULT == 0.50
+    assert cfg["correspondent_matching"] == {
+        "minimum_similarity": 0.91,
+        "minimum_margin": 0.04,
+    }
+    assert CORRESPONDENT_MATCH_SIMILARITY_DEFAULT == 0.91
+    assert CORRESPONDENT_MATCH_MARGIN_DEFAULT == 0.04
 
 
 def test_existing_config_without_history_settings_gets_safe_defaults():
     raw = {key: value for key, value in DEFAULT_CONFIG.items() if key != "history"}
     validated = validate_config(raw)
     assert validated["history"] == DEFAULT_CONFIG["history"]
+
+
+def test_existing_config_without_correspondent_matching_gets_safe_defaults():
+    raw = {key: value for key, value in DEFAULT_CONFIG.items() if key != "correspondent_matching"}
+    validated = validate_config(raw)
+    assert validated["correspondent_matching"] == DEFAULT_CONFIG["correspondent_matching"]
+
+
+def test_correspondent_matching_bounds_are_enforced():
+    invalid = (
+        {"minimum_similarity": 0.79, "minimum_margin": 0.04},
+        {"minimum_similarity": 1.01, "minimum_margin": 0.04},
+        {"minimum_similarity": 0.91, "minimum_margin": -0.01},
+        {"minimum_similarity": 0.91, "minimum_margin": 0.21},
+    )
+    for matching in invalid:
+        raw = {**DEFAULT_CONFIG, "correspondent_matching": matching}
+        try:
+            validate_config(raw)
+        except ValueError as exc:
+            assert "correspondent_matching." in str(exc)
+        else:
+            raise AssertionError(f"correspondent_matching={matching!r} must be rejected")
 
 
 def test_history_matching_bounds_are_enforced():

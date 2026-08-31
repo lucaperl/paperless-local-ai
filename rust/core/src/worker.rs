@@ -314,6 +314,7 @@ async fn process(
         config,
         &tagging,
         rendered.tags_enabled,
+        &app_config.correspondent_matching,
     );
     let hashes = prompt_hashes(config);
     let performance = performance_from_raw(&call.raw, call.wall_duration);
@@ -342,6 +343,7 @@ async fn process(
             "content_head_ratio": config.content_head_ratio,
             "max_tags": config.max_tags,
             "tagging_mode": config.tagging_mode,
+            "correspondent_matching": &app_config.correspondent_matching,
         },
         "tagging": tagging,
         "suggestion": result,

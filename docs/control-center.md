@@ -7,7 +7,7 @@ The Control Center is the browser UI for connections, workflow tags, OCR, classi
 | Area | Purpose |
 |---|---|
 | **Overview** | connection/OCR/tagging status, pipeline and current key settings |
-| **App Settings** | Paperless/Ollama connections, workflow/review tags, OCR, Dry Run and worker timing |
+| **App Settings** | Paperless/Ollama connections, workflow/review tags, correspondent matching + read-only tester, OCR, Dry Run and worker timing |
 | **Classification → Test** | read-only prompt preview and read-only real model test against an existing Paperless document |
 | **Classification → Tagging** | Hybrid/LLM-direct strategy, reviewed-history health and Tag Guidance |
 | **Classification → Prompt** | editable System, Base classification and Tagging prompts |
@@ -15,6 +15,8 @@ The Control Center is the browser UI for connections, workflow tags, OCR, classi
 | **History** tabs | separate saved versions for App settings and Classification settings |
 
 The configured review tag can have any name. Paperless-side setup still matters: the review-tag lifecycle, matching algorithms, workflow and OCRmyPDF integration are documented in [Paperless setup](paperless-setup.md).
+
+**Test correspondent matching** compares a typed sender name with the current Paperless correspondents using the unsaved Matching thresholds. It shows the top three candidates and decision gates without calling Ollama or changing Paperless.
 
 **Preview prompts** does not call Ollama. **Run model test** calls Ollama but does not modify the selected Paperless document or persist a correspondent suggestion. **Dry Run** is optional and controls automatic metadata write-back; it does not disable Paperless import/OCR.
 

@@ -5,9 +5,15 @@ import unicodedata
 from difflib import SequenceMatcher
 from typing import Any
 
+from app_config import (
+    CORRESPONDENT_MATCH_MARGIN_DEFAULT,
+    CORRESPONDENT_MATCH_SIMILARITY_DEFAULT,
+)
 
-FUZZY_MATCH_THRESHOLD = 0.93
-FUZZY_MATCH_MARGIN = 0.04
+
+# Compatibility aliases for code/tests that referenced the pre-configurable constants.
+FUZZY_MATCH_THRESHOLD = CORRESPONDENT_MATCH_SIMILARITY_DEFAULT
+FUZZY_MATCH_MARGIN = CORRESPONDENT_MATCH_MARGIN_DEFAULT
 FUZZY_MIN_NORMALIZED_LENGTH = 8
 
 
@@ -39,14 +45,28 @@ def _plausible_candidate(candidate: str) -> bool:
     return any(ch.isalpha() for ch in candidate)
 
 
-def resolve_correspondent(candidate: str | None, existing: list[str]) -> dict[str, Any]:
-    """
-    Resolve one free-text sender/issuer extracted by the main LLM call.
+def _score_candidates(normalized_candidate: str, existing: list[str]) -> list[tuple[float, str]]:
+    return sorted(
+        (
+            (
+                SequenceMatcher(None, normalized_candidate, normalize_correspondent_name(name)).ratio(),
+                name,
+            )
+            for name in existing
+            if clean_candidate(name)
+        ),
+        reverse=True,
+    )
 
-    Exact normalized matches and deliberately conservative fuzzy matches are
-    safe to apply automatically. Other plausible names remain suggestions for
-    human review; they are never auto-created.
-    """
+
+def resolve_correspondent(
+    candidate: str | None,
+    existing: list[str],
+    *,
+    minimum_similarity: float = FUZZY_MATCH_THRESHOLD,
+    minimum_margin: float = FUZZY_MATCH_MARGIN,
+) -> dict[str, Any]:
+    """Resolve a free-text sender/issuer against existing Paperless correspondents."""
     candidate = clean_candidate(candidate)
     if not _plausible_candidate(candidate):
         return {
@@ -59,13 +79,12 @@ def resolve_correspondent(candidate: str | None, existing: list[str]) -> dict[st
         }
 
     normalized_candidate = normalize_correspondent_name(candidate)
-    normalized_existing = [
-        (name, normalize_correspondent_name(name))
+    exact = [
+        name
         for name in existing
         if clean_candidate(name)
+        and normalize_correspondent_name(name) == normalized_candidate
     ]
-
-    exact = [name for name, normalized in normalized_existing if normalized == normalized_candidate]
     if len(exact) == 1:
         return {
             "extracted": candidate,
@@ -76,16 +95,7 @@ def resolve_correspondent(candidate: str | None, existing: list[str]) -> dict[st
             "runner_up_score": None,
         }
 
-    scored = sorted(
-        (
-            (
-                SequenceMatcher(None, normalized_candidate, normalized).ratio(),
-                name,
-            )
-            for name, normalized in normalized_existing
-        ),
-        reverse=True,
-    )
+    scored = _score_candidates(normalized_candidate, existing)
     best_score, best_name = scored[0] if scored else (0.0, "")
     runner_up_score = scored[1][0] if len(scored) > 1 else 0.0
     margin = best_score - runner_up_score
@@ -93,8 +103,8 @@ def resolve_correspondent(candidate: str | None, existing: list[str]) -> dict[st
     if (
         len(normalized_candidate) >= FUZZY_MIN_NORMALIZED_LENGTH
         and best_name
-        and best_score >= FUZZY_MATCH_THRESHOLD
-        and margin >= FUZZY_MATCH_MARGIN
+        and best_score >= minimum_similarity
+        and margin >= minimum_margin
     ):
         return {
             "extracted": candidate,
@@ -112,4 +122,57 @@ def resolve_correspondent(candidate: str | None, existing: list[str]) -> dict[st
         "suggestion": candidate,
         "match_score": round(best_score, 4) if scored else None,
         "runner_up_score": round(runner_up_score, 4) if len(scored) > 1 else None,
+    }
+
+
+def simulate_correspondent_match(
+    candidate: str | None,
+    existing: list[str],
+    *,
+    minimum_similarity: float = FUZZY_MATCH_THRESHOLD,
+    minimum_margin: float = FUZZY_MATCH_MARGIN,
+    limit: int = 3,
+) -> dict[str, Any]:
+    """Return a read-only explanation using the exact production matching logic."""
+    candidate = clean_candidate(candidate)
+    normalized_candidate = normalize_correspondent_name(candidate)
+    resolution = resolve_correspondent(
+        candidate,
+        existing,
+        minimum_similarity=minimum_similarity,
+        minimum_margin=minimum_margin,
+    )
+    plausible = _plausible_candidate(candidate)
+    scored = _score_candidates(normalized_candidate, existing) if plausible else []
+    best_score = scored[0][0] if scored else None
+    runner_up_score = scored[1][0] if len(scored) > 1 else None
+    gate_runner_up = runner_up_score if runner_up_score is not None else 0.0
+    winner_margin = (
+        best_score - runner_up_score
+        if best_score is not None and runner_up_score is not None
+        else None
+    )
+    similarity_pass = best_score >= minimum_similarity if best_score is not None else None
+    margin_pass = (
+        best_score - gate_runner_up >= minimum_margin if best_score is not None else None
+    )
+    safe_limit = max(1, min(int(limit), 10))
+    return {
+        "candidate": candidate,
+        "normalized_candidate": normalized_candidate,
+        "normalized_length": len(normalized_candidate),
+        "fuzzy_min_normalized_length": FUZZY_MIN_NORMALIZED_LENGTH,
+        "length_pass": len(normalized_candidate) >= FUZZY_MIN_NORMALIZED_LENGTH,
+        "minimum_similarity": minimum_similarity,
+        "minimum_margin": minimum_margin,
+        "thresholds_applied": resolution["status"] not in {"existing_exact", "empty"},
+        "similarity_pass": similarity_pass,
+        "margin_pass": margin_pass,
+        "winner_margin": round(winner_margin, 4) if winner_margin is not None else None,
+        "existing_count": sum(1 for name in existing if clean_candidate(name)),
+        "candidates": [
+            {"name": name, "score": round(score, 4)}
+            for score, name in scored[:safe_limit]
+        ],
+        "resolution": resolution,
     }
