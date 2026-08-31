@@ -11,6 +11,10 @@
 
 - use the configured correspondent thresholds consistently in the Rust/Python metadata paths and safe model tests; the default fuzzy similarity is relaxed from 0.93 to 0.91 while the 0.04 ambiguity margin is retained. Normalized exact matches continue to bypass fuzzy thresholds and plausible unmatched senders are never auto-created.
 
+### Fixed
+
+- prevent OCRmyPDF 17.7.1 native `generate_ocr()` / fpdf2 rendering from failing after successful PaddleOCR on hybrid or vector PDFs whose `PdfInfo` DPI resolves to zero; the version-gated compatibility shim uses OCR `OcrElement` DPI first, then PDFInfo DPI, then OCRmyPDF's vector-page fallback, preserving text-layer geometry when the OCR-only raster is downsampled.
+
 ## 0.3.8 - 2026-08-28
 
 ### Added

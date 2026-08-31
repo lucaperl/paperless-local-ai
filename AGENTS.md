@@ -63,6 +63,12 @@ Keep externally documented ports, secrets and integration contracts stable unles
 
 The OCRmyPDF plugin and native suggestion bridge are verified against Paperless-ngx 3.1.0; the plugin targets OCRmyPDF 17.7.1's native `generate_ocr()` / `OcrElement` contract.
 
+### OCRmyPDF 17.7.1 fpdf2 DPI compatibility shim
+
+`src/ocr/ocrmypdf_plai.py` contains a deliberately **17.7.1-only** compatibility shim for OCRmyPDF's native `generate_ocr()` / fpdf2 path. Some hybrid/vector PDFs expose zero `PdfInfo` DPI after successful PaddleOCR, which otherwise causes fpdf2 rendering to fail. The shim uses `OcrElement` DPI, then usable PDFInfo DPI, then `VECTOR_PAGE_DPI`, and is installed through OCRmyPDF's official `initialize()` plugin hook without changing `site-packages`.
+
+**DO NOT broaden this workaround to a newer OCRmyPDF version without compatibility testing.** On every OCRmyPDF/Paperless version bump, explicitly inspect the newer native fpdf2 graft path, check whether the upstream zero-DPI behavior is fixed, run the OCR plugin regressions, and run one real Paperless hybrid-PDF reprocess with PaddleOCR. If upstream handles the case correctly, do not carry the shim forward to that version. Search for `_install_ocrmypdf_fpdf2_dpi_compat` when reviewing an OCRmyPDF upgrade.
+
 Hybrid tagging uses documented Paperless REST document/tag fields and depends on the configured review-tag workflow semantics. Do not broaden compatibility claims without integration testing the target Paperless release.
 
 Current published OCR support is linux/amd64. Do not claim ARM64 until the Paddle image/runtime is validated.

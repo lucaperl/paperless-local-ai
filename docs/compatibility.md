@@ -26,6 +26,22 @@ The OCR integration uses OCRmyPDF's plugin API and is version-sensitive.
 
 The included plugin is verified against OCRmyPDF **17.7.1**, specifically the native `OcrEngine.generate_ocr()` / `OcrElement` interface used by Paperless-ngx **3.1.0**.
 
+### OCRmyPDF 17.7.1 native fpdf2 DPI workaround
+
+OCRmyPDF 17.7.1 can report a zero `PdfInfo` DPI to its native `generate_ocr()` / fpdf2 renderer for some hybrid or vector PDFs even though the raster sent to PaddleOCR has a valid DPI. PaddleOCR succeeds, but unpatched fpdf2 rendering then fails while converting pixel geometry to PDF points.
+
+`src/ocr/ocrmypdf_plai.py` therefore installs a **17.7.1-only**, idempotent compatibility shim through OCRmyPDF's official `initialize()` plugin hook. It does not modify installed OCRmyPDF files.
+
+Renderer DPI is selected in this order:
+
+1. DPI carried by the returned OCR `OcrElement`;
+2. usable PDFInfo DPI;
+3. OCRmyPDF `VECTOR_PAGE_DPI`.
+
+The first choice is important because `filter_ocr_image()` may downsample the OCR-only raster and adjusts its DPI proportionally; using that value preserves the physical text-layer geometry.
+
+**Removal/update condition:** do not broaden this workaround to a newer OCRmyPDF version just because the dependency version changed. First inspect the newer native `generate_ocr()` / fpdf2 graft path, determine whether the zero-DPI case is fixed upstream, run the unit regressions in `tests/test_ocr_plugin.py`, and run one real Paperless end-to-end hybrid-PDF reprocess with PaddleOCR. If the newer OCRmyPDF version handles the case itself, leave the shim scoped to 17.7.1 and remove it only when 17.7.1 is no longer a supported/tested target.
+
 A newer Paperless/OCRmyPDF release should be treated as unverified until the plugin contract is checked.
 
 The new-correspondent suggestion bridge is also version-sensitive because it depends on Paperless' AI classification-suggestion request shape. It supports the list-based taxonomy response contract used by Paperless-ngx **3.0.5** and the nested `existing_ids` / `new_names` taxonomy-choice schema introduced by Paperless-ngx **3.1.0**. The bridge derives the response shape from each request schema instead of hardcoding a Paperless version.

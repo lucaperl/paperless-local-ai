@@ -1,18 +1,21 @@
 """OCRmyPDF engine plugin for paperless-local-ai.
 
-Verified against OCRmyPDF 17.4.2 as bundled by Paperless-ngx 3.0.5.
+Verified against OCRmyPDF 17.7.1 as bundled by Paperless-ngx 3.1.0.
 OCRmyPDF rasterizes a page, this bridge preconditions oversized OCR-only
 rasters to PaddleX's input limit, streams them to paperless-local-ai and returns
 OCRmyPDF's native OcrElement tree. No hOCR/XML roundtrip is used.
 """
 from __future__ import annotations
 
+import functools
 import http.client
 import json
 import logging
+import math
 import os
 import time
 import uuid
+from importlib.metadata import PackageNotFoundError, version as package_version
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlparse
@@ -31,6 +34,191 @@ CONFIG_LOOKUP_TIMEOUT_SECONDS = 1.5
 DEFAULT_RETRY_DELAYS_SECONDS = [15, 60, 300, 600]
 RETRY_STATUS_POLL_SECONDS = 2.0
 MAX_TOTAL_ATTEMPTS = 11
+
+# OCRmyPDF 17.7.1 compatibility only.
+#
+# Do not broaden this to newer OCRmyPDF versions without checking the upstream
+# native generate_ocr()/fpdf2 graft path and running the real hybrid-PDF
+# regression. The workaround intentionally targets one verified dependency
+# version instead of monkeypatching unknown future internals.
+OCRMY_PDF_FPDF2_DPI_COMPAT_VERSION = "17.7.1"
+_FPDF2_DPI_COMPAT_MARKER = "_paperless_local_ai_fpdf2_dpi_compat"
+
+
+def _installed_ocrmypdf_version() -> str:
+    try:
+        return package_version("ocrmypdf")
+    except PackageNotFoundError:
+        return "unknown"
+
+
+def _positive_finite_dpi(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        dpi = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(dpi) or dpi <= 0:
+        return None
+    return dpi
+
+
+def _effective_fpdf2_dpi(
+    ocr_tree_dpi: Any,
+    pdfinfo_dpi: Any,
+    vector_page_dpi: Any,
+) -> float:
+    """Choose renderer DPI using OCRmyPDF's existing hOCR fallback order."""
+    for candidate in (ocr_tree_dpi, pdfinfo_dpi, vector_page_dpi):
+        dpi = _positive_finite_dpi(candidate)
+        if dpi is not None:
+            return dpi
+    raise RuntimeError("OCRmyPDF fpdf2 renderer has no usable DPI fallback")
+
+
+def _ocrmypdf_17_7_1_fpdf2_contract(graft: Any) -> tuple[Any, Any, float]:
+    """Validate only the private OCRmyPDF surface required by the shim."""
+    grafter_cls = getattr(graft, "OcrGrafter", None)
+    parsed_cls = getattr(graft, "Fpdf2ParsedPage", None)
+
+    render = (
+        getattr(grafter_cls, "_render_and_graft_fpdf2_pages", None)
+        if grafter_cls is not None
+        else None
+    )
+
+    vector_page_dpi = _positive_finite_dpi(
+        getattr(graft, "VECTOR_PAGE_DPI", None)
+    )
+
+    problems: list[str] = []
+
+    if grafter_cls is None:
+        problems.append("OcrGrafter missing")
+
+    if not callable(render):
+        problems.append("_render_and_graft_fpdf2_pages missing")
+
+    fields = set(getattr(parsed_cls, "__dataclass_fields__", {}))
+    required_fields = {
+        "pageno",
+        "ocr_tree",
+        "dpi",
+        "autorotate_correction",
+        "emplaced_page",
+    }
+
+    if not required_fields.issubset(fields):
+        problems.append("Fpdf2ParsedPage contract changed")
+
+    if vector_page_dpi is None:
+        problems.append("VECTOR_PAGE_DPI missing or invalid")
+
+    if problems:
+        raise RuntimeError(
+            "OCRmyPDF 17.7.1 fpdf2 compatibility contract changed: "
+            + "; ".join(problems)
+        )
+
+    return grafter_cls, render, vector_page_dpi
+
+
+def _install_ocrmypdf_fpdf2_dpi_compat(
+    *,
+    ocrmypdf_version: str | None = None,
+) -> bool:
+    """Install the scoped OCRmyPDF 17.7.1 native-fpdf2 DPI workaround.
+
+    OCRmyPDF 17.7.1 stores PdfInfo DPI directly in Fpdf2ParsedPage for the
+    native generate_ocr()/OcrElement path. Hybrid/vector PDFs can report zero
+    there even though the actual OCR raster and returned OcrElement carry a
+    valid DPI, causing fpdf2 to divide by zero after OCR completed.
+
+    Immediately before fpdf2 rendering, normalize each parsed page using the
+    same preference order OCRmyPDF already uses for its hOCR path:
+
+        OcrElement DPI -> PDFInfo DPI -> VECTOR_PAGE_DPI
+
+    This also preserves physical text-layer geometry when filter_ocr_image()
+    downsamples the OCR-only raster and adjusts its DPI.
+
+    The shim is deliberately version-gated. Unknown OCRmyPDF versions are not
+    patched. For 17.7.1, an unexpected private contract fails clearly instead
+    of applying an unsafe monkeypatch.
+    """
+
+    running_version = (
+        ocrmypdf_version
+        if ocrmypdf_version is not None
+        else _installed_ocrmypdf_version()
+    )
+
+    # Local build metadata is harmless, but pre/post releases remain distinct.
+    base_version = running_version.split("+", 1)[0]
+
+    if base_version != OCRMY_PDF_FPDF2_DPI_COMPAT_VERSION:
+        LOG.info(
+            "OCRmyPDF %s is outside the version-gated 17.7.1 fpdf2 DPI "
+            "compatibility shim; leaving OCRmyPDF internals untouched",
+            running_version,
+        )
+        return False
+
+    import ocrmypdf._graft as graft
+
+    grafter_cls, original, vector_page_dpi = (
+        _ocrmypdf_17_7_1_fpdf2_contract(graft)
+    )
+
+    if getattr(original, _FPDF2_DPI_COMPAT_MARKER, False):
+        return False
+
+    @functools.wraps(original)
+    def render_with_effective_dpi(self):
+        for parsed in getattr(self, "fpdf2_parsed_pages", ()):
+            current_dpi = getattr(parsed, "dpi", None)
+
+            ocr_tree = getattr(parsed, "ocr_tree", None)
+            ocr_tree_dpi = getattr(ocr_tree, "dpi", None)
+
+            effective_dpi = _effective_fpdf2_dpi(
+                ocr_tree_dpi,
+                current_dpi,
+                vector_page_dpi,
+            )
+
+            if current_dpi != effective_dpi:
+                if _positive_finite_dpi(current_dpi) is None:
+                    LOG.info(
+                        "OCRmyPDF fpdf2 page %s has unusable PDFInfo DPI %r; "
+                        "using effective OCR renderer DPI %.2f",
+                        getattr(parsed, "pageno", "?"),
+                        current_dpi,
+                        effective_dpi,
+                    )
+                else:
+                    LOG.debug(
+                        "OCRmyPDF fpdf2 page %s uses OCR raster DPI %.2f "
+                        "instead of PDFInfo DPI %.2f",
+                        getattr(parsed, "pageno", "?"),
+                        effective_dpi,
+                        float(current_dpi),
+                    )
+
+                parsed.dpi = effective_dpi
+
+        return original(self)
+
+    setattr(
+        render_with_effective_dpi,
+        _FPDF2_DPI_COMPAT_MARKER,
+        True,
+    )
+
+    grafter_cls._render_and_graft_fpdf2_pages = render_with_effective_dpi
+
+    return True
 
 
 def _downsample_for_paddle(
@@ -539,6 +727,13 @@ class RemotePaddleEngine(OcrEngine):
         raise NotImplementedError(
             "paperless-local-ai requires OCRmyPDF pdf_renderer=fpdf2"
         )
+
+
+@hookimpl
+def initialize(plugin_manager: Any) -> None:
+    # initialize() is OCRmyPDF's official plugin hook for compatibility setup.
+    # Keep the workaround inside our plugin; never modify installed site-packages.
+    _install_ocrmypdf_fpdf2_dpi_compat()
 
 
 @hookimpl(tryfirst=True)
