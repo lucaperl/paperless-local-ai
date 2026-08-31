@@ -1,9 +1,13 @@
+use crate::app_config::{
+    CORRESPONDENT_MATCH_MARGIN_DEFAULT, CORRESPONDENT_MATCH_SIMILARITY_DEFAULT,
+    CorrespondentMatchingConfig,
+};
 use crate::text::{collapse_whitespace, normalized_words};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const FUZZY_MATCH_THRESHOLD: f64 = 0.93;
-pub const FUZZY_MATCH_MARGIN: f64 = 0.04;
+pub const FUZZY_MATCH_THRESHOLD: f64 = CORRESPONDENT_MATCH_SIMILARITY_DEFAULT;
+pub const FUZZY_MATCH_MARGIN: f64 = CORRESPONDENT_MATCH_MARGIN_DEFAULT;
 pub const FUZZY_MIN_NORMALIZED_LENGTH: usize = 8;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -14,6 +18,30 @@ pub struct CorrespondentResolution {
     pub suggestion: String,
     pub match_score: Option<f64>,
     pub runner_up_score: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CorrespondentMatchCandidate {
+    pub name: String,
+    pub score: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CorrespondentMatchSimulation {
+    pub candidate: String,
+    pub normalized_candidate: String,
+    pub normalized_length: usize,
+    pub fuzzy_min_normalized_length: usize,
+    pub length_pass: bool,
+    pub minimum_similarity: f64,
+    pub minimum_margin: f64,
+    pub thresholds_applied: bool,
+    pub similarity_pass: Option<bool>,
+    pub margin_pass: Option<bool>,
+    pub winner_margin: Option<f64>,
+    pub existing_count: usize,
+    pub candidates: Vec<CorrespondentMatchCandidate>,
+    pub resolution: CorrespondentResolution,
 }
 
 pub fn normalize_correspondent_name(value: &str) -> String {
@@ -48,47 +76,63 @@ fn plausible_candidate(candidate: &str) -> bool {
     candidate.chars().any(char::is_alphabetic)
 }
 
+fn scored_candidates(normalized_candidate: &str, existing: &[String]) -> Vec<(f64, String)> {
+    let mut scored = existing
+        .iter()
+        .filter(|name| !clean_candidate(name).is_empty())
+        .map(|name| {
+            (
+                sequence_matcher_ratio(normalized_candidate, &normalize_correspondent_name(name)),
+                name.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    // Python: sorted((score, name), reverse=True): score descending, then name descending.
+    scored.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| b.1.cmp(&a.1)));
+    scored
+}
+
 pub fn resolve_correspondent(candidate: &str, existing: &[String]) -> CorrespondentResolution {
+    resolve_correspondent_with_settings(
+        candidate,
+        existing,
+        &CorrespondentMatchingConfig::default(),
+    )
+}
+
+pub fn resolve_correspondent_with_settings(
+    candidate: &str,
+    existing: &[String],
+    matching: &CorrespondentMatchingConfig,
+) -> CorrespondentResolution {
     let candidate = clean_candidate(candidate);
     if !plausible_candidate(&candidate) {
         return resolution(&candidate, "empty", "", "", None, None);
     }
 
     let normalized_candidate = normalize_correspondent_name(&candidate);
-    let normalized_existing = existing
+    let exact = existing
         .iter()
         .filter(|name| !clean_candidate(name).is_empty())
-        .map(|name| (name.as_str(), normalize_correspondent_name(name)))
-        .collect::<Vec<_>>();
-
-    let exact = normalized_existing
-        .iter()
-        .filter(|(_, normalized)| normalized == &normalized_candidate)
-        .map(|(name, _)| *name)
+        .filter(|name| normalize_correspondent_name(name) == normalized_candidate)
+        .map(String::as_str)
         .collect::<Vec<_>>();
     if exact.len() == 1 {
         return resolution(&candidate, "existing_exact", exact[0], "", Some(1.0), None);
     }
 
-    let mut scored = normalized_existing
-        .iter()
-        .map(|(name, normalized)| {
-            (
-                sequence_matcher_ratio(&normalized_candidate, normalized),
-                *name,
-            )
-        })
-        .collect::<Vec<_>>();
-    // Python: sorted((score, name), reverse=True): score descending, then name descending.
-    scored.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| b.1.cmp(a.1)));
-    let (best_score, best_name) = scored.first().copied().unwrap_or((0.0, ""));
+    let scored = scored_candidates(&normalized_candidate, existing);
+    let (best_score, best_name) = scored
+        .first()
+        .map(|(score, name)| (*score, name.as_str()))
+        .unwrap_or((0.0, ""));
     let runner_up = scored.get(1).map_or(0.0, |item| item.0);
     let margin = best_score - runner_up;
 
     if normalized_candidate.chars().count() >= FUZZY_MIN_NORMALIZED_LENGTH
         && !best_name.is_empty()
-        && best_score >= FUZZY_MATCH_THRESHOLD
-        && margin >= FUZZY_MATCH_MARGIN
+        && best_score >= matching.minimum_similarity
+        && margin >= matching.minimum_margin
     {
         return resolution(
             &candidate,
@@ -108,6 +152,58 @@ pub fn resolve_correspondent(candidate: &str, existing: &[String]) -> Correspond
         scored.first().map(|item| round4(item.0)),
         scored.get(1).map(|item| round4(item.0)),
     )
+}
+
+pub fn simulate_correspondent_match(
+    candidate: &str,
+    existing: &[String],
+    matching: &CorrespondentMatchingConfig,
+    limit: usize,
+) -> CorrespondentMatchSimulation {
+    let candidate = clean_candidate(candidate);
+    let normalized_candidate = normalize_correspondent_name(&candidate);
+    let plausible = plausible_candidate(&candidate);
+    let scored = if plausible {
+        scored_candidates(&normalized_candidate, existing)
+    } else {
+        Vec::new()
+    };
+    let best_score = scored.first().map(|item| item.0);
+    let runner_up_score = scored.get(1).map(|item| item.0);
+    let gate_runner_up = runner_up_score.unwrap_or(0.0);
+    let winner_margin = match (best_score, runner_up_score) {
+        (Some(best), Some(runner_up)) => Some(round4(best - runner_up)),
+        _ => None,
+    };
+    let resolution = resolve_correspondent_with_settings(&candidate, existing, matching);
+    let safe_limit = limit.clamp(1, 10);
+
+    CorrespondentMatchSimulation {
+        candidate,
+        normalized_candidate: normalized_candidate.clone(),
+        normalized_length: normalized_candidate.chars().count(),
+        fuzzy_min_normalized_length: FUZZY_MIN_NORMALIZED_LENGTH,
+        length_pass: normalized_candidate.chars().count() >= FUZZY_MIN_NORMALIZED_LENGTH,
+        minimum_similarity: matching.minimum_similarity,
+        minimum_margin: matching.minimum_margin,
+        thresholds_applied: !matches!(resolution.status.as_str(), "existing_exact" | "empty"),
+        similarity_pass: best_score.map(|score| score >= matching.minimum_similarity),
+        margin_pass: best_score.map(|score| score - gate_runner_up >= matching.minimum_margin),
+        winner_margin,
+        existing_count: existing
+            .iter()
+            .filter(|name| !clean_candidate(name).is_empty())
+            .count(),
+        candidates: scored
+            .into_iter()
+            .take(safe_limit)
+            .map(|(score, name)| CorrespondentMatchCandidate {
+                name,
+                score: round4(score),
+            })
+            .collect(),
+        resolution,
+    }
 }
 
 fn resolution(
@@ -326,6 +422,44 @@ mod tests {
             ],
         );
         assert_eq!(r.status, "new_suggestion");
+    }
+
+    #[test]
+    fn configurable_similarity_can_accept_a_clear_lower_score() {
+        let settings = CorrespondentMatchingConfig {
+            minimum_similarity: 0.92,
+            minimum_margin: 0.04,
+        };
+        let r = resolve_correspondent_with_settings(
+            "Beispielwerke Energieversorgung",
+            &[
+                "Beispielwerke Energieversorgung GmbH".into(),
+                "Beispielwerke Netz GmbH".into(),
+            ],
+            &settings,
+        );
+        assert_eq!(r.status, "existing_fuzzy");
+        assert_eq!(r.resolved, "Beispielwerke Energieversorgung GmbH");
+    }
+
+    #[test]
+    fn simulator_exposes_ambiguity_and_top_three() {
+        let settings = CorrespondentMatchingConfig::default();
+        let simulation = simulate_correspondent_match(
+            "Beispielwerke Main GmbH",
+            &[
+                "Beispielwerke Mainz GmbH".into(),
+                "Beispielwerke Mainau GmbH".into(),
+                "Musterwerke Main GmbH".into(),
+            ],
+            &settings,
+            3,
+        );
+        assert_eq!(simulation.resolution.status, "new_suggestion");
+        assert_eq!(simulation.candidates.len(), 3);
+        assert_eq!(simulation.similarity_pass, Some(true));
+        assert_eq!(simulation.margin_pass, Some(false));
+        assert!(simulation.winner_margin.unwrap() < 0.04);
     }
 
     #[test]

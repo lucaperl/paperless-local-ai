@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+
+- add versioned correspondent matching controls for minimum similarity and minimum winner margin under App Settings, preserving the previous conservative 0.93 / 0.04 defaults.
+- add an expandable read-only correspondent matching tester that evaluates a typed sender against current Paperless correspondents with the unsaved draft thresholds and shows the top three candidates, scores, winner margin and exact decision gates.
+
+### Changed
+
+- use the configured correspondent thresholds consistently in the Rust/Python metadata paths and safe model tests; normalized exact matches continue to bypass fuzzy thresholds and plausible unmatched senders are never auto-created.
+
 ## 0.3.8 - 2026-08-28
 
 ### Added
