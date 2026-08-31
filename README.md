@@ -113,7 +113,7 @@ The Tagging prompt is appended only when the active route requires an LLM tag de
 
 ## Correspondents
 
-The structured metadata request extracts the actual sender/issuer as free text. Local resolution first checks for a unique normalized exact match. Otherwise it compares the extracted name with current Paperless correspondents and applies a fuzzy match only when **both** the configured minimum similarity and minimum winner margin pass. Defaults are **93% similarity** and **4 percentage points winner margin**, preserving the conservative behavior. The controls and a read-only live tester are under **App Settings → Matching**.
+The structured metadata request extracts the actual sender/issuer as free text. Local resolution first checks for a unique normalized exact match. Otherwise it compares the extracted name with current Paperless correspondents and applies a fuzzy match only when **both** the configured minimum similarity and minimum winner margin pass. Defaults are **91% similarity** and **4 percentage points winner margin**. The similarity default is intentionally slightly more permissive than the previous hard-coded 93% threshold, while the ambiguity margin stays unchanged. The controls and a read-only live tester are under **App Settings → Matching**.
 
 The winner margin is the difference between the best and second-best similarity scores. It prevents a high score from being treated as safe when two existing correspondents are almost equally plausible. Plausible unmatched names can appear in **Paperless Document Suggestions** when the optional suggestion bridge is configured; new correspondents are never auto-created.
 
@@ -121,10 +121,10 @@ The winner margin is the difference between the best and second-best similarity 
 
 All names below are synthetic. Scores are calculated with the same name-similarity metric used by the matcher.
 
-| Case | Extracted sender | Best existing match | Second-best | Decision with 93% / 4 pp |
+| Case | Extracted sender | Best existing match | Second-best | Decision with 91% / 4 pp |
 |---|---|---:|---:|---|
 | Clear match | `Musterwerke Energi GmbH` | `Musterwerke Energie GmbH` · **97.87%** | `Musterwerke Netz GmbH` · 86.36% | **Match** · winner margin 11.51 pp |
-| Clear winner, below similarity threshold | `Beispielwerke Energieversorgung` | `Beispielwerke Energieversorgung GmbH` · **92.54%** | `Beispielwerke Netz GmbH` · 62.96% | **No match** · similarity is below 93% |
+| Clear winner, below similarity threshold | `Musterwerke Versorgung` | `Musterwerke Versorgung GmbH` · **89.80%** | `Musterwerke Netz GmbH` · 65.12% | **No match** · similarity is below 91% |
 | High similarity, but ambiguous | `Beispielwerke Main GmbH` | `Beispielwerke Mainz GmbH` · **97.87%** | `Beispielwerke Mainau GmbH` · 95.83% | **No match** · winner margin is only 2.04 pp |
 
 Lowering **Minimum similarity** accepts more name variation. Lowering **Minimum winner margin** accepts closer races between candidates. Raising either value makes automatic matching more conservative. Unique normalized exact matches do not use the fuzzy thresholds.

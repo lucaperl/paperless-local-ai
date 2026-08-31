@@ -42,10 +42,10 @@ def test_default_config_is_valid():
     assert HISTORY_MIN_SUPPORT_DEFAULT == 2
     assert HISTORY_MIN_WINNER_SHARE_DEFAULT == 0.50
     assert cfg["correspondent_matching"] == {
-        "minimum_similarity": 0.93,
+        "minimum_similarity": 0.91,
         "minimum_margin": 0.04,
     }
-    assert CORRESPONDENT_MATCH_SIMILARITY_DEFAULT == 0.93
+    assert CORRESPONDENT_MATCH_SIMILARITY_DEFAULT == 0.91
     assert CORRESPONDENT_MATCH_MARGIN_DEFAULT == 0.04
 
 
@@ -65,8 +65,8 @@ def test_correspondent_matching_bounds_are_enforced():
     invalid = (
         {"minimum_similarity": 0.79, "minimum_margin": 0.04},
         {"minimum_similarity": 1.01, "minimum_margin": 0.04},
-        {"minimum_similarity": 0.93, "minimum_margin": -0.01},
-        {"minimum_similarity": 0.93, "minimum_margin": 0.21},
+        {"minimum_similarity": 0.91, "minimum_margin": -0.01},
+        {"minimum_similarity": 0.91, "minimum_margin": 0.21},
     )
     for matching in invalid:
         raw = {**DEFAULT_CONFIG, "correspondent_matching": matching}

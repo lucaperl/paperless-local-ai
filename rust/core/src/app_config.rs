@@ -21,7 +21,7 @@ pub const OCR_RETRY_DELAY_MAX_SECONDS: u32 = 86_400;
 pub const HISTORY_MATCH_SIMILARITY_DEFAULT: f64 = 0.62;
 pub const HISTORY_MIN_SUPPORT_DEFAULT: u64 = 2;
 pub const HISTORY_MIN_WINNER_SHARE_DEFAULT: f64 = 0.50;
-pub const CORRESPONDENT_MATCH_SIMILARITY_DEFAULT: f64 = 0.93;
+pub const CORRESPONDENT_MATCH_SIMILARITY_DEFAULT: f64 = 0.91;
 pub const CORRESPONDENT_MATCH_MARGIN_DEFAULT: f64 = 0.04;
 pub const CORRESPONDENT_MATCH_SIMILARITY_MIN: f64 = 0.80;
 pub const CORRESPONDENT_MATCH_MARGIN_MAX: f64 = 0.20;
@@ -643,7 +643,7 @@ mod tests {
         assert_eq!(cfg.history.match_similarity, 0.62);
         assert_eq!(cfg.history.min_support, 2);
         assert_eq!(cfg.history.min_winner_share, 0.50);
-        assert_eq!(cfg.correspondent_matching.minimum_similarity, 0.93);
+        assert_eq!(cfg.correspondent_matching.minimum_similarity, 0.91);
         assert_eq!(cfg.correspondent_matching.minimum_margin, 0.04);
     }
 

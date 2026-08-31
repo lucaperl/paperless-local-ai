@@ -28,7 +28,7 @@ def test_close_but_insufficient_match_stays_a_suggestion():
     assert result["suggestion"] == "Example Regional Services North"
 
 
-def test_configurable_similarity_can_accept_a_clear_lower_score():
+def test_configurable_similarity_setting_is_honored():
     result = resolve_correspondent(
         "Beispielwerke Energieversorgung",
         ["Beispielwerke Energieversorgung GmbH", "Beispielwerke Netz GmbH"],

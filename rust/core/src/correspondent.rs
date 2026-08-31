@@ -425,7 +425,7 @@ mod tests {
     }
 
     #[test]
-    fn configurable_similarity_can_accept_a_clear_lower_score() {
+    fn configurable_similarity_setting_is_honored() {
         let settings = CorrespondentMatchingConfig {
             minimum_similarity: 0.92,
             minimum_margin: 0.04,

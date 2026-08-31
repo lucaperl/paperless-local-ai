@@ -159,7 +159,7 @@ The main LLM request extracts the sender/issuer without restricting it to existi
 
 1. applies a unique normalized exact match;
 2. otherwise ranks existing correspondents with the project's SequenceMatcher-compatible name metric;
-3. accepts the fuzzy winner only when it reaches the configured minimum similarity (default `0.93`) and leads the runner-up by the configured minimum winner margin (default `0.04`);
+3. accepts the fuzzy winner only when it reaches the configured minimum similarity (default `0.91`) and leads the runner-up by the configured minimum winner margin (default `0.04`);
 4. exposes other plausible names through the suggestion bridge for human review;
 5. leaves empty/unreliable extraction unresolved.
 

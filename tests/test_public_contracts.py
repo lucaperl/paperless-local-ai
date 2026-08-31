@@ -212,7 +212,7 @@ def test_correspondent_is_resolved_without_second_llm_stage():
     assert "correspondent_fallback" not in worker
     assert '"correspondent": {"type": "string"}' in runtime
     app_config = (ROOT / "src/common/app_config.py").read_text(encoding="utf-8")
-    assert "CORRESPONDENT_MATCH_SIMILARITY_DEFAULT = 0.93" in app_config
+    assert "CORRESPONDENT_MATCH_SIMILARITY_DEFAULT = 0.91" in app_config
     assert "CORRESPONDENT_MATCH_MARGIN_DEFAULT = 0.04" in app_config
     assert "simulate_correspondent_match" in resolver
     assert 'app_cfg["correspondent_matching"]' in worker

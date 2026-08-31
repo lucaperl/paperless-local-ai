@@ -256,7 +256,7 @@ function validatePromptConfig(raw) {
 
 function validateCorrespondentMatching(raw) {
   const value = raw || {};
-  const minimum_similarity = Number(value.minimum_similarity ?? 0.93);
+  const minimum_similarity = Number(value.minimum_similarity ?? 0.91);
   const minimum_margin = Number(value.minimum_margin ?? 0.04);
   if (!Number.isFinite(minimum_similarity) || minimum_similarity < 0.80 || minimum_similarity > 1) {
     throw new Error("correspondent_matching.minimum_similarity must be between 0.8 and 1");

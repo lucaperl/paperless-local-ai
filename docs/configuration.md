@@ -6,7 +6,7 @@ The **Control Center** is the main interface for `paperless-local-ai` configurat
 
 1. **App Settings → Connections** — configure and test Paperless and Ollama.
 2. **App Settings → Pipeline & Tags** — choose classification queue/error/review tag names.
-3. **App Settings → Matching** — keep the conservative correspondent defaults initially, or test archive-specific name variants with the read-only simulator.
+3. **App Settings → Matching** — start with the default correspondent thresholds, or test archive-specific name variants with the read-only simulator.
 4. **App Settings → OCR** — choose OCR language, PaddleOCR model, maximum image side and retry behavior.
 5. Complete the matching [Paperless setup](paperless-setup.md), including the review-tag lifecycle, Paperless matching settings, metadata workflow and OCRmyPDF integration.
 6. **App Settings → Runtime** — leave metadata writes enabled or temporarily use Dry Run for read-only metadata testing.
@@ -176,7 +176,7 @@ The classification request extracts the actual sender/issuer as a short free-tex
 
 | Setting | Default | Supported range | Meaning |
 |---|---:|---:|---|
-| Minimum similarity | `93%` | `80–100%` | the best existing correspondent must reach this name-similarity score |
+| Minimum similarity | `91%` | `80–100%` | the best existing correspondent must reach this name-similarity score |
 | Minimum winner margin | `4 pp` | `0–20 pp` | the best match must be at least this many percentage points ahead of the second-best match |
 
 Both fuzzy conditions must pass, and fuzzy matching also keeps the existing minimum normalized-name length safeguard. Lower values are more permissive; higher values are more conservative. A unique normalized exact match bypasses the fuzzy thresholds.
@@ -186,7 +186,7 @@ The collapsed **Test correspondent matching** panel uses the current unsaved val
 Synthetic examples at the defaults:
 
 - `Musterwerke Energi GmbH` → `Musterwerke Energie GmbH` at **97.87%**, with an 11.51 pp lead over the second-best candidate: automatic match.
-- `Beispielwerke Energieversorgung` → best candidate `Beispielwerke Energieversorgung GmbH` at **92.54%**: no automatic match because similarity is below 93%, despite a clear winner.
+- `Musterwerke Versorgung` → best candidate `Musterwerke Versorgung GmbH` at **89.80%**: no automatic match because similarity is below 91%, despite a clear winner.
 - `Beispielwerke Main GmbH` → `Beispielwerke Mainz GmbH` at **97.87%** vs. `Beispielwerke Mainau GmbH` at **95.83%**: no automatic match because the 2.04 pp winner margin is below 4 pp.
 
 New correspondents are never auto-created. The optional Paperless Suggestions integration exposes plausible unmatched sender names in Paperless' native Document Suggestions. Without that integration, classification and safe matching to existing correspondents continue normally, but paperless-local-ai does not surface unmatched sender candidates in Paperless Suggestions; handle those manually during review.
