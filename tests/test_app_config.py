@@ -61,12 +61,21 @@ def test_existing_config_without_correspondent_matching_gets_safe_defaults():
     assert validated["correspondent_matching"] == DEFAULT_CONFIG["correspondent_matching"]
 
 
-def test_correspondent_matching_bounds_are_enforced():
+def test_correspondent_matching_supports_full_unit_interval():
+    valid = (
+        {"minimum_similarity": 0.0, "minimum_margin": 0.0},
+        {"minimum_similarity": 1.0, "minimum_margin": 1.0},
+        {"minimum_similarity": 0.65, "minimum_margin": 0.04},
+    )
+    for matching in valid:
+        raw = {**DEFAULT_CONFIG, "correspondent_matching": matching}
+        assert validate_config(raw)["correspondent_matching"] == matching
+
     invalid = (
-        {"minimum_similarity": 0.79, "minimum_margin": 0.04},
+        {"minimum_similarity": -0.01, "minimum_margin": 0.04},
         {"minimum_similarity": 1.01, "minimum_margin": 0.04},
         {"minimum_similarity": 0.91, "minimum_margin": -0.01},
-        {"minimum_similarity": 0.91, "minimum_margin": 0.21},
+        {"minimum_similarity": 0.91, "minimum_margin": 1.01},
     )
     for matching in invalid:
         raw = {**DEFAULT_CONFIG, "correspondent_matching": matching}

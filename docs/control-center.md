@@ -16,7 +16,7 @@ The Control Center is the browser UI for connections, workflow tags, OCR, classi
 
 The configured review tag can have any name. Paperless-side setup still matters: the review-tag lifecycle, matching algorithms, workflow and OCRmyPDF integration are documented in [Paperless setup](paperless-setup.md).
 
-**Test correspondent matching** compares a typed sender name with the current Paperless correspondents using the unsaved Matching thresholds. It shows the top three candidates and decision gates without calling Ollama or changing Paperless.
+**Test correspondent matching** compares a typed sender name with the current Paperless correspondents using the unsaved Matching thresholds. It shows the top three candidates and decision gates without calling Ollama or changing Paperless. Both thresholds can be configured across the complete `0-100` range; short plausible sender names use the same fuzzy ranking as longer names.
 
 **Preview prompts** does not call Ollama. **Run model test** calls Ollama but does not modify the selected Paperless document or persist a correspondent suggestion. **Dry Run** is optional and controls automatic metadata write-back; it does not disable Paperless import/OCR.
 

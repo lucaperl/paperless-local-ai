@@ -127,7 +127,7 @@ All names below are synthetic. Scores are calculated with the same name-similari
 | Clear winner, below similarity threshold | `Musterwerke Versorgung` | `Musterwerke Versorgung GmbH` · **89.80%** | `Musterwerke Netz GmbH` · 65.12% | **No match** · similarity is below 91% |
 | High similarity, but ambiguous | `Beispielwerke Main GmbH` | `Beispielwerke Mainz GmbH` · **97.87%** | `Beispielwerke Mainau GmbH` · 95.83% | **No match** · winner margin is only 2.04 pp |
 
-Lowering **Minimum similarity** accepts more name variation. Lowering **Minimum winner margin** accepts closer races between candidates. Raising either value makes automatic matching more conservative. Unique normalized exact matches do not use the fuzzy thresholds.
+Lowering **Minimum similarity** accepts more name variation. Lowering **Minimum winner margin** accepts closer races between candidates. Raising either value makes automatic matching more conservative. Both controls support their full `0-100` range, and there is no hidden minimum-name-length gate: every plausible non-exact sender is scored. Unique normalized exact matches do not use the fuzzy thresholds.
 
 ## Control Center
 

@@ -14,7 +14,6 @@ from app_config import (
 # Compatibility aliases for code/tests that referenced the pre-configurable constants.
 FUZZY_MATCH_THRESHOLD = CORRESPONDENT_MATCH_SIMILARITY_DEFAULT
 FUZZY_MATCH_MARGIN = CORRESPONDENT_MATCH_MARGIN_DEFAULT
-FUZZY_MIN_NORMALIZED_LENGTH = 8
 
 
 def normalize_correspondent_name(value: str | None) -> str:
@@ -101,8 +100,7 @@ def resolve_correspondent(
     margin = best_score - runner_up_score
 
     if (
-        len(normalized_candidate) >= FUZZY_MIN_NORMALIZED_LENGTH
-        and best_name
+        best_name
         and best_score >= minimum_similarity
         and margin >= minimum_margin
     ):
@@ -161,8 +159,6 @@ def simulate_correspondent_match(
         "candidate": candidate,
         "normalized_candidate": normalized_candidate,
         "normalized_length": len(normalized_candidate),
-        "fuzzy_min_normalized_length": FUZZY_MIN_NORMALIZED_LENGTH,
-        "length_pass": len(normalized_candidate) >= FUZZY_MIN_NORMALIZED_LENGTH,
         "minimum_similarity": minimum_similarity,
         "minimum_margin": minimum_margin,
         "thresholds_applied": resolution["status"] not in {"existing_exact", "empty"},

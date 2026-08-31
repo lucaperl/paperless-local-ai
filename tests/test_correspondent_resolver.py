@@ -39,6 +39,28 @@ def test_configurable_similarity_setting_is_honored():
     assert result["resolved"] == "Beispielwerke Energieversorgung GmbH"
 
 
+def test_short_sender_can_use_fuzzy_matching_when_thresholds_allow_it():
+    existing = ["ABCD e.V.", "Example Insurance AG"]
+    result = resolve_correspondent(
+        "ABCD",
+        existing,
+        minimum_similarity=0.60,
+        minimum_margin=0.04,
+    )
+    assert result["status"] == "existing_fuzzy"
+    assert result["resolved"] == "ABCD e.V."
+
+    simulation = simulate_correspondent_match(
+        "ABCD",
+        existing,
+        minimum_similarity=0.60,
+        minimum_margin=0.04,
+    )
+    assert simulation["normalized_length"] == 4
+    assert "length_pass" not in simulation
+    assert "fuzzy_min_normalized_length" not in simulation
+
+
 def test_winner_margin_blocks_ambiguous_high_similarity_match():
     result = resolve_correspondent(
         "Beispielwerke Main GmbH",

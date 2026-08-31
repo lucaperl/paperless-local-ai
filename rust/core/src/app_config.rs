@@ -23,8 +23,6 @@ pub const HISTORY_MIN_SUPPORT_DEFAULT: u64 = 2;
 pub const HISTORY_MIN_WINNER_SHARE_DEFAULT: f64 = 0.50;
 pub const CORRESPONDENT_MATCH_SIMILARITY_DEFAULT: f64 = 0.91;
 pub const CORRESPONDENT_MATCH_MARGIN_DEFAULT: f64 = 0.04;
-pub const CORRESPONDENT_MATCH_SIMILARITY_MIN: f64 = 0.80;
-pub const CORRESPONDENT_MATCH_MARGIN_MAX: f64 = 0.20;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConnectionsConfig {
@@ -64,19 +62,15 @@ impl Default for CorrespondentMatchingConfig {
 
 impl CorrespondentMatchingConfig {
     pub fn validate(&self) -> Result<()> {
-        if !self.minimum_similarity.is_finite()
-            || !(CORRESPONDENT_MATCH_SIMILARITY_MIN..=1.0).contains(&self.minimum_similarity)
-        {
-            return Err(Error::Config(format!(
-                "correspondent_matching.minimum_similarity must be between {CORRESPONDENT_MATCH_SIMILARITY_MIN} and 1"
-            )));
+        if !self.minimum_similarity.is_finite() || !(0.0..=1.0).contains(&self.minimum_similarity) {
+            return Err(Error::Config(
+                "correspondent_matching.minimum_similarity must be between 0 and 1".into(),
+            ));
         }
-        if !self.minimum_margin.is_finite()
-            || !(0.0..=CORRESPONDENT_MATCH_MARGIN_MAX).contains(&self.minimum_margin)
-        {
-            return Err(Error::Config(format!(
-                "correspondent_matching.minimum_margin must be between 0 and {CORRESPONDENT_MATCH_MARGIN_MAX}"
-            )));
+        if !self.minimum_margin.is_finite() || !(0.0..=1.0).contains(&self.minimum_margin) {
+            return Err(Error::Config(
+                "correspondent_matching.minimum_margin must be between 0 and 1".into(),
+            ));
         }
         Ok(())
     }
@@ -688,9 +682,16 @@ mod tests {
     }
 
     #[test]
-    fn correspondent_matching_bounds_are_enforced() {
+    fn correspondent_matching_supports_full_unit_interval() {
+        for (similarity, margin) in [(0.0, 0.0), (1.0, 1.0), (0.65, 0.04)] {
+            let mut cfg = AppConfig::default();
+            cfg.correspondent_matching.minimum_similarity = similarity;
+            cfg.correspondent_matching.minimum_margin = margin;
+            assert!(cfg.validate().is_ok());
+        }
+
         let mut cfg = AppConfig::default();
-        cfg.correspondent_matching.minimum_similarity = 0.79;
+        cfg.correspondent_matching.minimum_similarity = -0.01;
         assert!(
             cfg.validate()
                 .unwrap_err()
@@ -699,7 +700,25 @@ mod tests {
         );
 
         let mut cfg = AppConfig::default();
-        cfg.correspondent_matching.minimum_margin = 0.21;
+        cfg.correspondent_matching.minimum_similarity = 1.01;
+        assert!(
+            cfg.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("correspondent_matching.minimum_similarity")
+        );
+
+        let mut cfg = AppConfig::default();
+        cfg.correspondent_matching.minimum_margin = -0.01;
+        assert!(
+            cfg.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("correspondent_matching.minimum_margin")
+        );
+
+        let mut cfg = AppConfig::default();
+        cfg.correspondent_matching.minimum_margin = 1.01;
         assert!(
             cfg.validate()
                 .unwrap_err()
