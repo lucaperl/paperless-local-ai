@@ -1,3 +1,7 @@
+from types import SimpleNamespace
+
+import ocrmypdf._graft as ocrmypdf_graft
+import pytest
 from PIL import Image
 
 import ocrmypdf_plai as plugin
@@ -7,6 +11,113 @@ def test_default_ocr_raster_limit_is_3000():
     assert plugin.PADDLE_DEFAULT_MAX_SIDE_PIXELS == 3000
     assert plugin.PADDLE_MIN_SIDE_PIXELS == 2000
     assert plugin.PADDLE_MAX_SIDE_PIXELS == 4000
+
+
+def test_ocrmypdf_17_7_1_fpdf2_dpi_fallback_order():
+    assert plugin._effective_fpdf2_dpi(288.0, 300.0, 400.0) == 288.0
+    assert plugin._effective_fpdf2_dpi(None, 300.0, 400.0) == 300.0
+    assert plugin._effective_fpdf2_dpi(0.0, 0.0, 400.0) == 400.0
+    assert plugin._effective_fpdf2_dpi(float("nan"), 300.0, 400.0) == 300.0
+
+
+def test_ocrmypdf_17_7_1_fpdf2_zero_pdfinfo_dpi_uses_ocr_tree_dpi(
+    monkeypatch,
+):
+    rendered_dpis = []
+
+    def fake_render(self):
+        rendered_dpis.append(
+            tuple(page.dpi for page in self.fpdf2_parsed_pages)
+        )
+        return "rendered"
+
+    monkeypatch.setattr(
+        ocrmypdf_graft.OcrGrafter,
+        "_render_and_graft_fpdf2_pages",
+        fake_render,
+    )
+
+    assert (
+        plugin._install_ocrmypdf_fpdf2_dpi_compat(
+            ocrmypdf_version="17.7.1"
+        )
+        is True
+    )
+
+    # Same process must never wrap the renderer repeatedly.
+    assert (
+        plugin._install_ocrmypdf_fpdf2_dpi_compat(
+            ocrmypdf_version="17.7.1"
+        )
+        is False
+    )
+
+    grafter = object.__new__(ocrmypdf_graft.OcrGrafter)
+
+    grafter.fpdf2_parsed_pages = [
+        SimpleNamespace(
+            pageno=0,
+            dpi=300.0,
+            ocr_tree=SimpleNamespace(dpi=288.0),
+        ),
+        SimpleNamespace(
+            pageno=1,
+            dpi=0.0,
+            ocr_tree=SimpleNamespace(dpi=300.0),
+        ),
+        SimpleNamespace(
+            pageno=2,
+            dpi=0.0,
+            ocr_tree=SimpleNamespace(dpi=None),
+        ),
+    ]
+
+    result = (
+        ocrmypdf_graft.OcrGrafter._render_and_graft_fpdf2_pages(grafter)
+    )
+
+    assert result == "rendered"
+
+    assert rendered_dpis == [
+        (
+            288.0,
+            300.0,
+            float(ocrmypdf_graft.VECTOR_PAGE_DPI),
+        )
+    ]
+
+
+def test_ocrmypdf_fpdf2_dpi_compat_does_not_patch_unknown_versions():
+    original = ocrmypdf_graft.OcrGrafter._render_and_graft_fpdf2_pages
+
+    assert (
+        plugin._install_ocrmypdf_fpdf2_dpi_compat(
+            ocrmypdf_version="17.8.0"
+        )
+        is False
+    )
+
+    assert (
+        ocrmypdf_graft.OcrGrafter._render_and_graft_fpdf2_pages
+        is original
+    )
+
+
+def test_ocrmypdf_17_7_1_fpdf2_dpi_compat_fails_closed_on_contract_change(
+    monkeypatch,
+):
+    monkeypatch.delattr(
+        ocrmypdf_graft,
+        "Fpdf2ParsedPage",
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="OCRmyPDF 17.7.1 fpdf2 compatibility contract changed",
+    ):
+        plugin._install_ocrmypdf_fpdf2_dpi_compat(
+            ocrmypdf_version="17.7.1"
+        )
 
 
 def test_downsample_for_paddle_keeps_small_image_unchanged():
