@@ -81,7 +81,7 @@ volumes:
   - /path/to/paperless-local-ai/data/integration:/opt/paperless-local-ai:ro
 ```
 
-For the optional Paperless UI shortcut, `core-service` must also mount the same integration directory:
+For the optional Paperless UI integration (Settings shortcut + injected RAG chat), `core-service` must also mount the same integration directory:
 
 ```yaml
 volumes:
@@ -99,7 +99,7 @@ PLAI_OCR_TIMEOUT_SECONDS=1800
 PAPERLESS_OCR_USER_ARGS={"plugins":["/opt/paperless-local-ai/ocrmypdf_plai.py"],"pdf_renderer":"fpdf2","optimize":0}
 ```
 
-### Optional Paperless settings shortcut
+### Optional Paperless UI integration and RAG chat
 
 The optional **paperless-local-ai** shortcut in the Paperless Settings header requires two environment variables in Paperless. The existing read-only integration mount exposes the tiny Django integration package:
 
@@ -110,9 +110,11 @@ PAPERLESS_APPS=paperless_local_ai_ui.apps.PaperlessLocalAiUiConfig
 
 If `PAPERLESS_APPS` already contains another Django app, append this app to the existing comma-separated value instead of replacing it. Likewise, preserve any existing `PYTHONPATH` entries and add `/opt/paperless-local-ai` instead of replacing them.
 
-After Paperless has restarted with these values, the Control Center verifies that Paperless actually loaded the integration before allowing the shortcut to be enabled. The integration is inert by default. The button is shown only where Paperless itself exposes the admin Settings header and opens the configured Control Center URL in a new tab.
+After Paperless has restarted with these values, the Control Center verifies that Paperless actually loaded the integration before allowing it to be enabled. The integration is inert by default. When enabled it keeps the existing Settings shortcut and also injects the PLAI RAG chat. The native Paperless chat component is hidden only after the PLAI bootstrap succeeds; if the integration cannot initialize, Paperless continues without PLAI takeover.
 
-The URL must be reachable from **inside the Paperless container**.
+The configured Control Center URL must be reachable from **inside the Paperless container** because the authenticated same-origin relay forwards RAG requests to `core-service` through that URL. RAG writes require the normal Paperless CSRF token and are currently restricted to Paperless superusers. The browser never receives the Paperless API token or the internal relay secret.
+
+The first RAG index build is started explicitly from the injected chat settings. Paperless' native embedding backend is not required for PLAI RAG. See [RAG chat](rag-chat.md).
 
 The plugin is verified against OCRmyPDF **17.7.1** in Paperless-ngx **3.1.0**.
 
@@ -170,7 +172,7 @@ The main classification request extracts the actual sender/issuer as free text. 
 
 Skip this section if you only need OCR, metadata assignment and matching against correspondents that already exist in Paperless. Without the bridge, those functions continue to work. When the classifier extracts a plausible sender that cannot be safely matched to an existing correspondent, paperless-local-ai leaves the document's correspondent empty; its unmatched sender candidate is not surfaced in Paperless Document Suggestions and must be handled manually during review.
 
-Paperless exposes Document Suggestions through its AI backend configuration. The bridge implements only the narrow classification-suggestion interface needed here: it does **not** run an LLM and does not provide chat/RAG. Configuring Paperless to use this bridge is therefore optional even though the bridge endpoint is included in `core-service`.
+Paperless exposes Document Suggestions through its AI backend configuration. The bridge implements only the narrow classification-suggestion interface needed here: it does **not** run an LLM and does not provide chat/RAG. The injected PLAI RAG chat is a separate `paperless-local-ai` path and does not send general chat requests to the Suggestions bridge. Configuring Paperless to use this bridge is therefore optional even though the bridge endpoint is included in `core-service`.
 
 Paperless must be able to reach the suggestion bridge. For the default host port:
 

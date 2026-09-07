@@ -5,6 +5,7 @@ from django.conf import settings
 
 
 _MIDDLEWARE = "paperless_local_ai_ui.middleware.PaperlessLocalAiUiMiddleware"
+_AUTH_MIDDLEWARE = "django.contrib.auth.middleware.AuthenticationMiddleware"
 
 
 class PaperlessLocalAiUiConfig(AppConfig):
@@ -12,8 +13,15 @@ class PaperlessLocalAiUiConfig(AppConfig):
     verbose_name = "paperless-local-ai UI integration"
 
     def ready(self) -> None:
-        # Register the integration as the outermost Django middleware. The
-        # middleware itself is only instantiated by the web handler, so Celery
-        # and other background processes do not import Paperless web views.
-        if _MIDDLEWARE not in settings.MIDDLEWARE:
-            settings.MIDDLEWARE = [_MIDDLEWARE, *settings.MIDDLEWARE]
+        # Keep the integration behind AuthenticationMiddleware so relay requests
+        # receive request.user, while remaining inside Paperless' optional outer
+        # compression middleware so HTML injection happens before compression.
+        middleware = list(settings.MIDDLEWARE)
+        if _MIDDLEWARE in middleware:
+            return
+        try:
+            index = middleware.index(_AUTH_MIDDLEWARE) + 1
+        except ValueError:
+            index = len(middleware)
+        middleware.insert(index, _MIDDLEWARE)
+        settings.MIDDLEWARE = middleware

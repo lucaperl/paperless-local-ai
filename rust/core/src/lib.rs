@@ -15,6 +15,7 @@ pub mod ollama;
 pub mod paperless;
 pub mod paperless_ui;
 pub mod prompt;
+pub mod rag;
 pub mod review;
 pub mod state;
 pub mod text;

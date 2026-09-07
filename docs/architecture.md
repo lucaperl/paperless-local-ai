@@ -9,6 +9,7 @@
 - **Hybrid tagging:** recurring reviewed patterns can reuse a complete known leaf-tag set behind a strict evidence gate; cases without a confident observed-set match use an LLM fallback with Tag Guidance and relevant reviewed examples.
 - **Local correspondent resolution:** the LLM extracts one free-text sender/issuer; Rust resolves safe existing matches or exposes a plausible new name through Paperless Document Suggestions.
 - **Bounded resource usage:** PaddleOCR/OpenVINO, Hybrid-history work and Ollama share one AI resource lock; heavyweight OCR/history subprocesses and the Ollama model are released after use.
+- **Lightweight RAG chat:** a disposable helper maintains a separate SQLite index and the normal chat path stays fixed at one query embedding plus one chat generation.
 
 ## Pipeline
 
@@ -69,11 +70,19 @@ One Compose project runs two long-lived services from two images:
 | Service | Purpose |
 |---|---|
 | `ocr-service` | authenticated PaddleOCR service used by the OCRmyPDF plugin |
-| `core-service` | one lightweight Rust process hosting metadata queue polling, the Control Center, the optional suggestion bridge and the on-demand History broker |
+| `core-service` | one lightweight Rust process hosting metadata queue polling, the Control Center, the optional suggestion bridge, the RAG relay/job launcher and the on-demand History broker |
 
 The optional `doctor` profile uses the core image as a one-shot deployment check. Paperless and Ollama are external services. The suggestion-bridge endpoint is included in `core-service`, but configuring Paperless to use it is optional; without it, safe matching to existing correspondents still works and unmatched sender candidates are handled manually during review.
 
 The core image defaults to `/usr/local/bin/plai-core`. It retains `/app/core_service.py` as an exec-based compatibility shim for stored 0.3.4 commands and also keeps standalone `worker.py`, `prompt_ui.py` and `suggestion_bridge.py` entry points for deployments that explicitly invoke them. A separate std-only `/usr/local/bin/plai-healthcheck` probes the Control Center and suggestion bridge without starting the full core or Python. The same tiny probe is shipped statically in the OCR image and checks `/health` with `--ocr`, avoiding a recurring Python/urllib healthcheck process in the OCR cgroup.
+
+## RAG chat
+
+The optional RAG chat does not use Paperless' internal LLM index. `core-service` exposes secret-protected `/api/rag/*` job endpoints and launches `/app/rag_engine.py` only for an index/chat operation. The helper uses Paperless REST API v10, stores its regenerable SQLite index under `/data/rag`, performs exact cosine retrieval locally and exits after the job. The first rebuild uses a separate build database and atomically swaps it into place when complete, so an existing index remains available while rebuilding.
+
+The Paperless-side Django integration is same-origin and superuser-only. It is inserted after Paperless Authentication middleware, performs explicit CSRF validation for writes and forwards only a fixed path allow-list using an internal secret generated in the shared integration mount. The browser never receives that secret or the Paperless API token.
+
+For a normal chat turn, the helper holds the existing AI lock across one `/api/embed` call, exact retrieval and one streaming `/api/chat` call. Query-side embeddings use the Qwen3-Embedding retrieval instruction while indexed document chunks remain unprefixed. Both interactive Ollama requests use `keep_alive=0`. Index rebuilds embed in bounded slices, keep the embedding model warm only within a slice and release the AI lock between slices. See [RAG chat](rag-chat.md).
 
 ## OCRmyPDF integration
 
@@ -177,7 +186,7 @@ Persistent state lives below one `APP_DATA_DIR`:
 
 ```text
 config/        app and classification configuration/history
-core/          results, open correspondent review records and history index cache
+core/          results, review records, history cache and regenerable RAG index
 ocr/           PaddleX/OpenVINO cache and OCR runtime state
 coordination/  shared ai.lock + OCR recovery + history broker socket
 integration/   generated OCRmyPDF plugin consumed by Paperless

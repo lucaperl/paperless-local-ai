@@ -4,7 +4,7 @@ mod healthcheck_probe;
 
 use plai_core::{
     bridge, control,
-    error::Error,
+    error::Error, rag,
     state::{CORE_CONTAINER_RECYCLE_IDLE_SECONDS, CoreState},
     worker,
 };
@@ -116,6 +116,18 @@ async fn async_main() -> Result<u8, Error> {
             worker_shutdown.clone(),
             event_tx.clone(),
             worker::run(worker_state, worker_shutdown),
+        ),
+    ));
+
+    let rag_state = Arc::clone(&state);
+    let rag_shutdown = shutdown_tx.subscribe();
+    tasks.push((
+        "rag-sync",
+        spawn_component(
+            "rag-sync",
+            rag_shutdown.clone(),
+            event_tx.clone(),
+            rag::sync_loop(rag_state, rag_shutdown),
         ),
     ));
 

@@ -7,6 +7,7 @@ import logging
 import math
 import os
 import select
+import secrets
 import shutil
 import socket
 import subprocess
@@ -831,7 +832,10 @@ def sync_paperless_ui_integration() -> None:
         raise RuntimeError(f"Paperless UI integration source missing: {PAPERLESS_UI_SOURCE}")
     PAPERLESS_UI_TARGET.mkdir(parents=True, exist_ok=True)
     expected = set()
-    for source in PAPERLESS_UI_SOURCE.rglob("*.py"):
+    allowed_suffixes = {".py", ".js", ".css"}
+    for source in PAPERLESS_UI_SOURCE.rglob("*"):
+        if not source.is_file() or source.suffix not in allowed_suffixes:
+            continue
         relative = source.relative_to(PAPERLESS_UI_SOURCE)
         expected.add(relative)
         target = PAPERLESS_UI_TARGET / relative
@@ -840,9 +844,24 @@ def sync_paperless_ui_integration() -> None:
         shutil.copyfile(source, tmp)
         os.replace(tmp, target)
         target.chmod(0o644)
-    for target in PAPERLESS_UI_TARGET.rglob("*.py"):
+    for target in PAPERLESS_UI_TARGET.rglob("*"):
+        if not target.is_file() or target.suffix not in allowed_suffixes:
+            continue
         if target.relative_to(PAPERLESS_UI_TARGET) not in expected:
             target.unlink()
+
+    secret_file = Path("/integration/paperless-local-ai-relay.secret")
+    try:
+        relay_secret = secret_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        relay_secret = ""
+    if len(relay_secret) < 32:
+        tmp = secret_file.with_name(secret_file.name + ".tmp")
+        tmp.write_text(secrets.token_urlsafe(32) + "\n", encoding="utf-8")
+        tmp.chmod(0o644)
+        os.replace(tmp, secret_file)
+    else:
+        secret_file.chmod(0o644)
     LOG.info("Paperless UI integration ready at %s", PAPERLESS_UI_TARGET)
 
 
