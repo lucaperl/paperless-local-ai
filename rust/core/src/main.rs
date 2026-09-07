@@ -4,7 +4,8 @@ mod healthcheck_probe;
 
 use plai_core::{
     bridge, control,
-    error::Error, rag,
+    error::Error,
+    rag,
     state::{CORE_CONTAINER_RECYCLE_IDLE_SECONDS, CoreState},
     worker,
 };

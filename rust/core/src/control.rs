@@ -9,11 +9,11 @@ use crate::error::Error;
 use crate::history;
 use crate::ollama::performance_from_raw;
 use crate::paperless_ui;
-use crate::rag;
 use crate::prompt::{
     PLACEHOLDERS, PromptConfig, TaggingContext, prompt_hashes, prompt_preset,
     prune_parent_tag_names, render_prompts, validate_result,
 };
+use crate::rag;
 use crate::state::{CORE_CONTAINER_RECYCLE_IDLE_SECONDS, CoreState};
 use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, State};

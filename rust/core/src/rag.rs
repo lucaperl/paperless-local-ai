@@ -1,18 +1,18 @@
 use crate::error::{Error, Result};
 use crate::state::CoreState;
+use axum::Json;
 use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::process::Command;
 use tokio::sync::watch;
@@ -72,7 +72,10 @@ fn relay_authorized(headers: &HeaderMap) -> bool {
     let Ok(secret) = relay_secret() else {
         return false;
     };
-    let Some(value) = headers.get("authorization").and_then(|value| value.to_str().ok()) else {
+    let Some(value) = headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok())
+    else {
         return false;
     };
     let expected = format!("Bearer {secret}");
@@ -121,8 +124,14 @@ fn rag_state() -> Value {
         }),
     );
     if let Some(object) = state.as_object_mut() {
-        object.insert("index_exists".into(), Value::Bool(Path::new(RAG_DB_FILE).exists()));
-        object.insert("paused".into(), Value::Bool(Path::new(RAG_PAUSE_FILE).exists()));
+        object.insert(
+            "index_exists".into(),
+            Value::Bool(Path::new(RAG_DB_FILE).exists()),
+        );
+        object.insert(
+            "paused".into(),
+            Value::Bool(Path::new(RAG_PAUSE_FILE).exists()),
+        );
     }
     state
 }
@@ -136,7 +145,10 @@ fn valid_job_id(value: &str) -> bool {
 }
 
 fn value_job_id(payload: &Value) -> Option<&str> {
-    payload.get("job_id").and_then(Value::as_str).filter(|value| valid_job_id(value))
+    payload
+        .get("job_id")
+        .and_then(Value::as_str)
+        .filter(|value| valid_job_id(value))
 }
 
 fn new_job_id() -> String {
@@ -146,7 +158,10 @@ fn new_job_id() -> String {
         .as_nanos();
     let pid = std::process::id();
     let digest = Sha256::digest(format!("{pid}:{nanos}").as_bytes());
-    digest[..16].iter().map(|byte| format!("{byte:02x}")).collect()
+    digest[..16]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
@@ -417,7 +432,10 @@ pub async fn index_pause(
         return response;
     }
     let payload: Value = serde_json::from_slice(&body).unwrap_or_else(|_| serde_json::json!({}));
-    let paused = payload.get("paused").and_then(Value::as_bool).unwrap_or(true);
+    let paused = payload
+        .get("paused")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
     let result = if paused {
         atomic_write(Path::new(RAG_PAUSE_FILE), b"paused\n")
     } else {
