@@ -31,6 +31,7 @@ INDEX_LOCK_FILE = RAG_DIR / "index.lock"
 JOB_LOCK_FILE = RAG_DIR / "job.lock"
 PAUSE_FILE = RAG_DIR / "pause"
 AI_LOCK_FILE = Path(os.getenv("PLAI_AI_LOCK_FILE", "/coordination/ai.lock"))
+AI_STATUS_FILE = AI_LOCK_FILE.with_name("ai-status.json")
 PAPERLESS_TOKEN = os.getenv("PAPERLESS_TOKEN", "").strip()
 PAPERLESS_API_VERSION = "10"
 CHUNKING_VERSION = 1
@@ -203,24 +204,42 @@ def file_lock(path: Path, *, blocking: bool = True):
         handle.close()
 
 
+def _write_ai_activity(operation: str, label: str) -> None:
+    atomic_write_json(
+        AI_STATUS_FILE,
+        {
+            "operation": operation,
+            "label": label,
+            "started_at_ms": int(time.time() * 1000),
+        },
+    )
+
+
 @contextlib.contextmanager
-def ai_lock(cancel_check=None):
+def ai_lock(cancel_check=None, *, operation: str, label: str, wait_callback=None):
     AI_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
     handle = AI_LOCK_FILE.open("a+b")
     acquired = False
+    last_wait_callback = 0.0
     try:
         while True:
             try:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                 acquired = True
+                _write_ai_activity(operation, label)
                 break
             except BlockingIOError:
                 if cancel_check is not None and cancel_check():
                     raise InterruptedError("cancelled while waiting for ai.lock")
+                now = time.monotonic()
+                if wait_callback is not None and now - last_wait_callback >= 0.75:
+                    wait_callback(load_json(AI_STATUS_FILE, {}))
+                    last_wait_callback = now
                 time.sleep(0.1)
         yield
     finally:
         if acquired:
+            AI_STATUS_FILE.unlink(missing_ok=True)
             with contextlib.suppress(OSError):
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
         handle.close()
@@ -309,12 +328,20 @@ def active_signature() -> dict[str, Any] | None:
             connection.close()
 
 
-def ensure_index_compatible(cfg: dict[str, Any]) -> None:
+def ensure_index_compatible(cfg: dict[str, Any], *, require_config_match: bool = True) -> None:
     signature = active_signature()
     if signature is None:
         raise RuntimeError("RAG index is not built yet")
-    if signature != config_signature(cfg):
+    if require_config_match and signature != config_signature(cfg):
         raise RuntimeError("RAG index configuration changed; rebuild required")
+
+
+def active_embedding_model() -> str:
+    signature = active_signature()
+    model = signature.get("embedding_model") if isinstance(signature, dict) else None
+    if not isinstance(model, str) or not model.strip():
+        raise RuntimeError("RAG index has no active embedding model")
+    return model.strip()
 
 
 def app_connections() -> tuple[str, str]:
@@ -345,7 +372,7 @@ def request_json(session: requests.Session, method: str, url: str, **kwargs: Any
     return response.json()
 
 
-def list_documents(*, modified_gte: str | None = None) -> list[dict[str, Any]]:
+def list_documents(*, modified_gte: str | None = None, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     paperless_url, _ = app_connections()
     session = paperless_session()
     page = 1
@@ -354,6 +381,8 @@ def list_documents(*, modified_gte: str | None = None) -> list[dict[str, Any]]:
         params: dict[str, Any] = {"page": page, "page_size": 100, "ordering": "id"}
         if modified_gte:
             params["modified__gte"] = modified_gte
+        if filters:
+            params.update(filters)
         payload = request_json(session, "GET", f"{paperless_url}/api/documents/", params=params)
         if isinstance(payload, list):
             results.extend(item for item in payload if isinstance(item, dict))
@@ -481,7 +510,11 @@ def embed_chunk_group(chunks: list[str], cfg: dict[str, Any]) -> list[array]:
         if STOP or PAUSE_FILE.exists():
             raise InterruptedError("paused")
         slice_end = min(len(chunks), cursor + slice_chunks)
-        with ai_lock(lambda: STOP or PAUSE_FILE.exists()):
+        with ai_lock(
+            lambda: STOP or PAUSE_FILE.exists(),
+            operation="rag_index",
+            label="RAG index embedding",
+        ):
             try:
                 batch_cursor = cursor
                 while batch_cursor < slice_end:
@@ -638,6 +671,7 @@ def rebuild() -> None:
             phase="preparing",
             current=0,
             total=0,
+            started_at=utc_now(),
             last_error=None,
         )
         if not BUILD_DB_FILE.exists():
@@ -739,6 +773,8 @@ def rebuild() -> None:
                 indexed_chunks=chunks_count,
                 last_build=utc_now(),
                 last_sync=utc_now(),
+                active_signature=config_signature(cfg),
+                rebuild_required=False,
                 last_error=None,
             )
         except InterruptedError:
@@ -891,9 +927,10 @@ def validate_chat_request(payload: dict[str, Any], cfg: dict[str, Any]) -> dict[
     if not question:
         raise ValueError("question must not be empty")
     scope = str(payload.get("scope") or "all").strip().lower()
-    if scope not in {"all", "document"}:
-        raise ValueError("scope must be all or document")
+    if scope not in {"all", "document", "tag", "correspondent", "document_type"}:
+        raise ValueError("unsupported RAG scope")
     document_id = payload.get("document_id")
+    scope_id = payload.get("scope_id")
     if scope == "document":
         try:
             document_id = int(document_id)
@@ -901,8 +938,18 @@ def validate_chat_request(payload: dict[str, Any], cfg: dict[str, Any]) -> dict[
             raise ValueError("document_id is required for document scope") from None
         if document_id <= 0:
             raise ValueError("document_id must be positive")
+        scope_id = None
+    elif scope in {"tag", "correspondent", "document_type"}:
+        document_id = None
+        try:
+            scope_id = int(scope_id)
+        except (TypeError, ValueError):
+            raise ValueError(f"scope_id is required for {scope} scope") from None
+        if scope_id <= 0:
+            raise ValueError("scope_id must be positive")
     else:
         document_id = None
+        scope_id = None
 
     defaults = dict(cfg["chat_defaults"])
     if isinstance(payload.get("settings"), dict):
@@ -933,6 +980,7 @@ def validate_chat_request(payload: dict[str, Any], cfg: dict[str, Any]) -> dict[
         "question": question,
         "scope": scope,
         "document_id": document_id,
+        "scope_id": scope_id,
         "settings": settings,
         "history": history,
     }
@@ -957,7 +1005,7 @@ def embedding_query_text(question: str, history: list[dict[str, str]]) -> str:
     )
 
 
-def retrieve(query_vector: array, *, document_id: int | None, top_k: int) -> list[dict[str, Any]]:
+def retrieve(query_vector: array, *, document_ids: set[int] | None, top_k: int) -> list[dict[str, Any]]:
     import numpy as np
 
     query = np.frombuffer(query_vector.tobytes(), dtype=np.float32)
@@ -971,16 +1019,20 @@ def retrieve(query_vector: array, *, document_id: int | None, top_k: int) -> lis
                 raise RuntimeError("RAG index has no embedding dimension")
             if query.shape[0] != dimension:
                 raise RuntimeError("query embedding dimension does not match the index; rebuild required")
-            if document_id is None:
+            if document_ids is None:
                 rows = connection.execute(
                     "SELECT c.document_id,c.ordinal,c.text,c.embedding,d.title,d.created "
                     "FROM chunks c JOIN documents d ON d.id=c.document_id"
                 ).fetchall()
+            elif not document_ids:
+                rows = []
             else:
+                ids = sorted(document_ids)
+                placeholders = ",".join("?" for _ in ids)
                 rows = connection.execute(
                     "SELECT c.document_id,c.ordinal,c.text,c.embedding,d.title,d.created "
-                    "FROM chunks c JOIN documents d ON d.id=c.document_id WHERE c.document_id=?",
-                    (document_id,),
+                    f"FROM chunks c JOIN documents d ON d.id=c.document_id WHERE c.document_id IN ({placeholders})",
+                    ids,
                 ).fetchall()
         finally:
             connection.close()
@@ -1007,6 +1059,25 @@ def retrieve(query_vector: array, *, document_id: int | None, top_k: int) -> lis
             }
         )
     return result
+
+
+def scope_document_ids(request: dict[str, Any]) -> set[int] | None:
+    scope = request["scope"]
+    if scope == "all":
+        return None
+    if scope == "document":
+        return {int(request["document_id"])}
+    scope_id = int(request["scope_id"])
+    field = {
+        "tag": "tags__id",
+        "correspondent": "correspondent__id",
+        "document_type": "document_type__id",
+    }[scope]
+    return {
+        int(item["id"])
+        for item in list_documents(filters={field: scope_id})
+        if isinstance(item, dict) and item.get("id") is not None
+    }
 
 
 def _bounded_prompt(
@@ -1105,7 +1176,7 @@ def cleanup_old_jobs(max_age_seconds: int = 86400) -> None:
 
 def chat(job_id: str, request_path: Path) -> None:
     cfg = ensure_config()
-    ensure_index_compatible(cfg)
+    ensure_index_compatible(cfg, require_config_match=False)
     JOB_DIR.mkdir(parents=True, exist_ok=True)
     cleanup_old_jobs()
     _stop_path(job_id).unlink(missing_ok=True)
@@ -1117,11 +1188,13 @@ def chat(job_id: str, request_path: Path) -> None:
     update_job(
         job_id,
         status="running",
-        phase="embedding",
+        phase="waiting",
         answer="",
         sources=[],
         error=None,
         metrics={},
+        user_id=payload.get("_plai_user_id"),
+        conversation_id=payload.get("_plai_conversation_id"),
         started_at=utc_now(),
     )
 
@@ -1135,10 +1208,20 @@ def chat(job_id: str, request_path: Path) -> None:
     try:
         # Keep the complete interactive turn inside the shared heavy-work transaction:
         # one query embedding, local retrieval, then one streaming chat request.
-        with ai_lock(lambda: job_stopped(job_id)):
+        def waiting_update(activity: Any) -> None:
+            current = activity if isinstance(activity, dict) else {}
+            update_job(job_id, phase="waiting", waiting_for=current)
+
+        with ai_lock(
+            lambda: job_stopped(job_id),
+            operation="rag_chat",
+            label="RAG chat",
+            wait_callback=waiting_update,
+        ):
+            update_job(job_id, phase="embedding", waiting_for=None)
             query_embedding = embed_inputs(
                 [embedding_query_text(request["question"], request["history"])],
-                cfg["embedding_model"],
+                active_embedding_model(),
                 keep_alive=0,
             )[0]
             embedding_seconds = time.monotonic() - embed_started
@@ -1150,7 +1233,7 @@ def chat(job_id: str, request_path: Path) -> None:
             retrieval_started = time.monotonic()
             retrieved = retrieve(
                 query_embedding,
-                document_id=request["document_id"],
+                document_ids=scope_document_ids(request),
                 top_k=settings["top_k"],
             )
             messages, selected = _bounded_prompt(request, retrieved)

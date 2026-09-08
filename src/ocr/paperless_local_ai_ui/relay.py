@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from urllib import error, request
 
-from django.http import FileResponse, HttpResponse, JsonResponse
+from django.http import FileResponse, JsonResponse
 from django.views.decorators.csrf import csrf_protect
 
 from .injection import integration_state
@@ -30,6 +30,12 @@ GET_ROUTES = {
     "models": "/api/rag/models",
 }
 POST_ROUTES = {
+    "conversations": "/api/rag/conversations",
+    "conversations/create": "/api/rag/conversations/create",
+    "conversations/get": "/api/rag/conversations/get",
+    "conversations/rename": "/api/rag/conversations/rename",
+    "conversations/delete": "/api/rag/conversations/delete",
+    "config": "/api/rag/config",
     "chat/start": "/api/rag/chat/start",
     "chat/status": "/api/rag/chat/status",
     "chat/stop": "/api/rag/chat/stop",
@@ -81,6 +87,10 @@ def _proxy(req, upstream_path: str, *, merge_bootstrap: bool = False):
     secret = _secret()
     if state is None or secret is None:
         return _json_error(503, "paperless-local-ai integration is not ready")
+    user = getattr(req, "user", None)
+    user_id = getattr(user, "id", None)
+    if not isinstance(user_id, int) or user_id <= 0:
+        return _json_error(403, "paperless-local-ai could not resolve the Paperless user")
     body = b""
     if req.method == "POST":
         body = req.body
@@ -90,7 +100,11 @@ def _proxy(req, upstream_path: str, *, merge_bootstrap: bool = False):
     headers = {
         "Authorization": f"Bearer {secret}",
         "Accept": "application/json",
+        "X-Paperless-User-Id": str(user_id),
     }
+    username = getattr(user, "username", "")
+    if username:
+        headers["X-Paperless-Username"] = str(username)[:150]
     if body:
         headers["Content-Type"] = "application/json"
     upstream_request = request.Request(
@@ -138,8 +152,6 @@ def handle(req):
     route = path[len(prefix) :].strip("/")
 
     if route.startswith("assets/"):
-        # Assets contain no private data. They can load before the bootstrap
-        # authorization check; the chat UI remains inert if bootstrap is denied.
         return _asset(route.split("/", 1)[1])
 
     if not _authorized_user(req):

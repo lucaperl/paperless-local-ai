@@ -114,3 +114,6 @@ def test_runtime_assets_do_not_embed_a_control_center_origin():
     assert "_plai/" in script
     assert "#chatDropdown" not in script  # selector uses getElementById, avoiding CSS coupling
     assert 'getElementById("chatDropdown")' in script
+    assert "sessionStorage" not in script
+    assert "conversations/create" in script
+    assert "aria-expanded" in script

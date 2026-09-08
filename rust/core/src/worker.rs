@@ -529,7 +529,12 @@ pub async fn run(state: Arc<CoreState>, mut shutdown: watch::Receiver<bool>) -> 
 
             for doc_id in routed_ids {
                 let job = async {
-                    let _ai_guard = ai_lock::acquire(ai_lock::configured_ai_lock_path()).await?;
+                    let _ai_guard = ai_lock::acquire_with_activity(
+                        ai_lock::configured_ai_lock_path(),
+                        "metadata",
+                        "Metadata classification",
+                    )
+                    .await?;
                     let fresh = state.paperless.document(doc_id).await?;
                     let config = state.prompt_config.load()?;
                     let mut tagging = tagging_by_id.remove(&doc_id).unwrap_or_else(|| {

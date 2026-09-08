@@ -14,8 +14,9 @@ Browser requests stay on the Paperless origin below `/_plai/`. The browser does 
 
 The panel supports:
 
-- multi-turn follow-up questions within the current browser tab;
-- scope `Current document` or `All documents`;
+- persistent server-side conversations that can be resumed from another browser/device;
+- new/open/rename/delete chat history without an extra LLM title-generation call;
+- scope `Current document`, `All documents`, `Tag`, `Correspondent` or `Document type`;
 - clickable Paperless source documents;
 - installed Ollama model discovery plus free model entry;
 - Thinking `Auto`, `Off` or `On`;
@@ -26,7 +27,7 @@ The panel supports:
 - incremental answer/status updates and a Stop action;
 - explicit index Sync, Rebuild and Pause/Resume controls.
 
-Conversation history is stored in browser `sessionStorage`. The backend accepts only a bounded recent history and does not persist complete conversations or create additional LLM summarization calls.
+Conversation history is stored persistently below `/data/chat` and is keyed by the authenticated Paperless user ID supplied by the trusted same-origin relay. Conversation files are protected by a server-side file lock; no chat content is stored in browser session storage. The browser remembers only the currently selected server-side conversation ID. The backend still sends only a bounded recent history to the model and never adds an LLM summarization/title call.
 
 ## RAG pipeline
 
@@ -50,7 +51,7 @@ There is no LlamaIndex response-refine chain, query-rewrite LLM, reranker LLM or
 
 The browser receives generation progress by polling a small same-origin job-status endpoint while the helper consumes Ollama's streaming response. This keeps the Rust core dependency graph small while still updating the visible answer during generation.
 
-Embedding and chat inference use the existing `/coordination/ai.lock`. Both interactive embedding and chat requests use `keep_alive=0`, so their models are released as the request completes before the AI transaction ends. Full-index embedding work is split into bounded slices; the embedding model is reused within a slice, unloaded before the AI lock is released, and other OCR/metadata work can acquire the slot between slices.
+Embedding and chat inference use the existing `/coordination/ai.lock`. OCR, metadata classification, RAG chat and RAG-index slices remain serialized. `/coordination/ai-status.json` is informational metadata only and lets a waiting chat explain whether OCR, metadata, another chat or index embedding currently owns the slot; `ai.lock` remains the only synchronization primitive. Both interactive embedding and chat requests use `keep_alive=0`, so their models are released as the request completes before the AI transaction ends. Full-index embedding work is split into bounded slices; the embedding model is reused within a slice, unloaded before the AI lock is released, and other OCR/metadata work can acquire the slot between slices.
 
 ## Index
 
@@ -77,7 +78,7 @@ sync interval       900 seconds
 
 Chat defaults are `qwen3.5:4b`, 8192 context, 512 output tokens, temperature `0.1`, Thinking off and Top-K `5`. Per-chat settings do not alter metadata-classification settings.
 
-The first full index build is explicit. PLAI never starts an expensive initial rebuild merely because the software was updated. Once an active index exists, a lightweight periodic sync checks for new/modified documents and reconciles deletions. A changed embedding model or chunking configuration requires an explicit rebuild.
+The first full index build is explicit. PLAI never starts an expensive initial rebuild merely because the software was updated. Once an active index exists, a lightweight periodic sync checks for new/modified documents and reconciles deletions. Index settings are split conceptually into the active index signature and settings for the next rebuild: changing the configured embedding model does not invalidate the active chat index immediately. Automatic/incremental sync pauses until an explicit rebuild activates the new signature.
 
 A rebuild snapshots target document IDs/modified timestamps into the build database and records completed documents. An interrupted rebuild can therefore resume without discarding completed document versions. A document interrupted during its embedding step is retried as a unit.
 

@@ -4,6 +4,7 @@ pub mod ai_lock;
 pub mod app_config;
 pub mod assets;
 pub mod bridge;
+pub mod chat_history;
 pub mod control;
 pub mod correspondent;
 pub mod error;

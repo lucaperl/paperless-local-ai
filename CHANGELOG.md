@@ -4,13 +4,15 @@
 
 ### Added
 
-- add an optional multi-turn RAG chat directly inside the Paperless web UI, with current-document/all-document scope, follow-up questions, Paperless source links, Ollama model selection, Thinking/context/Top-K/temperature/output controls, Stop, and index Sync/Rebuild/Pause controls.
+- add an optional multi-turn RAG chat directly inside the Paperless web UI, with persistent per-Paperless-user chat history, current-document/all-document/tag/correspondent/document-type scopes, follow-up questions, Paperless source links, Ollama model selection, Thinking/context/Top-K/temperature/output controls, explicit AI-slot waiting reasons, Stop, and index Sync/Rebuild/Pause controls.
 - add a separate regenerable SQLite RAG index using `qwen3-embedding:4b-q4_K_M` by default; the normal chat path is deliberately limited to one query embedding request and one chat request.
 
 ### Changed
 
 - replace the Paperless UI `IndexView` monkey-patch with fail-open Django middleware, external same-origin JS/CSS assets and a CSRF-protected `/_plai/` relay; the native Paperless chat component is only hidden after the PLAI bootstrap succeeds.
 - extend the existing Paperless integration publisher to ship UI assets and create the internal relay secret without adding a service, port or vector database.
+- persist conversations separately below `/data/chat`, keep at most one active turn per conversation, and retain the single global heavy-work slot across OCR, metadata classification, RAG chat and bounded index slices.
+- separate active-index embedding metadata from settings for the next rebuild so an embedding-model change does not break chat against the still-active index before rebuild activation.
 
 ## 0.4.0 - 2026-08-31
 

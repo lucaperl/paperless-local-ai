@@ -1,3 +1,4 @@
+use crate::chat_history;
 use crate::error::{Error, Result};
 use crate::state::CoreState;
 use axum::Json;
@@ -79,7 +80,6 @@ fn relay_authorized(headers: &HeaderMap) -> bool {
         return false;
     };
     let expected = format!("Bearer {secret}");
-    // Compare fixed-size digests so the comparison does not reveal a useful prefix.
     Sha256::digest(value.as_bytes()) == Sha256::digest(expected.as_bytes())
 }
 
@@ -89,6 +89,20 @@ fn require_auth(headers: &HeaderMap) -> Option<Response> {
     } else {
         Some(error_response(StatusCode::UNAUTHORIZED, "unauthorized"))
     }
+}
+
+fn relay_user_id(headers: &HeaderMap) -> std::result::Result<i64, Response> {
+    let value = headers
+        .get("x-paperless-user-id")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<i64>().ok())
+        .filter(|value| *value > 0);
+    value.ok_or_else(|| {
+        error_response(
+            StatusCode::UNAUTHORIZED,
+            "Paperless user identity is missing",
+        )
+    })
 }
 
 fn read_json_or(path: impl AsRef<Path>, fallback: Value) -> Value {
@@ -120,7 +134,8 @@ fn rag_state() -> Value {
             "indexed_chunks": 0,
             "last_sync": null,
             "last_build": null,
-            "last_error": null
+            "last_error": null,
+            "rebuild_required": false
         }),
     );
     if let Some(object) = state.as_object_mut() {
@@ -147,6 +162,13 @@ fn valid_job_id(value: &str) -> bool {
 fn value_job_id(payload: &Value) -> Option<&str> {
     payload
         .get("job_id")
+        .and_then(Value::as_str)
+        .filter(|value| valid_job_id(value))
+}
+
+fn value_conversation_id(payload: &Value) -> Option<&str> {
+    payload
+        .get("conversation_id")
         .and_then(Value::as_str)
         .filter(|value| valid_job_id(value))
 }
@@ -186,11 +208,41 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-async fn spawn_chat(state: Arc<CoreState>, job_id: String, body: Bytes) -> Result<()> {
+fn body_json(body: &Bytes) -> std::result::Result<Value, Response> {
+    serde_json::from_slice(body).map_err(|error| error_response(StatusCode::BAD_REQUEST, error))
+}
+
+fn job_path(job_id: &str) -> PathBuf {
+    PathBuf::from(RAG_JOB_DIR).join(format!("{job_id}.json"))
+}
+
+fn job_belongs_to_user(job: &Value, user_id: i64) -> bool {
+    job.get("user_id").and_then(Value::as_i64) == Some(user_id)
+}
+
+async fn spawn_chat(
+    state: Arc<CoreState>,
+    job_id: String,
+    user_id: i64,
+    conversation_id: String,
+    body: Bytes,
+) -> Result<()> {
     fs::create_dir_all(RAG_JOB_DIR)?;
     let request_path = PathBuf::from(RAG_JOB_DIR).join(format!("{job_id}.request.json"));
     atomic_write(&request_path, &body)?;
     let _ = fs::remove_file(PathBuf::from(RAG_JOB_DIR).join(format!("{job_id}.stop")));
+    let queued = serde_json::json!({
+        "job_id": &job_id,
+        "user_id": user_id,
+        "conversation_id": &conversation_id,
+        "status": "running",
+        "phase": "waiting",
+        "answer": "",
+        "sources": [],
+        "metrics": {},
+        "error": null
+    });
+    atomic_write(&job_path(&job_id), &serde_json::to_vec_pretty(&queued)?)?;
 
     let mut child = Command::new("python")
         .arg(RAG_ENGINE)
@@ -210,39 +262,59 @@ async fn spawn_chat(state: Arc<CoreState>, job_id: String, body: Bytes) -> Resul
     tokio::spawn(async move {
         let result = child.wait().await;
         let _ = fs::remove_file(&request_path);
-        let job_path = PathBuf::from(RAG_JOB_DIR).join(format!("{job_id}.json"));
+        let path = job_path(&job_id);
         let failure = match result {
             Ok(status) if !status.success() => Some(format!("RAG helper exited with {status}")),
             Ok(_) => None,
             Err(error) => Some(format!("RAG helper wait failed: {error}")),
         };
-        if let Some(error) = failure {
+        if let Some(error) = failure.as_ref() {
             eprintln!("[RAG] chat job {job_id}: {error}");
-            if !job_path.exists() {
+            if !path.exists() {
                 let payload = serde_json::json!({
                     "job_id": &job_id,
+                    "user_id": user_id,
+                    "conversation_id": &conversation_id,
                     "status": "error",
                     "phase": "error",
                     "answer": "",
                     "sources": [],
+                    "metrics": {},
                     "error": &error,
                 });
                 if let Ok(bytes) = serde_json::to_vec_pretty(&payload) {
-                    let _ = atomic_write(&job_path, &bytes);
+                    let _ = atomic_write(&path, &bytes);
                 }
             }
-        } else if !job_path.exists() {
-            let payload = serde_json::json!({
+        }
+        let mut job = read_json_or(&path, serde_json::json!({}));
+        if !job.is_object() {
+            job = serde_json::json!({});
+        }
+        let terminal = matches!(
+            job.get("status").and_then(Value::as_str),
+            Some("done" | "error" | "stopped")
+        );
+        if !terminal {
+            let error =
+                failure.unwrap_or_else(|| "RAG helper exited without a terminal job state".into());
+            job = serde_json::json!({
                 "job_id": &job_id,
+                "user_id": user_id,
+                "conversation_id": &conversation_id,
                 "status": "error",
                 "phase": "error",
-                "answer": "",
-                "sources": [],
-                "error": "RAG helper exited without creating job state",
+                "answer": job.get("answer").and_then(Value::as_str).unwrap_or_default(),
+                "sources": job.get("sources").cloned().unwrap_or_else(|| serde_json::json!([])),
+                "metrics": job.get("metrics").cloned().unwrap_or_else(|| serde_json::json!({})),
+                "error": error
             });
-            if let Ok(bytes) = serde_json::to_vec_pretty(&payload) {
-                let _ = atomic_write(&job_path, &bytes);
+            if let Ok(bytes) = serde_json::to_vec_pretty(&job) {
+                let _ = atomic_write(&path, &bytes);
             }
+        }
+        if let Err(error) = chat_history::finish_turn(user_id, &conversation_id, &job_id, &job) {
+            eprintln!("[RAG] chat history finalize failed for {job_id}: {error}");
         }
         if ACTIVE_RAG_JOBS.fetch_sub(1, Ordering::SeqCst) == 1 {
             state.recycle.schedule();
@@ -281,10 +353,15 @@ pub async fn bootstrap(State(_state): State<Arc<CoreState>>, headers: HeaderMap)
     if let Some(response) = require_auth(&headers) {
         return response;
     }
+    let user_id = match relay_user_id(&headers) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
     json_response(
         StatusCode::OK,
         serde_json::json!({
             "ok": true,
+            "user_id": user_id,
             "config": rag_config(),
             "state": rag_state(),
         }),
@@ -295,6 +372,9 @@ pub async fn status(State(_state): State<Arc<CoreState>>, headers: HeaderMap) ->
     if let Some(response) = require_auth(&headers) {
         return response;
     }
+    if let Err(response) = relay_user_id(&headers) {
+        return response;
+    }
     json_response(
         StatusCode::OK,
         serde_json::json!({"config": rag_config(), "state": rag_state()}),
@@ -303,6 +383,9 @@ pub async fn status(State(_state): State<Arc<CoreState>>, headers: HeaderMap) ->
 
 pub async fn models(State(state): State<Arc<CoreState>>, headers: HeaderMap) -> Response {
     if let Some(response) = require_auth(&headers) {
+        return response;
+    }
+    if let Err(response) = relay_user_id(&headers) {
         return response;
     }
     let base = match state.app_config.load() {
@@ -338,6 +421,197 @@ pub async fn models(State(state): State<Arc<CoreState>>, headers: HeaderMap) -> 
     }
 }
 
+pub async fn conversations_list(
+    State(_state): State<Arc<CoreState>>,
+    headers: HeaderMap,
+) -> Response {
+    if let Some(response) = require_auth(&headers) {
+        return response;
+    }
+    let user_id = match relay_user_id(&headers) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    match chat_history::list(user_id) {
+        Ok(value) => json_response(StatusCode::OK, value),
+        Err(error) => error_response(StatusCode::INTERNAL_SERVER_ERROR, error),
+    }
+}
+
+pub async fn conversations_create(
+    State(_state): State<Arc<CoreState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if let Some(response) = require_auth(&headers) {
+        return response;
+    }
+    let user_id = match relay_user_id(&headers) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let payload = match body_json(&body) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    match chat_history::create(
+        user_id,
+        payload
+            .get("scope")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({"type":"all"})),
+        payload
+            .get("settings")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({})),
+    ) {
+        Ok(value) => json_response(StatusCode::CREATED, value),
+        Err(error) => error_response(StatusCode::BAD_REQUEST, error),
+    }
+}
+
+pub async fn conversations_get(
+    State(_state): State<Arc<CoreState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if let Some(response) = require_auth(&headers) {
+        return response;
+    }
+    let user_id = match relay_user_id(&headers) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let payload = match body_json(&body) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let Some(conversation_id) = value_conversation_id(&payload) else {
+        return error_response(StatusCode::BAD_REQUEST, "valid conversation_id is required");
+    };
+    match chat_history::get(user_id, conversation_id) {
+        Ok(value) => json_response(StatusCode::OK, value),
+        Err(Error::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+            error_response(StatusCode::NOT_FOUND, "chat not found")
+        }
+        Err(error) => error_response(StatusCode::BAD_REQUEST, error),
+    }
+}
+
+pub async fn conversations_rename(
+    State(_state): State<Arc<CoreState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if let Some(response) = require_auth(&headers) {
+        return response;
+    }
+    let user_id = match relay_user_id(&headers) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let payload = match body_json(&body) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let Some(conversation_id) = value_conversation_id(&payload) else {
+        return error_response(StatusCode::BAD_REQUEST, "valid conversation_id is required");
+    };
+    let title = payload
+        .get("title")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    match chat_history::rename(user_id, conversation_id, title) {
+        Ok(value) => json_response(StatusCode::OK, value),
+        Err(error) => error_response(StatusCode::BAD_REQUEST, error),
+    }
+}
+
+pub async fn conversations_delete(
+    State(_state): State<Arc<CoreState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if let Some(response) = require_auth(&headers) {
+        return response;
+    }
+    let user_id = match relay_user_id(&headers) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let payload = match body_json(&body) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let Some(conversation_id) = value_conversation_id(&payload) else {
+        return error_response(StatusCode::BAD_REQUEST, "valid conversation_id is required");
+    };
+    match chat_history::delete(user_id, conversation_id) {
+        Ok(()) => json_response(StatusCode::OK, serde_json::json!({"deleted": true})),
+        Err(error) => error_response(StatusCode::BAD_REQUEST, error),
+    }
+}
+
+pub async fn config_save(
+    State(_state): State<Arc<CoreState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if let Some(response) = require_auth(&headers) {
+        return response;
+    }
+    if let Err(response) = relay_user_id(&headers) {
+        return response;
+    }
+    if rag_state()
+        .get("running")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return error_response(
+            StatusCode::CONFLICT,
+            "cannot change index settings while an index job is running",
+        );
+    }
+    let payload = match body_json(&body) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let model = payload
+        .get("embedding_model")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim();
+    if model.is_empty() || model.len() > 200 {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "embedding_model must contain 1 to 200 characters",
+        );
+    }
+    let mut config = rag_config();
+    config["embedding_model"] = Value::String(model.to_owned());
+    let mut bytes = match serde_json::to_vec_pretty(&config) {
+        Ok(value) => value,
+        Err(error) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, error),
+    };
+    bytes.push(b'\n');
+    if let Err(error) = atomic_write(Path::new(RAG_CONFIG_FILE), &bytes) {
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, error);
+    }
+    if Path::new(RAG_DB_FILE).exists() {
+        let mut state = rag_state();
+        state["rebuild_required"] = Value::Bool(true);
+        if let Ok(mut data) = serde_json::to_vec_pretty(&state) {
+            data.push(b'\n');
+            let _ = atomic_write(Path::new(RAG_STATE_FILE), &data);
+        }
+    }
+    json_response(
+        StatusCode::OK,
+        serde_json::json!({"config": config, "state": rag_state()}),
+    )
+}
+
 pub async fn chat_start(
     State(state): State<Arc<CoreState>>,
     headers: HeaderMap,
@@ -346,16 +620,79 @@ pub async fn chat_start(
     if let Some(response) = require_auth(&headers) {
         return response;
     }
+    let user_id = match relay_user_id(&headers) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
     if body.is_empty() || body.len() > MAX_CHAT_BODY_BYTES {
         return error_response(StatusCode::BAD_REQUEST, "invalid chat request size");
     }
-    if serde_json::from_slice::<Value>(&body).is_err() {
-        return error_response(StatusCode::BAD_REQUEST, "chat request must be valid JSON");
+    let mut payload = match body_json(&body) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let Some(conversation_id) = value_conversation_id(&payload).map(str::to_owned) else {
+        return error_response(StatusCode::BAD_REQUEST, "valid conversation_id is required");
+    };
+    let question = payload
+        .get("question")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_owned();
+    if question.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "question must not be empty");
     }
+    let scope = serde_json::json!({
+        "type": payload.get("scope").and_then(Value::as_str).unwrap_or("all"),
+        "id": payload.get("scope_id"),
+        "label": payload.get("scope_label"),
+        "document_id": payload.get("document_id")
+    });
+    let settings = payload
+        .get("settings")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
     let job_id = new_job_id();
-    match spawn_chat(state, job_id.clone(), body).await {
-        Ok(()) => json_response(StatusCode::ACCEPTED, serde_json::json!({"job_id": job_id})),
-        Err(error) => error_response(StatusCode::INTERNAL_SERVER_ERROR, error),
+    let history = match chat_history::begin_turn(
+        user_id,
+        &conversation_id,
+        &job_id,
+        &question,
+        scope,
+        settings,
+    ) {
+        Ok(value) => value,
+        Err(error) => return error_response(StatusCode::CONFLICT, error),
+    };
+    payload["history"] = history;
+    payload["_plai_user_id"] = Value::from(user_id);
+    payload["_plai_conversation_id"] = Value::String(conversation_id.clone());
+    let encoded = match serde_json::to_vec(&payload) {
+        Ok(value) => Bytes::from(value),
+        Err(error) => return error_response(StatusCode::BAD_REQUEST, error),
+    };
+    match spawn_chat(
+        state,
+        job_id.clone(),
+        user_id,
+        conversation_id.clone(),
+        encoded,
+    )
+    .await
+    {
+        Ok(()) => json_response(
+            StatusCode::ACCEPTED,
+            serde_json::json!({
+                "job_id": job_id,
+                "conversation_id": conversation_id
+            }),
+        ),
+        Err(error) => {
+            let job = serde_json::json!({"status":"error","answer":"","sources":[],"metrics":{},"error":error.to_string()});
+            let _ = chat_history::finish_turn(user_id, &conversation_id, &job_id, &job);
+            error_response(StatusCode::INTERNAL_SERVER_ERROR, error)
+        }
     }
 }
 
@@ -367,18 +704,26 @@ pub async fn chat_status(
     if let Some(response) = require_auth(&headers) {
         return response;
     }
-    let payload: Value = match serde_json::from_slice(&body) {
+    let user_id = match relay_user_id(&headers) {
         Ok(value) => value,
-        Err(error) => return error_response(StatusCode::BAD_REQUEST, error),
+        Err(response) => return response,
+    };
+    let payload = match body_json(&body) {
+        Ok(value) => value,
+        Err(response) => return response,
     };
     let Some(job_id) = value_job_id(&payload) else {
         return error_response(StatusCode::BAD_REQUEST, "valid job_id is required");
     };
-    let path = PathBuf::from(RAG_JOB_DIR).join(format!("{job_id}.json"));
+    let path = job_path(job_id);
     if !path.exists() {
         return error_response(StatusCode::NOT_FOUND, "chat job not found");
     }
-    json_response(StatusCode::OK, read_json_or(path, serde_json::json!({})))
+    let job = read_json_or(path, serde_json::json!({}));
+    if !job_belongs_to_user(&job, user_id) {
+        return error_response(StatusCode::NOT_FOUND, "chat job not found");
+    }
+    json_response(StatusCode::OK, job)
 }
 
 pub async fn chat_stop(
@@ -389,13 +734,21 @@ pub async fn chat_stop(
     if let Some(response) = require_auth(&headers) {
         return response;
     }
-    let payload: Value = match serde_json::from_slice(&body) {
+    let user_id = match relay_user_id(&headers) {
         Ok(value) => value,
-        Err(error) => return error_response(StatusCode::BAD_REQUEST, error),
+        Err(response) => return response,
+    };
+    let payload = match body_json(&body) {
+        Ok(value) => value,
+        Err(response) => return response,
     };
     let Some(job_id) = value_job_id(&payload) else {
         return error_response(StatusCode::BAD_REQUEST, "valid job_id is required");
     };
+    let job = read_json_or(job_path(job_id), serde_json::json!({}));
+    if !job_belongs_to_user(&job, user_id) {
+        return error_response(StatusCode::NOT_FOUND, "chat job not found");
+    }
     let path = PathBuf::from(RAG_JOB_DIR).join(format!("{job_id}.stop"));
     match atomic_write(&path, b"stop\n") {
         Ok(()) => json_response(StatusCode::OK, serde_json::json!({"stopping": true})),
@@ -407,6 +760,9 @@ pub async fn index_rebuild(State(state): State<Arc<CoreState>>, headers: HeaderM
     if let Some(response) = require_auth(&headers) {
         return response;
     }
+    if let Err(response) = relay_user_id(&headers) {
+        return response;
+    }
     match spawn_index_job(state, "rebuild").await {
         Ok(()) => json_response(StatusCode::ACCEPTED, serde_json::json!({"started": true})),
         Err(error) => error_response(StatusCode::INTERNAL_SERVER_ERROR, error),
@@ -416,6 +772,19 @@ pub async fn index_rebuild(State(state): State<Arc<CoreState>>, headers: HeaderM
 pub async fn index_sync(State(state): State<Arc<CoreState>>, headers: HeaderMap) -> Response {
     if let Some(response) = require_auth(&headers) {
         return response;
+    }
+    if let Err(response) = relay_user_id(&headers) {
+        return response;
+    }
+    if rag_state()
+        .get("rebuild_required")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return error_response(
+            StatusCode::CONFLICT,
+            "index settings changed; rebuild required before sync",
+        );
     }
     match spawn_index_job(state, "sync").await {
         Ok(()) => json_response(StatusCode::ACCEPTED, serde_json::json!({"started": true})),
@@ -429,6 +798,9 @@ pub async fn index_pause(
     body: Bytes,
 ) -> Response {
     if let Some(response) = require_auth(&headers) {
+        return response;
+    }
+    if let Err(response) = relay_user_id(&headers) {
         return response;
     }
     let payload: Value = serde_json::from_slice(&body).unwrap_or_else(|_| serde_json::json!({}));
@@ -460,23 +832,26 @@ fn sync_interval_seconds() -> u64 {
 }
 
 pub async fn sync_loop(state: Arc<CoreState>, mut shutdown: watch::Receiver<bool>) -> Result<()> {
-    // Do not create the expensive first index automatically. Once an active
-    // index exists, run lightweight incremental checks on the configured cadence.
     loop {
         let wait = Duration::from_secs(sync_interval_seconds());
         tokio::select! {
             _ = tokio::time::sleep(wait) => {}
             changed = shutdown.changed() => {
-                if changed.is_err() || *shutdown.borrow() {
-                    return Ok(());
-                }
+                if changed.is_err() || *shutdown.borrow() { return Ok(()); }
                 continue;
             }
         }
         if *shutdown.borrow() {
             return Ok(());
         }
-        if !Path::new(RAG_DB_FILE).exists() || Path::new(RAG_PAUSE_FILE).exists() {
+        let current = rag_state();
+        if !Path::new(RAG_DB_FILE).exists()
+            || Path::new(RAG_PAUSE_FILE).exists()
+            || current
+                .get("rebuild_required")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        {
             continue;
         }
 
@@ -505,7 +880,6 @@ pub async fn sync_loop(state: Arc<CoreState>, mut shutdown: watch::Receiver<bool
         };
         ACTIVE_RAG_JOBS.fetch_add(1, Ordering::SeqCst);
         state.recycle.cancel();
-
         if let Err(error) = child.wait().await {
             eprintln!("[RAG] automatic sync wait failed: {error}");
         }

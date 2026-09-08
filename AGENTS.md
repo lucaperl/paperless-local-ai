@@ -35,6 +35,8 @@ The lightweight RAG/document-chat scope is an explicit project decision. Keep it
 - The RAG helper is disposable work launched by the existing Rust core. Do not add another long-running service or vector database for this archive size.
 - Browser RAG access stays same-origin through the Paperless integration, requires Paperless authentication + CSRF for writes, uses an internal relay secret, and is superuser-only until permission-aware retrieval is explicitly implemented.
 - Per-chat RAG model/context/Thinking/retrieval settings are independent of metadata `PromptConfig` and must never mutate metadata-classification settings.
+- RAG conversations persist server-side below `/data/chat`, are keyed to the authenticated Paperless user supplied by the trusted relay, and must not add LLM summarization/title calls. Multiple chats may have waiting jobs, but each conversation has at most one active turn and all heavy inference remains serialized by `/coordination/ai.lock`.
+- `/coordination/ai-status.json` is display metadata only. A stale/missing activity file must never be used as a synchronization primitive or block work.
 
 ## Prompt ownership
 
@@ -55,7 +57,7 @@ Do not scatter settings.
 - Deployment/secrets: `.env` / Compose only when Docker needs the value before process start, or when it is a secret.
 - Paperless-side OCR plugin values stay in the Paperless deployment because Paperless must know them at start.
 - Shared runtime: `/config/app-config.json`, owned by Control Center → App Settings.
-- RAG index defaults: `/config/rag-config.json`; chat overrides are browser-session settings and do not alter metadata configuration.
+- RAG index defaults: `/config/rag-config.json`; chat overrides are conversation settings and do not alter metadata configuration. The active index signature remains authoritative for query embeddings until an explicit rebuild activates changed index settings.
 - Classification: `/config/prompt-config.json`, including prompt components, model settings, tagging strategy and per-tag guidance.
 - The supported History gate controls are versioned App Settings: minimum similarity, minimum support and minimum winner share. Other History implementation constants stay in code unless a supported operator use case is explicitly added.
 - Internal implementation constants stay code unless there is a supported operator use case.

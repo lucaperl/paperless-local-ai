@@ -55,6 +55,14 @@ def test_request_scope_requires_document_id():
     )
     assert request["document_id"] == 42
 
+    tag_request = rag.validate_chat_request(
+        {"question": "When?", "scope": "tag", "scope_id": 7}, cfg
+    )
+    assert tag_request["scope"] == "tag"
+    assert tag_request["scope_id"] == 7
+    with pytest.raises(ValueError):
+        rag.validate_chat_request({"question": "When?", "scope": "tag"}, cfg)
+
 
 def test_prompt_keeps_retrieved_text_untrusted_and_sources_bounded():
     rag = module()

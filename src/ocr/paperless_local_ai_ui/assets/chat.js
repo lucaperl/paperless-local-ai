@@ -3,13 +3,15 @@
 
   const APP_ID = "paperless-local-ai-chat-host";
   const BUTTON_ID = "paperless-local-ai-chat-button";
+  const BUTTON_STYLE_ID = "paperless-local-ai-chat-button-style";
   const SETTINGS_LINK_ID = "paperless-local-ai-settings-link";
-  const STORAGE_KEY = "paperless-local-ai-rag-chat-v1";
+  const ACTIVE_CHAT_KEY = "paperless-local-ai-active-chat-v2";
 
   const baseHref = document.querySelector("base")?.getAttribute("href") || "/";
   const appBase = new URL(baseHref, window.location.origin);
   const appBasePath = appBase.pathname.endsWith("/") ? appBase.pathname : `${appBase.pathname}/`;
   const apiUrl = (path) => `${appBasePath}_plai/${path.replace(/^\/+/, "")}`;
+  const paperlessApiUrl = (path) => `${appBasePath}api/${path.replace(/^\/+/, "")}`;
   const documentUrl = (id) => new URL(`documents/${id}/details`, appBase).toString();
 
   function cookie(name) {
@@ -35,22 +37,18 @@
       const token = csrfToken();
       if (token) headers.set("X-CSRFToken", token);
     }
-    const response = await fetch(apiUrl(path), {
-      ...options,
-      method,
-      headers,
-      credentials: "same-origin",
-      redirect: "error",
-    });
+    const response = await fetch(apiUrl(path), { ...options, method, headers, credentials: "same-origin", redirect: "error" });
     const text = await response.text();
     let payload = {};
-    try {
-      payload = text ? JSON.parse(text) : {};
-    } catch (_error) {
-      payload = { error: text || `HTTP ${response.status}` };
-    }
+    try { payload = text ? JSON.parse(text) : {}; } catch (_error) { payload = { error: text || `HTTP ${response.status}` }; }
     if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
     return payload;
+  }
+
+  async function paperlessApi(path) {
+    const response = await fetch(paperlessApiUrl(path), { credentials: "same-origin", headers: { Accept: "application/json; version=10" } });
+    if (!response.ok) throw new Error(`Paperless API ${response.status}`);
+    return response.json();
   }
 
   function currentDocumentId() {
@@ -66,48 +64,43 @@
     return path.replace(/^\/+|\/+$/g, "");
   }
 
-  function loadStored() {
-    try {
-      const value = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || "{}");
-      return value && typeof value === "object" ? value : {};
-    } catch (_error) {
-      return {};
-    }
-  }
-
-  function saveStored(state) {
-    const payload = {
-      messages: state.messages,
-      settings: state.settings,
-      scope: state.scope,
-      conversationDocumentId: state.conversationDocumentId,
-    };
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-  }
-
   function formatSeconds(value) {
     const number = Number(value || 0);
     if (!Number.isFinite(number)) return "";
     return number < 10 ? `${number.toFixed(2)} s` : `${number.toFixed(1)} s`;
   }
 
-  async function bootstrap() {
-    return api("bootstrap");
+  function formatDurationSeconds(seconds) {
+    seconds = Math.max(0, Math.floor(Number(seconds) || 0));
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const rest = seconds % 60;
+    if (hours) return `${hours}h ${minutes}m`;
+    if (minutes) return `${minutes}m ${rest}s`;
+    return `${rest}s`;
+  }
+
+  function ensureNavbarButtonStyle() {
+    if (document.getElementById(BUTTON_STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = BUTTON_STYLE_ID;
+    style.textContent = `
+      #${BUTTON_ID} { border:0!important; background:transparent!important; box-shadow:none!important; }
+      #${BUTTON_ID}:hover, #${BUTTON_ID}:active, #${BUTTON_ID}:focus { background:transparent!important; box-shadow:none!important; outline:none!important; }
+      #${BUTTON_ID}:focus-visible { outline:2px solid currentColor!important; outline-offset:2px!important; border-radius:.375rem!important; }
+    `;
+    document.head.appendChild(style);
   }
 
   function addSettingsShortcut(controlCenterUrl) {
     const existing = document.getElementById(SETTINGS_LINK_ID);
     const path = relativePath();
-    if (!(path === "settings" || path.startsWith("settings/"))) {
-      existing?.remove();
-      return;
-    }
+    if (!(path === "settings" || path.startsWith("settings/"))) { existing?.remove(); return; }
     const admin = [...document.querySelectorAll("a[href]")].find((link) => {
       const href = link.getAttribute("href") || "";
       return href === "admin/" || href.endsWith("/admin/");
     });
-    if (!admin) return;
-    if (existing?.isConnected) return;
+    if (!admin || existing?.isConnected) return;
     const link = document.createElement("a");
     link.id = SETTINGS_LINK_ID;
     link.className = "btn btn-sm btn-outline-primary me-1";
@@ -130,47 +123,30 @@
     return nativeRoot;
   }
 
-  function ensureButton(openPanel) {
+  function ensureButton(togglePanel, isOpen) {
+    ensureNavbarButtonStyle();
     let button = document.getElementById(BUTTON_ID);
     if (!button) {
       button = document.createElement("button");
       button.id = BUTTON_ID;
       button.type = "button";
       button.title = "paperless-local-ai chat";
-      button.setAttribute("aria-label", "Open paperless-local-ai chat");
+      button.setAttribute("aria-label", "Toggle paperless-local-ai chat");
       button.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M4 4h16v12H7.5L4 19.5V4Zm2 2v9.3l.7-.7.6-.6H18V6H6Z"/></svg>';
-      Object.assign(button.style, {
-        border: "0",
-        background: "transparent",
-        color: "inherit",
-        cursor: "pointer",
-        fontSize: "1.15rem",
-        lineHeight: "1",
-        padding: ".45rem .55rem",
-        borderRadius: ".375rem",
-      });
-      button.addEventListener("click", openPanel);
+      Object.assign(button.style, { color: "inherit", cursor: "pointer", fontSize: "1.15rem", lineHeight: "1", padding: ".45rem .55rem", borderRadius: ".375rem" });
+      button.addEventListener("click", togglePanel);
     }
+    button.setAttribute("aria-expanded", isOpen() ? "true" : "false");
 
     const nativeRoot = hideNativeChat();
     const toastRoot = document.querySelector("pngx-toasts-dropdown");
     const anchor = nativeRoot || toastRoot;
     if (anchor?.parentNode && button.parentNode !== anchor.parentNode) {
       anchor.parentNode.insertBefore(button, anchor);
-      button.style.position = "";
-      button.style.right = "";
-      button.style.bottom = "";
-      button.style.zIndex = "";
+      button.style.position = ""; button.style.right = ""; button.style.bottom = ""; button.style.zIndex = "";
     } else if (!button.isConnected) {
       document.body.appendChild(button);
-      Object.assign(button.style, {
-        position: "fixed",
-        right: "1rem",
-        bottom: "1rem",
-        zIndex: "2147483000",
-        background: "var(--bs-body-bg, white)",
-        boxShadow: "0 2px 12px rgba(0,0,0,.22)",
-      });
+      Object.assign(button.style, { position: "fixed", right: "1rem", bottom: "1rem", zIndex: "2147483000", background: "var(--bs-body-bg, white)", boxShadow: "0 2px 12px rgba(0,0,0,.22)" });
     }
     return button;
   }
@@ -189,165 +165,145 @@
     shell.className = "shell hidden";
     shell.innerHTML = `
       <header class="header">
-        <div>
-          <strong>paperless-local-ai</strong>
-          <span class="sub">RAG chat</span>
-        </div>
+        <div><strong>paperless-local-ai</strong><span class="sub">RAG chat</span></div>
         <div class="header-actions">
+          <button type="button" data-action="history" title="Chat history">☰</button>
           <button type="button" data-action="new" title="New chat">＋</button>
           <button type="button" data-action="settings" title="Chat settings">⚙</button>
           <button type="button" data-action="close" title="Close">×</button>
         </div>
       </header>
-      <div class="toolbar">
-        <label>Search in
-          <select data-field="scope">
-            <option value="document">Current document</option>
-            <option value="all">All documents</option>
-          </select>
-        </label>
-        <label>Model
-          <input data-field="model" list="plai-models" autocomplete="off">
-          <datalist id="plai-models"></datalist>
-        </label>
-      </div>
-      <div class="settings hidden" data-part="settings">
-        <div class="settings-grid">
-          <label>Thinking
-            <select data-field="think"><option value="auto">Auto</option><option value="off">Off</option><option value="on">On</option></select>
-          </label>
-          <label>Context
-            <input data-field="num_ctx" type="number" min="2048" max="131072" step="1024">
-          </label>
-          <label>Retrieval Top-K
-            <input data-field="top_k" type="number" min="1" max="12" step="1">
-          </label>
-          <label>Temperature
-            <input data-field="temperature" type="number" min="0" max="2" step="0.1">
-          </label>
-          <label>Max output tokens
-            <input data-field="num_predict" type="number" min="64" max="4096" step="64">
-          </label>
-        </div>
-        <div class="index-box">
-          <div class="index-head"><strong>Index</strong><span data-part="index-state">Loading…</span></div>
-          <div class="progress"><span data-part="index-progress"></span></div>
-          <div class="index-actions">
-            <button type="button" data-action="sync">Sync</button>
-            <button type="button" data-action="rebuild">Rebuild</button>
-            <button type="button" data-action="pause">Pause</button>
+      <div class="body-row">
+        <aside class="history hidden" data-part="history">
+          <div class="history-head"><strong>Chats</strong><button type="button" data-action="new-side">＋</button></div>
+          <div class="history-list" data-part="history-list"></div>
+        </aside>
+        <section class="chat-area">
+          <div class="toolbar">
+            <label>Search in
+              <select data-field="scope">
+                <option value="all">All documents</option>
+                <option value="document">Current document</option>
+                <option value="tag">Tag…</option>
+                <option value="correspondent">Correspondent…</option>
+                <option value="document_type">Document type…</option>
+              </select>
+            </label>
+            <label class="scope-value hidden" data-part="scope-value">Choose
+              <select data-field="scope_id"></select>
+            </label>
+            <label>Model
+              <input data-field="model" list="plai-models" autocomplete="off">
+              <datalist id="plai-models"></datalist>
+            </label>
           </div>
-          <small data-part="index-detail"></small>
-        </div>
+          <div class="settings hidden" data-part="settings">
+            <div class="settings-grid">
+              <label>Thinking<select data-field="think"><option value="auto">Auto</option><option value="off">Off</option><option value="on">On</option></select></label>
+              <label>Context<input data-field="num_ctx" type="number" min="2048" max="131072" step="1024"></label>
+              <label>Retrieval Top-K<input data-field="top_k" type="number" min="1" max="12" step="1"></label>
+              <label>Temperature<input data-field="temperature" type="number" min="0" max="2" step="0.1"></label>
+              <label>Max output tokens<input data-field="num_predict" type="number" min="64" max="4096" step="64"></label>
+            </div>
+            <div class="index-box">
+              <div class="index-head"><strong>Index</strong><span data-part="index-state">Loading…</span></div>
+              <div class="progress"><span data-part="index-progress"></span></div>
+              <small data-part="index-detail"></small>
+              <div class="index-config">
+                <label>Embedding model for next rebuild
+                  <input data-field="embedding_model" list="plai-models" autocomplete="off">
+                </label>
+                <small data-part="index-config-detail"></small>
+                <button type="button" data-action="save-index-config">Save index setting</button>
+              </div>
+              <p class="index-help">Rebuild recreates the PLAI search index for all Paperless documents. It never modifies the documents themselves. An existing active index remains usable until the rebuilt index is activated.</p>
+              <div class="index-actions">
+                <button type="button" data-action="sync">Sync</button>
+                <button type="button" data-action="rebuild">Rebuild</button>
+                <button type="button" data-action="pause">Pause</button>
+                <a data-part="control-center" target="_blank" rel="noopener noreferrer">Control Center ↗</a>
+              </div>
+            </div>
+          </div>
+          <main class="messages" data-part="messages"></main>
+          <div class="phase" data-part="phase"></div>
+          <footer class="composer">
+            <textarea data-field="question" rows="2" placeholder="Ask about your Paperless documents…"></textarea>
+            <div class="composer-actions">
+              <button type="button" class="stop hidden" data-action="stop">Stop</button>
+              <button type="button" class="send" data-action="send">Send</button>
+            </div>
+          </footer>
+        </section>
       </div>
-      <main class="messages" data-part="messages"></main>
-      <div class="phase" data-part="phase"></div>
-      <footer class="composer">
-        <textarea data-field="question" rows="2" placeholder="Ask about your Paperless documents…"></textarea>
-        <div class="composer-actions">
-          <button type="button" class="stop hidden" data-action="stop">Stop</button>
-          <button type="button" class="send" data-action="send">Send</button>
-        </div>
-      </footer>
     `;
     root.appendChild(shell);
 
-    const stored = loadStored();
     const defaults = boot.config?.chat_defaults || {};
-    const restoredMessages = Array.isArray(stored.messages)
-      ? stored.messages.map((message) => message?.pending
-        ? { ...message, pending: false, content: message.content || "Previous request was interrupted." }
-        : message)
-      : [];
     const state = {
-      shell,
-      root,
-      open: false,
-      messages: restoredMessages,
-      settings: { ...defaults, ...(stored.settings || {}) },
-      scope: stored.scope || (currentDocumentId() ? "document" : "all"),
-      conversationDocumentId: stored.conversationDocumentId || null,
-      jobId: null,
-      pollTimer: null,
-      indexTimer: null,
-      indexState: boot.state || {},
-      controlCenterUrl: boot.control_center_url,
+      shell, root, open: false, historyOpen: false,
+      messages: [], settings: { ...defaults },
+      scope: currentDocumentId() ? "document" : "all", scopeId: null, scopeLabel: null,
+      conversationId: localStorage.getItem(ACTIVE_CHAT_KEY) || null,
+      jobId: null, pollTimer: null, indexTimer: null,
+      indexState: boot.state || {}, indexConfig: boot.config || {},
+      conversations: [], controlCenterUrl: boot.control_center_url,
     };
 
     const q = (selector) => root.querySelector(selector);
     const fields = {
-      scope: q('[data-field="scope"]'),
-      model: q('[data-field="model"]'),
-      think: q('[data-field="think"]'),
-      num_ctx: q('[data-field="num_ctx"]'),
-      top_k: q('[data-field="top_k"]'),
-      temperature: q('[data-field="temperature"]'),
-      num_predict: q('[data-field="num_predict"]'),
-      question: q('[data-field="question"]'),
+      scope: q('[data-field="scope"]'), scope_id: q('[data-field="scope_id"]'), model: q('[data-field="model"]'),
+      think: q('[data-field="think"]'), num_ctx: q('[data-field="num_ctx"]'), top_k: q('[data-field="top_k"]'),
+      temperature: q('[data-field="temperature"]'), num_predict: q('[data-field="num_predict"]'),
+      embedding_model: q('[data-field="embedding_model"]'), question: q('[data-field="question"]'),
     };
 
     function normalizeSettings() {
       return {
-        model: String(fields.model.value || defaults.model || "").trim(),
-        think: String(fields.think.value || "off"),
-        num_ctx: Number(fields.num_ctx.value || 8192),
-        top_k: Number(fields.top_k.value || 5),
-        temperature: Number(fields.temperature.value || 0.1),
-        num_predict: Number(fields.num_predict.value || 512),
+        model: String(fields.model.value || defaults.model || "").trim(), think: String(fields.think.value || "off"),
+        num_ctx: Number(fields.num_ctx.value || 8192), top_k: Number(fields.top_k.value || 5),
+        temperature: Number(fields.temperature.value || 0.1), num_predict: Number(fields.num_predict.value || 512),
       };
     }
 
     function fillSettings() {
-      fields.scope.value = state.scope;
       fields.model.value = state.settings.model || defaults.model || "";
       fields.think.value = state.settings.think || defaults.think || "off";
       fields.num_ctx.value = state.settings.num_ctx || defaults.num_ctx || 8192;
       fields.top_k.value = state.settings.top_k || defaults.top_k || 5;
       fields.temperature.value = state.settings.temperature ?? defaults.temperature ?? 0.1;
       fields.num_predict.value = state.settings.num_predict || defaults.num_predict || 512;
+      fields.embedding_model.value = state.indexConfig.embedding_model || "";
+      fields.scope.value = state.scope;
+      updateScopeUi(false);
     }
 
     function sourceNode(source) {
       const link = document.createElement("a");
-      link.className = "source";
-      link.href = documentUrl(source.document_id);
-      link.target = "_self";
-      const refs = Array.isArray(source.source_numbers) && source.source_numbers.length
-        ? `[${source.source_numbers.join(", ")}] `
-        : "";
+      link.className = "source"; link.href = documentUrl(source.document_id); link.target = "_self";
+      const refs = Array.isArray(source.source_numbers) && source.source_numbers.length ? `[${source.source_numbers.join(", ")}] ` : "";
       link.textContent = `${refs}📄 ${source.title || `Document ${source.document_id}`}`;
       return link;
     }
 
     function renderMessages() {
-      const container = q('[data-part="messages"]');
-      container.replaceChildren();
+      const container = q('[data-part="messages"]'); container.replaceChildren();
       if (!state.messages.length) {
-        const empty = document.createElement("div");
-        empty.className = "empty";
-        empty.innerHTML = "<strong>Ask your archive.</strong><span>Use Current document for a focused question or All documents for archive-wide retrieval.</span>";
-        container.appendChild(empty);
-        return;
+        const empty = document.createElement("div"); empty.className = "empty";
+        empty.innerHTML = "<strong>Ask your archive.</strong><span>Choose all documents, the current document, a tag, correspondent or document type.</span>";
+        container.appendChild(empty); return;
       }
       for (const message of state.messages) {
-        const wrapper = document.createElement("article");
-        wrapper.className = `message ${message.role}`;
-        const label = document.createElement("div");
-        label.className = "message-label";
-        label.textContent = message.role === "user" ? "You" : "PLAI";
-        const body = document.createElement("div");
-        body.className = "message-body";
-        body.textContent = message.content || (message.pending ? "…" : "");
+        const wrapper = document.createElement("article"); wrapper.className = `message ${message.role}`;
+        const label = document.createElement("div"); label.className = "message-label"; label.textContent = message.role === "user" ? "You" : "PLAI";
+        const body = document.createElement("div"); body.className = "message-body"; body.textContent = message.content || (message.pending ? "…" : "");
         wrapper.append(label, body);
         if (Array.isArray(message.sources) && message.sources.length) {
-          const sources = document.createElement("div");
-          sources.className = "sources";
-          for (const source of message.sources) sources.appendChild(sourceNode(source));
-          wrapper.appendChild(sources);
+          const sources = document.createElement("div"); sources.className = "sources";
+          for (const source of message.sources) sources.appendChild(sourceNode(source)); wrapper.appendChild(sources);
         }
         if (message.metrics?.total_seconds) {
-          const metrics = document.createElement("small");
-          metrics.className = "metrics";
+          const metrics = document.createElement("small"); metrics.className = "metrics";
           metrics.textContent = `Total ${formatSeconds(message.metrics.total_seconds)} · embed ${formatSeconds(message.metrics.embedding_seconds)} · retrieval ${formatSeconds(message.metrics.retrieval_seconds)} · LLM ${formatSeconds(message.metrics.generation_seconds)}`;
           wrapper.appendChild(metrics);
         }
@@ -356,283 +312,266 @@
       container.scrollTop = container.scrollHeight;
     }
 
-    function setPhase(text = "") {
-      q('[data-part="phase"]').textContent = text;
-    }
-
+    function setPhase(text = "") { q('[data-part="phase"]').textContent = text; }
     function setRunning(running) {
-      q('[data-action="send"]').disabled = running;
+      q('[data-action="send"]').disabled = running || !state.indexState?.index_exists;
       q('[data-action="stop"]').classList.toggle("hidden", !running);
       fields.question.disabled = running;
     }
 
+    function waitingLabel(job) {
+      const activity = job.waiting_for || {};
+      const label = activity.label || "another AI task";
+      const started = Number(activity.started_at_ms || 0);
+      const elapsed = started ? ` · ${formatDurationSeconds((Date.now() - started) / 1000)}` : "";
+      if (activity.operation === "rag_chat") return `Waiting for AI… Another chat is currently generating${elapsed}`;
+      return `Waiting for AI… ${label} is currently using the AI slot${elapsed}`;
+    }
+
     function phaseLabel(job) {
-      const labels = {
-        embedding: "Embedding question…",
-        retrieval: "Retrieving relevant chunks…",
-        generation: "Generating answer…",
-        stopped: "Stopped",
-        error: "Error",
-      };
+      if (job.phase === "waiting") return waitingLabel(job);
+      const labels = { embedding: "Embedding question…", retrieval: "Retrieving relevant chunks…", generation: "Generating answer…", stopped: "Stopped", error: "Error" };
       return labels[job.phase] || "";
     }
 
-    function finishJob(job) {
-      const assistant = [...state.messages].reverse().find((item) => item.role === "assistant" && item.pending);
-      if (assistant) {
-        assistant.pending = false;
-        assistant.content = job.answer || assistant.content || "";
-        assistant.sources = job.sources || [];
-        assistant.metrics = job.metrics || {};
-        if (job.status === "error") assistant.content = `Error: ${job.error || "Unknown RAG error"}`;
-        if (job.status === "stopped" && !assistant.content) assistant.content = "Stopped.";
+    async function refreshConversations() {
+      const payload = await api("conversations", { method: "POST", body: "{}" });
+      state.conversations = payload.conversations || [];
+      renderHistory();
+    }
+
+    function renderHistory() {
+      const list = q('[data-part="history-list"]'); list.replaceChildren();
+      for (const item of state.conversations) {
+        const row = document.createElement("div"); row.className = `history-item${item.id === state.conversationId ? " active" : ""}`;
+        const open = document.createElement("button"); open.type = "button"; open.className = "history-open";
+        open.textContent = `${item.active_job_id ? "● " : ""}${item.title || "New chat"}`; open.title = item.title || "New chat";
+        open.addEventListener("click", () => loadConversation(item.id));
+        const menu = document.createElement("button"); menu.type = "button"; menu.className = "history-menu"; menu.textContent = "⋯";
+        menu.addEventListener("click", async () => {
+          const action = window.prompt("Type rename or delete", "rename");
+          if (action === "rename") {
+            const title = window.prompt("Chat title", item.title || ""); if (!title) return;
+            await api("conversations/rename", { method: "POST", body: JSON.stringify({ conversation_id: item.id, title }) });
+            await refreshConversations();
+          } else if (action === "delete") {
+            if (!window.confirm(`Delete “${item.title || "this chat"}”?`)) return;
+            try { await api("conversations/delete", { method: "POST", body: JSON.stringify({ conversation_id: item.id }) }); }
+            catch (error) { setPhase(error.message); return; }
+            if (state.conversationId === item.id) newChat();
+            await refreshConversations();
+          }
+        });
+        row.append(open, menu); list.appendChild(row);
       }
-      state.jobId = null;
+    }
+
+    async function loadConversation(id) {
+      if (!id) return;
       if (state.pollTimer) clearTimeout(state.pollTimer);
       state.pollTimer = null;
-      setRunning(false);
-      setPhase(job.status === "error" ? job.error || "Error" : "");
-      saveStored(state);
-      renderMessages();
+      const conversation = await api("conversations/get", { method: "POST", body: JSON.stringify({ conversation_id: id }) });
+      state.conversationId = conversation.id; localStorage.setItem(ACTIVE_CHAT_KEY, conversation.id);
+      state.messages = Array.isArray(conversation.messages) ? conversation.messages : [];
+      state.settings = { ...defaults, ...(conversation.settings || {}) };
+      const scope = conversation.scope || {};
+      state.scope = scope.type || "all"; state.scopeId = scope.id ?? null; state.scopeLabel = scope.label ?? null;
+      state.jobId = conversation.active_job_id || null;
+      fillSettings(); renderMessages(); renderHistory();
+      if (state.jobId) { setRunning(true); pollJob(); } else { setRunning(false); setPhase(""); }
+    }
+
+    async function ensureConversation() {
+      if (state.conversationId) return state.conversationId;
+      const scope = currentScopePayload();
+      const conversation = await api("conversations/create", { method: "POST", body: JSON.stringify({ scope, settings: normalizeSettings() }) });
+      state.conversationId = conversation.id; localStorage.setItem(ACTIVE_CHAT_KEY, conversation.id);
+      await refreshConversations();
+      return conversation.id;
     }
 
     async function pollJob() {
       if (!state.jobId) return;
       try {
-        const job = await api("chat/status", {
-          method: "POST",
-          body: JSON.stringify({ job_id: state.jobId }),
-        });
+        const job = await api("chat/status", { method: "POST", body: JSON.stringify({ job_id: state.jobId }) });
         const assistant = [...state.messages].reverse().find((item) => item.role === "assistant" && item.pending);
-        if (assistant) {
-          assistant.content = job.answer || "";
-          assistant.sources = job.sources || [];
-          renderMessages();
-        }
+        if (assistant) { assistant.content = job.answer || ""; assistant.sources = job.sources || []; renderMessages(); }
         setPhase(phaseLabel(job));
         if (["done", "error", "stopped"].includes(job.status)) {
-          finishJob(job);
-          return;
+          state.jobId = null; setRunning(false); await loadConversation(state.conversationId); await refreshConversations(); return;
         }
-      } catch (error) {
-        setPhase(error.message);
-      }
-      state.pollTimer = setTimeout(pollJob, 400);
+      } catch (error) { setPhase(error.message); }
+      state.pollTimer = setTimeout(pollJob, 500);
+    }
+
+    function currentScopePayload() {
+      const type = fields.scope.value;
+      const docId = currentDocumentId();
+      const option = fields.scope_id.selectedOptions?.[0];
+      return {
+        type,
+        id: ["tag", "correspondent", "document_type"].includes(type) ? Number(fields.scope_id.value || 0) || null : null,
+        label: option?.textContent || null,
+        document_id: type === "document" ? docId : null,
+      };
     }
 
     async function send() {
-      const question = fields.question.value.trim();
-      if (!question || state.jobId) return;
-      state.scope = fields.scope.value;
-      state.settings = normalizeSettings();
-      const docId = currentDocumentId();
-      if (state.scope === "document" && !docId) {
-        setPhase("Open a document first, or switch the scope to All documents.");
-        return;
-      }
-      if (state.scope === "document" && state.conversationDocumentId && state.conversationDocumentId !== docId) {
-        state.messages = [];
-      }
-      state.conversationDocumentId = state.scope === "document" ? docId : null;
-
-      const history = state.messages
-        .filter((item) => !item.pending && ["user", "assistant"].includes(item.role))
-        .map(({ role, content }) => ({ role, content }));
+      const question = fields.question.value.trim(); if (!question || state.jobId) return;
+      if (!state.indexState?.index_exists) { setPhase("Build the RAG index first."); return; }
+      const scope = currentScopePayload();
+      if (scope.type === "document" && !scope.document_id) { setPhase("Open a document first, or choose another search scope."); return; }
+      if (["tag", "correspondent", "document_type"].includes(scope.type) && !scope.id) { setPhase("Choose a value for the selected search scope."); return; }
+      const conversationId = await ensureConversation();
+      state.settings = normalizeSettings(); state.scope = scope.type; state.scopeId = scope.id; state.scopeLabel = scope.label;
       state.messages.push({ role: "user", content: question });
       state.messages.push({ role: "assistant", content: "", pending: true, sources: [] });
-      fields.question.value = "";
-      renderMessages();
-      setRunning(true);
-      setPhase("Starting…");
-      saveStored(state);
-
+      fields.question.value = ""; renderMessages(); setRunning(true); setPhase("Submitting…");
       try {
-        const started = await api("chat/start", {
-          method: "POST",
-          body: JSON.stringify({
-            question,
-            history,
-            scope: state.scope === "document" ? "document" : "all",
-            document_id: state.scope === "document" ? docId : null,
-            settings: state.settings,
-          }),
-        });
-        state.jobId = started.job_id;
-        pollJob();
+        const started = await api("chat/start", { method: "POST", body: JSON.stringify({
+          conversation_id: conversationId, question, scope: scope.type, scope_id: scope.id,
+          scope_label: scope.label, document_id: scope.document_id, settings: state.settings,
+        }) });
+        state.jobId = started.job_id; await refreshConversations(); pollJob();
       } catch (error) {
-        finishJob({ status: "error", phase: "error", error: error.message, answer: "" });
+        state.messages = state.messages.slice(0, -2); renderMessages(); setRunning(false); setPhase(error.message);
+        await loadConversation(conversationId).catch(() => {});
       }
     }
 
     async function stop() {
       if (!state.jobId) return;
-      try {
-        await api("chat/stop", {
-          method: "POST",
-          body: JSON.stringify({ job_id: state.jobId }),
-        });
-        setPhase("Stopping…");
-      } catch (error) {
-        setPhase(error.message);
-      }
+      try { await api("chat/stop", { method: "POST", body: JSON.stringify({ job_id: state.jobId }) }); setPhase("Stopping…"); }
+      catch (error) { setPhase(error.message); }
     }
 
     async function refreshModels() {
       try {
-        const payload = await api("models");
-        const list = q("#plai-models");
-        list.replaceChildren();
-        for (const model of payload.models || []) {
-          const option = document.createElement("option");
-          option.value = model;
-          list.appendChild(option);
-        }
-      } catch (_error) {
-        // Free model entry remains usable if /api/tags is unavailable.
-      }
+        const payload = await api("models"); const list = q("#plai-models"); list.replaceChildren();
+        for (const model of payload.models || []) { const option = document.createElement("option"); option.value = model; list.appendChild(option); }
+      } catch (_error) {}
+    }
+
+    async function loadScopeOptions(type) {
+      const wrap = q('[data-part="scope-value"]');
+      if (!["tag", "correspondent", "document_type"].includes(type)) { wrap.classList.add("hidden"); return; }
+      wrap.classList.remove("hidden"); fields.scope_id.replaceChildren();
+      const endpoint = { tag: "tags/?page_size=1000&ordering=name", correspondent: "correspondents/?page_size=1000&ordering=name", document_type: "document_types/?page_size=1000&ordering=name" }[type];
+      try {
+        const payload = await paperlessApi(endpoint); const items = Array.isArray(payload) ? payload : (payload.results || []);
+        for (const item of items) { const option = document.createElement("option"); option.value = item.id; option.textContent = item.name || `ID ${item.id}`; fields.scope_id.appendChild(option); }
+        if (state.scope === type && state.scopeId) fields.scope_id.value = String(state.scopeId);
+      } catch (error) { setPhase(`Could not load Paperless filters: ${error.message}`); }
+    }
+
+    async function updateScopeUi(load = true) {
+      const docOption = [...fields.scope.options].find((option) => option.value === "document");
+      if (docOption) docOption.disabled = !currentDocumentId();
+      if (fields.scope.value === "document" && !currentDocumentId()) fields.scope.value = "all";
+      if (load) await loadScopeOptions(fields.scope.value); else loadScopeOptions(fields.scope.value);
     }
 
     function renderIndex(payload) {
-      const idx = payload.state || {};
-      state.indexState = idx;
-      const stateNode = q('[data-part="index-state"]');
-      const detail = q('[data-part="index-detail"]');
-      const bar = q('[data-part="index-progress"]');
-      const pauseButton = q('[data-action="pause"]');
+      const idx = payload.state || {}; state.indexState = idx; state.indexConfig = payload.config || state.indexConfig;
+      const stateNode = q('[data-part="index-state"]'); const detail = q('[data-part="index-detail"]'); const bar = q('[data-part="index-progress"]'); const pauseButton = q('[data-action="pause"]');
       let label = idx.index_exists ? `${idx.indexed_documents || 0} docs · ${idx.indexed_chunks || 0} chunks` : "Not built";
       if (idx.running) label = `${idx.operation || "index"}: ${idx.phase || "running"}`;
       if (idx.paused) label = "Paused";
+      if (idx.rebuild_required && idx.index_exists) label += " · rebuild required";
       if (idx.last_error) label = `Error: ${idx.last_error}`;
       stateNode.textContent = label;
-      const total = Number(idx.total || 0);
-      const current = Number(idx.current || 0);
-      const percent = total > 0 ? Math.max(0, Math.min(100, (current / total) * 100)) : 0;
-      bar.style.width = `${percent}%`;
-      detail.textContent = total > 0 ? `${current} / ${total}${idx.last_sync ? ` · last sync ${idx.last_sync}` : ""}` : (idx.last_sync ? `Last sync ${idx.last_sync}` : "Initial rebuild is explicit.");
-      pauseButton.textContent = idx.paused ? "Resume" : "Pause";
+      const total = Number(idx.total || 0); const current = Number(idx.current || 0); const percent = total > 0 ? Math.max(0, Math.min(100, (current / total) * 100)) : 0; bar.style.width = `${percent}%`;
+      let extra = "";
+      if (idx.running && idx.started_at && total > 0 && current > 0) {
+        const elapsed = Math.max(1, (Date.now() - Date.parse(idx.started_at)) / 1000); const eta = elapsed * Math.max(0, total - current) / current;
+        extra = ` · elapsed ${formatDurationSeconds(elapsed)} · ETA ~${formatDurationSeconds(eta)}`;
+      }
+      detail.textContent = total > 0 ? `${current} / ${total} documents · ${idx.indexed_chunks || 0} chunks${extra}` : (idx.last_sync ? `Last sync ${idx.last_sync}` : "Initial rebuild is explicit.");
+      const active = idx.active_signature || null;
+      q('[data-part="index-config-detail"]').textContent = active ? `Active: ${active.embedding_model} · chunk ${active.chunk_target_chars}/${active.chunk_overlap_chars}. Next rebuild: chunk ${state.indexConfig.chunk_target_chars}/${state.indexConfig.chunk_overlap_chars}, batch ${state.indexConfig.embedding_batch_size}, slice ${state.indexConfig.embedding_slice_chunks}.` : `Next rebuild: chunk ${state.indexConfig.chunk_target_chars}/${state.indexConfig.chunk_overlap_chars}, batch ${state.indexConfig.embedding_batch_size}, slice ${state.indexConfig.embedding_slice_chunks}.`;
+      fields.embedding_model.value = state.indexConfig.embedding_model || ""; pauseButton.textContent = idx.paused ? "Resume" : "Pause"; setRunning(!!state.jobId);
     }
 
     async function refreshIndex() {
-      if (state.indexTimer) clearTimeout(state.indexTimer);
-      state.indexTimer = null;
-      try {
-        renderIndex(await api("status"));
-      } catch (error) {
-        q('[data-part="index-state"]').textContent = error.message;
-      }
+      if (state.indexTimer) clearTimeout(state.indexTimer); state.indexTimer = null;
+      try { renderIndex(await api("status")); } catch (error) { q('[data-part="index-state"]').textContent = error.message; }
       if (state.open) state.indexTimer = setTimeout(refreshIndex, 3000);
+    }
+
+    async function saveIndexConfig() {
+      const embedding_model = fields.embedding_model.value.trim(); if (!embedding_model) return;
+      try { const payload = await api("config", { method: "POST", body: JSON.stringify({ embedding_model }) }); renderIndex(payload); setPhase(state.indexState.index_exists ? "Index setting saved. The active index remains usable; run Rebuild to activate the new embedding model." : "Index setting saved."); }
+      catch (error) { setPhase(error.message); }
     }
 
     async function indexAction(action) {
       try {
-        if (action === "rebuild" && !window.confirm("Rebuild the complete PLAI RAG index? The current index stays usable until the rebuild is activated.")) return;
+        if (action === "rebuild" && !window.confirm("Rebuild the complete PLAI RAG index? Paperless documents are not modified, and an existing active index stays usable until activation.")) return;
         if (action === "pause") {
-          const resume = !!state.indexState.paused;
-          const operation = state.indexState.operation;
+          const resume = !!state.indexState.paused; const operation = state.indexState.operation;
           await api("index/pause", { method: "POST", body: JSON.stringify({ paused: !resume }) });
           if (resume && operation === "rebuild") await api("index/rebuild", { method: "POST", body: "{}" });
           if (resume && operation === "sync") await api("index/sync", { method: "POST", body: "{}" });
-        } else {
-          await api(`index/${action}`, { method: "POST", body: "{}" });
-        }
+        } else { await api(`index/${action}`, { method: "POST", body: "{}" }); }
         await refreshIndex();
-      } catch (error) {
-        setPhase(error.message);
-      }
+      } catch (error) { setPhase(error.message); }
     }
 
     function newChat() {
-      if (state.jobId) stop();
-      state.messages = [];
-      state.conversationDocumentId = null;
-      saveStored(state);
-      renderMessages();
-      setPhase("");
-      fields.question.focus();
+      state.conversationId = null; state.messages = []; state.jobId = null; localStorage.removeItem(ACTIVE_CHAT_KEY);
+      state.settings = { ...defaults }; state.scope = currentDocumentId() ? "document" : "all"; state.scopeId = null; state.scopeLabel = null;
+      fillSettings(); renderMessages(); renderHistory(); setRunning(false); setPhase(""); fields.question.focus();
     }
 
-    function open() {
-      state.open = true;
-      shell.classList.remove("hidden");
-      fillSettings();
-      renderMessages();
-      refreshModels();
-      if (state.indexTimer) clearTimeout(state.indexTimer);
-      refreshIndex();
+    function toggleHistory() {
+      state.historyOpen = !state.historyOpen; q('[data-part="history"]').classList.toggle("hidden", !state.historyOpen); shell.classList.toggle("with-history", state.historyOpen); if (state.historyOpen) refreshConversations().catch((error) => setPhase(error.message));
+    }
+
+    async function open() {
+      state.open = true; shell.classList.remove("hidden");
+      document.getElementById(BUTTON_ID)?.setAttribute("aria-expanded", "true");
+      fillSettings(); renderMessages(); refreshModels();
+      q('[data-part="control-center"]').href = state.controlCenterUrl;
+      await refreshConversations().catch((error) => setPhase(error.message));
+      if (state.conversationId && state.conversations.some((item) => item.id === state.conversationId)) await loadConversation(state.conversationId).catch(() => newChat());
+      if (state.indexTimer) clearTimeout(state.indexTimer); refreshIndex();
       if (!state.indexState?.index_exists) setPhase("RAG index not built yet. Open settings and run Rebuild.");
       setTimeout(() => fields.question.focus(), 0);
     }
 
     function close() {
-      state.open = false;
-      shell.classList.add("hidden");
-      if (state.indexTimer) clearTimeout(state.indexTimer);
-      state.indexTimer = null;
-      state.scope = fields.scope.value;
-      state.settings = normalizeSettings();
-      saveStored(state);
+      state.open = false; shell.classList.add("hidden"); document.getElementById(BUTTON_ID)?.setAttribute("aria-expanded", "false");
+      if (state.indexTimer) clearTimeout(state.indexTimer); state.indexTimer = null;
     }
 
+    function toggle() { if (state.open) close(); else open(); }
+
     q('[data-action="close"]').addEventListener("click", close);
+    q('[data-action="history"]').addEventListener("click", toggleHistory);
     q('[data-action="new"]').addEventListener("click", newChat);
+    q('[data-action="new-side"]').addEventListener("click", newChat);
     q('[data-action="settings"]').addEventListener("click", () => q('[data-part="settings"]').classList.toggle("hidden"));
     q('[data-action="send"]').addEventListener("click", send);
     q('[data-action="stop"]').addEventListener("click", stop);
     q('[data-action="sync"]').addEventListener("click", () => indexAction("sync"));
     q('[data-action="rebuild"]').addEventListener("click", () => indexAction("rebuild"));
     q('[data-action="pause"]').addEventListener("click", () => indexAction("pause"));
-    fields.question.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && !event.shiftKey) {
-        event.preventDefault();
-        send();
-      }
-    });
-    for (const field of [fields.scope, fields.model, fields.think, fields.num_ctx, fields.top_k, fields.temperature, fields.num_predict]) {
-      field.addEventListener("change", () => {
-        state.scope = fields.scope.value;
-        state.settings = normalizeSettings();
-        saveStored(state);
-      });
-    }
+    q('[data-action="save-index-config"]').addEventListener("click", saveIndexConfig);
+    fields.scope.addEventListener("change", () => { state.scope = fields.scope.value; state.scopeId = null; updateScopeUi(); });
+    fields.scope_id.addEventListener("change", () => { state.scopeId = Number(fields.scope_id.value || 0) || null; state.scopeLabel = fields.scope_id.selectedOptions?.[0]?.textContent || null; });
+    fields.question.addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } });
 
-    fillSettings();
-    renderMessages();
-    renderIndex({ state: state.indexState });
-    return { open, syncNav: () => addSettingsShortcut(state.controlCenterUrl), state };
+    fillSettings(); renderMessages(); renderIndex({ state: state.indexState, config: state.indexConfig });
+    return { open, close, toggle, isOpen: () => state.open, syncNav: () => addSettingsShortcut(state.controlCenterUrl), state };
   }
 
   async function start() {
-    let boot;
-    try {
-      boot = await bootstrap();
-    } catch (_error) {
-      // Fail open: if PLAI is unavailable, do not hide or replace Paperless chat.
-      return;
-    }
+    let boot; try { boot = await api("bootstrap"); } catch (_error) { return; }
     if (!boot?.ok) return;
     const panel = makePanel(boot);
-    const sync = () => {
-      ensureButton(panel.open);
-      panel.syncNav();
-    };
+    const sync = () => { ensureButton(panel.toggle, panel.isOpen); panel.syncNav(); };
     new MutationObserver(sync).observe(document.documentElement, { childList: true, subtree: true });
-    window.addEventListener("popstate", sync);
-    window.addEventListener("hashchange", sync);
-    window.addEventListener("pagehide", () => {
-      const jobId = panel.state.jobId;
-      if (!jobId) return;
-      const token = csrfToken();
-      fetch(apiUrl("chat/stop"), {
-        method: "POST",
-        credentials: "same-origin",
-        keepalive: true,
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { "X-CSRFToken": token } : {}),
-        },
-        body: JSON.stringify({ job_id: jobId }),
-      }).catch(() => {});
-    });
+    window.addEventListener("popstate", sync); window.addEventListener("hashchange", sync);
     sync();
   }
 

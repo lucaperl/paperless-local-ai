@@ -45,6 +45,7 @@ PORT = int(os.getenv("OCR_SERVICE_PORT", "8082"))
 TOKEN = os.getenv("OCR_SERVICE_TOKEN", "")
 MAX_REQUEST_BYTES = int(os.getenv("OCR_MAX_REQUEST_BYTES", str(100 * 1024 * 1024)))
 AI_LOCK_FILE = Path("/coordination/ai.lock")
+AI_STATUS_FILE = AI_LOCK_FILE.with_name("ai-status.json")
 INTEGRATION_SOURCE = Path(os.getenv("OCR_PLUGIN_SOURCE", "/app/ocrmypdf_plai.py"))
 INTEGRATION_TARGET = Path("/integration/ocrmypdf_plai.py")
 PAPERLESS_UI_SOURCE = Path("/app/paperless_local_ai_ui")
@@ -545,6 +546,17 @@ class PaddleSession:
             return None
         return round(time.monotonic() - self._started_at, 1)
 
+    def _write_ai_activity(self) -> None:
+        payload = {
+            "operation": "ocr",
+            "label": "OCR",
+            "started_at_ms": int(time.time() * 1000),
+        }
+        AI_STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = AI_STATUS_FILE.with_name(AI_STATUS_FILE.name + ".tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False) + "\n", encoding="utf-8")
+        os.replace(tmp, AI_STATUS_FILE)
+
     def _acquire_global_lock(self) -> float:
         AI_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
         lock_file = AI_LOCK_FILE.open("a+")
@@ -552,6 +564,7 @@ class PaddleSession:
         LOG.info("Waiting for global AI lock")
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
         wait_seconds = time.monotonic() - wait_started
+        self._write_ai_activity()
         LOG.info("Global AI lock acquired after %.2fs", wait_seconds)
         self._lock_file = lock_file
         return wait_seconds
@@ -559,6 +572,7 @@ class PaddleSession:
     def _release_global_lock(self) -> None:
         if self._lock_file is None:
             return
+        AI_STATUS_FILE.unlink(missing_ok=True)
         try:
             fcntl.flock(self._lock_file.fileno(), fcntl.LOCK_UN)
         finally:

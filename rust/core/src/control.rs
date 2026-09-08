@@ -79,6 +79,21 @@ pub fn router(state: Arc<CoreState>) -> Router {
         .route("/api/rag/bootstrap", get(rag::bootstrap))
         .route("/api/rag/status", get(rag::status))
         .route("/api/rag/models", get(rag::models))
+        .route("/api/rag/conversations", post(rag::conversations_list))
+        .route(
+            "/api/rag/conversations/create",
+            post(rag::conversations_create),
+        )
+        .route("/api/rag/conversations/get", post(rag::conversations_get))
+        .route(
+            "/api/rag/conversations/rename",
+            post(rag::conversations_rename),
+        )
+        .route(
+            "/api/rag/conversations/delete",
+            post(rag::conversations_delete),
+        )
+        .route("/api/rag/config", post(rag::config_save))
         .route("/api/rag/chat/start", post(rag::chat_start))
         .route("/api/rag/chat/status", post(rag::chat_status))
         .route("/api/rag/chat/stop", post(rag::chat_stop))
