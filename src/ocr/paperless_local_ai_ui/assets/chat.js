@@ -215,11 +215,28 @@
               <div class="progress"><span data-part="index-progress"></span></div>
               <small data-part="index-detail"></small>
               <div class="index-config">
-                <label>Embedding model for next rebuild
+                <label>Embedding model
                   <input data-field="embedding_model" list="plai-models" autocomplete="off">
                 </label>
+                <div class="index-config-grid">
+                  <label>Chunk target
+                    <input data-field="chunk_target_chars" type="number" min="1000" max="20000" step="100">
+                  </label>
+                  <label>Chunk overlap
+                    <input data-field="chunk_overlap_chars" type="number" min="0" max="19999" step="100">
+                  </label>
+                  <label>Embedding batch size
+                    <input data-field="embedding_batch_size" type="number" min="1" max="64" step="1">
+                  </label>
+                  <label>Embedding slice size
+                    <input data-field="embedding_slice_chunks" type="number" min="1" max="256" step="1">
+                  </label>
+                  <label>Sync interval (seconds)
+                    <input data-field="sync_interval_seconds" type="number" min="60" max="86400" step="60">
+                  </label>
+                </div>
                 <small data-part="index-config-detail"></small>
-                <button type="button" data-action="save-index-config">Save index setting</button>
+                <button type="button" data-action="save-index-config">Save index settings</button>
               </div>
               <p class="index-help">Rebuild recreates the PLAI search index for all Paperless documents. It never modifies the documents themselves. An existing active index remains usable until the rebuilt index is activated.</p>
               <div class="index-actions">
@@ -266,7 +283,10 @@
       scope: q('[data-field="scope"]'), scope_query: q('[data-field="scope_query"]'), model: q('[data-field="model"]'),
       think: q('[data-field="think"]'), num_ctx: q('[data-field="num_ctx"]'), top_k: q('[data-field="top_k"]'),
       temperature: q('[data-field="temperature"]'), num_predict: q('[data-field="num_predict"]'),
-      embedding_model: q('[data-field="embedding_model"]'), question: q('[data-field="question"]'),
+      embedding_model: q('[data-field="embedding_model"]'),
+      chunk_target_chars: q('[data-field="chunk_target_chars"]'), chunk_overlap_chars: q('[data-field="chunk_overlap_chars"]'),
+      embedding_batch_size: q('[data-field="embedding_batch_size"]'), embedding_slice_chunks: q('[data-field="embedding_slice_chunks"]'),
+      sync_interval_seconds: q('[data-field="sync_interval_seconds"]'), question: q('[data-field="question"]'),
     };
 
     function normalizeSettings() {
@@ -284,9 +304,18 @@
       fields.top_k.value = state.settings.top_k || defaults.top_k || 5;
       fields.temperature.value = state.settings.temperature ?? defaults.temperature ?? 0.1;
       fields.num_predict.value = state.settings.num_predict || defaults.num_predict || 512;
-      fields.embedding_model.value = state.indexConfig.embedding_model || "";
+      fillIndexConfigFields();
       fields.scope.value = state.scope;
       updateScopeUi(false);
+    }
+
+    function fillIndexConfigFields() {
+      fields.embedding_model.value = state.indexConfig.embedding_model || "";
+      fields.chunk_target_chars.value = state.indexConfig.chunk_target_chars ?? 4000;
+      fields.chunk_overlap_chars.value = state.indexConfig.chunk_overlap_chars ?? 800;
+      fields.embedding_batch_size.value = state.indexConfig.embedding_batch_size ?? 16;
+      fields.embedding_slice_chunks.value = state.indexConfig.embedding_slice_chunks ?? 64;
+      fields.sync_interval_seconds.value = state.indexConfig.sync_interval_seconds ?? 900;
     }
 
     function sourceNode(source) {
@@ -621,8 +650,10 @@
       }
       detail.textContent = total > 0 ? `${current} / ${total} documents · ${idx.indexed_chunks || 0} chunks${extra}` : (idx.last_sync ? `Last sync ${idx.last_sync}` : "Initial rebuild is explicit.");
       const active = idx.active_signature || null;
-      q('[data-part="index-config-detail"]').textContent = active ? `Active: ${active.embedding_model} · chunk ${active.chunk_target_chars}/${active.chunk_overlap_chars}. Next rebuild: chunk ${state.indexConfig.chunk_target_chars}/${state.indexConfig.chunk_overlap_chars}, batch ${state.indexConfig.embedding_batch_size}, slice ${state.indexConfig.embedding_slice_chunks}.` : `Next rebuild: chunk ${state.indexConfig.chunk_target_chars}/${state.indexConfig.chunk_overlap_chars}, batch ${state.indexConfig.embedding_batch_size}, slice ${state.indexConfig.embedding_slice_chunks}.`;
-      fields.embedding_model.value = state.indexConfig.embedding_model || ""; pauseButton.textContent = idx.paused ? "Resume" : "Pause"; setRunning(!!state.jobId);
+      q('[data-part="index-config-detail"]').textContent = active
+        ? `Active: ${active.embedding_model} · chunk ${active.chunk_target_chars}/${active.chunk_overlap_chars}. Configured: ${state.indexConfig.embedding_model} · chunk ${state.indexConfig.chunk_target_chars}/${state.indexConfig.chunk_overlap_chars}, batch ${state.indexConfig.embedding_batch_size}, slice ${state.indexConfig.embedding_slice_chunks}, sync ${state.indexConfig.sync_interval_seconds}s.`
+        : `Next rebuild: ${state.indexConfig.embedding_model} · chunk ${state.indexConfig.chunk_target_chars}/${state.indexConfig.chunk_overlap_chars}, batch ${state.indexConfig.embedding_batch_size}, slice ${state.indexConfig.embedding_slice_chunks}, sync ${state.indexConfig.sync_interval_seconds}s.`;
+      pauseButton.textContent = idx.paused ? "Resume" : "Pause"; setRunning(!!state.jobId);
     }
 
     async function refreshIndex() {
@@ -632,9 +663,35 @@
     }
 
     async function saveIndexConfig() {
-      const embedding_model = fields.embedding_model.value.trim(); if (!embedding_model) return;
-      try { const payload = await api("config", { method: "POST", body: JSON.stringify({ embedding_model }) }); renderIndex(payload); setPhase(state.indexState.index_exists ? "Index setting saved. The active index remains usable; run Rebuild to activate the new embedding model." : "Index setting saved."); }
-      catch (error) { setPhase(error.message); }
+      const config = {
+        embedding_model: fields.embedding_model.value.trim(),
+        chunk_target_chars: Number(fields.chunk_target_chars.value),
+        chunk_overlap_chars: Number(fields.chunk_overlap_chars.value),
+        embedding_batch_size: Number(fields.embedding_batch_size.value),
+        embedding_slice_chunks: Number(fields.embedding_slice_chunks.value),
+        sync_interval_seconds: Number(fields.sync_interval_seconds.value),
+      };
+      if (!config.embedding_model) { setPhase("Embedding model is required."); return; }
+      const integerFields = [
+        "chunk_target_chars", "chunk_overlap_chars", "embedding_batch_size",
+        "embedding_slice_chunks", "sync_interval_seconds",
+      ];
+      if (integerFields.some((key) => !Number.isInteger(config[key]))) {
+        setPhase("Index numeric settings must be whole numbers.");
+        return;
+      }
+      try {
+        const payload = await api("config", { method: "POST", body: JSON.stringify(config) });
+        renderIndex(payload);
+        fillIndexConfigFields();
+        if (!state.indexState.index_exists) {
+          setPhase("Index settings saved.");
+        } else if (state.indexState.rebuild_required) {
+          setPhase("Index settings saved. The active index remains usable; model/chunk changes require Rebuild.");
+        } else {
+          setPhase("Index settings saved. Batch, slice and sync changes apply without rebuilding.");
+        }
+      } catch (error) { setPhase(error.message); }
     }
 
     async function indexAction(action) {

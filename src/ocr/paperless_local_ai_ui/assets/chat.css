@@ -39,6 +39,8 @@ input:focus, select:focus, textarea:focus { border-color: #64748b; box-shadow: 0
 .progress { height: 5px; margin: .45rem 0; background: #e2e8f0; border-radius: 999px; overflow: hidden; }
 .progress span { display: block; width: 0; height: 100%; background: #64748b; transition: width .2s ease; }
 .index-config { display: grid; gap: .4rem; margin: .65rem 0; }
+.index-config-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .45rem; }
+.index-config-grid label:last-child { grid-column: 1 / -1; }
 .index-config button, .index-actions button, .composer-actions button { border: 1px solid #cbd5e1; background: #fff; border-radius: 6px; padding: .38rem .62rem; cursor: pointer; }
 .index-config button { justify-self: start; }
 .index-actions { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; margin-top: .5rem; }
@@ -85,6 +87,6 @@ button:disabled { opacity: .5; cursor: default; }
 @media (max-width: 700px) {
   .shell,.shell.with-history { top:.5rem; right:.5rem; bottom:.5rem; width:calc(100vw - 1rem); }
   .history { position:absolute; z-index:3; top:49px; bottom:0; left:0; width:min(82vw,280px); box-shadow:8px 0 24px rgba(0,0,0,.18); }
-  .toolbar,.settings-grid { grid-template-columns:1fr; }
-  .settings-grid label:last-child,.toolbar .scope-value { grid-column:auto; }
+  .toolbar,.settings-grid,.index-config-grid { grid-template-columns:1fr; }
+  .settings-grid label:last-child,.index-config-grid label:last-child,.toolbar .scope-value { grid-column:auto; }
 }

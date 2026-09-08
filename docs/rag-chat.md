@@ -25,7 +25,8 @@ The panel supports:
 - temperature;
 - maximum output tokens;
 - incremental answer/status updates and a Stop action;
-- explicit index Sync, Rebuild and Pause/Resume controls.
+- explicit index Sync, Rebuild and Pause/Resume controls;
+- editable embedding model, chunk target/overlap, embedding batch/slice sizes and sync interval in the index settings UI.
 
 Conversation history is stored persistently below `/data/chat` and is keyed by the authenticated Paperless user ID supplied by the trusted same-origin relay. Conversation files are protected by a server-side file lock; no chat content is stored in browser session storage. The browser remembers only the currently selected server-side conversation ID. The backend still sends only a bounded recent history to the model and never adds an LLM summarization/title call.
 
@@ -78,7 +79,7 @@ sync interval       900 seconds
 
 Chat defaults are `qwen3.5:4b`, 8192 context, 512 output tokens, temperature `0.1`, Thinking off and Top-K `5`. Per-chat settings do not alter metadata-classification settings.
 
-The first full index build is explicit. PLAI never starts an expensive initial rebuild merely because the software was updated. Once an active index exists, a lightweight periodic sync checks for new/modified documents and reconciles deletions. Index settings are split conceptually into the active index signature and settings for the next rebuild: changing the configured embedding model does not invalidate the active chat index immediately. Automatic/incremental sync pauses until an explicit rebuild activates the new signature.
+The first full index build is explicit. PLAI never starts an expensive initial rebuild merely because the software was updated. Once an active index exists, a lightweight periodic sync checks for new/modified documents and reconciles deletions. The chat panel can edit the embedding model, chunk target/overlap, embedding batch/slice sizes and sync interval with the same validation bounds as the indexer. Index settings are split conceptually into the active index signature and configured runtime/rebuild settings: changing the embedding model or chunk target/overlap marks the active index as requiring an explicit rebuild, while batch size, slice size and sync interval can change without invalidating the active index.
 
 A rebuild snapshots target document IDs/modified timestamps into the build database and records completed documents. An interrupted rebuild can therefore resume without discarding completed document versions. A document interrupted during its embedding step is retried as a unit. If the core/container restarts while a rebuild staging database exists, startup reconciles stale running state to `Paused`; the staging database is kept and the user explicitly resumes the rebuild instead of it restarting heavy AI work automatically.
 

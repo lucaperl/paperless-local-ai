@@ -125,3 +125,10 @@ def test_runtime_assets_do_not_embed_a_control_center_origin():
     assert 'root.addEventListener("keydown", stopKeyboardPropagation)' in script
     assert 'root.addEventListener("keypress", stopKeyboardPropagation)' in script
     assert 'root.addEventListener("keyup", stopKeyboardPropagation)' in script
+    assert 'data-field="chunk_target_chars"' in script
+    assert 'data-field="chunk_overlap_chars"' in script
+    assert 'data-field="embedding_batch_size"' in script
+    assert 'data-field="embedding_slice_chunks"' in script
+    assert 'data-field="sync_interval_seconds"' in script
+    assert "chunk_target_chars: Number(fields.chunk_target_chars.value)" in script
+    assert "Save index settings" in script

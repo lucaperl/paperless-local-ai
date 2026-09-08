@@ -630,6 +630,83 @@ pub async fn conversations_delete(
     }
 }
 
+fn merged_config_u64(payload: &Value, current: &Value, key: &str) -> std::result::Result<u64, String> {
+    match payload.get(key) {
+        Some(value) => value
+            .as_u64()
+            .ok_or_else(|| format!("{key} must be a non-negative integer")),
+        None => current
+            .get(key)
+            .and_then(Value::as_u64)
+            .ok_or_else(|| format!("{key} is missing from the current config")),
+    }
+}
+
+fn merge_index_config(payload: &Value, current: &Value) -> std::result::Result<Value, String> {
+    let model = match payload.get("embedding_model") {
+        Some(value) => value
+            .as_str()
+            .ok_or_else(|| "embedding_model must be a string".to_owned())?,
+        None => current
+            .get("embedding_model")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "embedding_model is missing from the current config".to_owned())?,
+    }
+    .trim()
+    .to_owned();
+
+    if model.is_empty() || model.len() > 200 {
+        return Err("embedding_model must contain 1 to 200 characters".into());
+    }
+
+    let chunk_target = merged_config_u64(payload, current, "chunk_target_chars")?;
+    let chunk_overlap = merged_config_u64(payload, current, "chunk_overlap_chars")?;
+    let batch = merged_config_u64(payload, current, "embedding_batch_size")?;
+    let slice = merged_config_u64(payload, current, "embedding_slice_chunks")?;
+    let sync_interval = merged_config_u64(payload, current, "sync_interval_seconds")?;
+
+    if !(1000..=20_000).contains(&chunk_target) {
+        return Err("chunk_target_chars must be between 1000 and 20000".into());
+    }
+    if chunk_overlap >= chunk_target {
+        return Err("chunk_overlap_chars must be smaller than chunk_target_chars".into());
+    }
+    if !(1..=64).contains(&batch) {
+        return Err("embedding_batch_size must be between 1 and 64".into());
+    }
+    if slice < batch || slice > 256 {
+        return Err("embedding_slice_chunks must be between embedding_batch_size and 256".into());
+    }
+    if !(60..=86_400).contains(&sync_interval) {
+        return Err("sync_interval_seconds must be between 60 and 86400".into());
+    }
+
+    let mut next = current.clone();
+    next["embedding_model"] = Value::String(model);
+    next["chunk_target_chars"] = Value::from(chunk_target);
+    next["chunk_overlap_chars"] = Value::from(chunk_overlap);
+    next["embedding_batch_size"] = Value::from(batch);
+    next["embedding_slice_chunks"] = Value::from(slice);
+    next["sync_interval_seconds"] = Value::from(sync_interval);
+    Ok(next)
+}
+
+fn rebuild_required_for_config(config: &Value, state: &Value) -> bool {
+    let Some(active) = state.get("active_signature") else {
+        return state
+            .get("rebuild_required")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+    };
+
+    active.get("embedding_model").and_then(Value::as_str)
+        != config.get("embedding_model").and_then(Value::as_str)
+        || active.get("chunk_target_chars").and_then(Value::as_u64)
+            != config.get("chunk_target_chars").and_then(Value::as_u64)
+        || active.get("chunk_overlap_chars").and_then(Value::as_u64)
+            != config.get("chunk_overlap_chars").and_then(Value::as_u64)
+}
+
 pub async fn config_save(
     State(_state): State<Arc<CoreState>>,
     headers: HeaderMap,
@@ -658,19 +735,12 @@ pub async fn config_save(
         Ok(value) => value,
         Err(error) => return error_response(StatusCode::BAD_REQUEST, error),
     };
-    let model = payload
-        .get("embedding_model")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .trim();
-    if model.is_empty() || model.len() > 200 {
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "embedding_model must contain 1 to 200 characters",
-        );
-    }
-    let mut config = rag_config();
-    config["embedding_model"] = Value::String(model.to_owned());
+    let current = rag_config();
+    let config = match merge_index_config(&payload, &current) {
+        Ok(value) => value,
+        Err(error) => return error_response(StatusCode::BAD_REQUEST, error),
+    };
+
     let mut bytes = match serde_json::to_vec_pretty(&config) {
         Ok(value) => value,
         Err(error) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, error),
@@ -679,14 +749,16 @@ pub async fn config_save(
     if let Err(error) = atomic_write(Path::new(RAG_CONFIG_FILE), &bytes) {
         return error_response(StatusCode::INTERNAL_SERVER_ERROR, error);
     }
+
     if Path::new(RAG_DB_FILE).exists() {
         let mut state = rag_state();
-        state["rebuild_required"] = Value::Bool(true);
+        state["rebuild_required"] = Value::Bool(rebuild_required_for_config(&config, &state));
         if let Ok(mut data) = serde_json::to_vec_pretty(&state) {
             data.push(b'\n');
             let _ = atomic_write(Path::new(RAG_STATE_FILE), &data);
         }
     }
+
     json_response(
         StatusCode::OK,
         serde_json::json!({"config": config, "state": rag_state()}),
@@ -988,7 +1060,8 @@ pub async fn sync_loop(state: Arc<CoreState>, mut shutdown: watch::Receiver<bool
 
 #[cfg(test)]
 mod tests {
-    use super::valid_job_id;
+    use super::{merge_index_config, valid_job_id};
+    use serde_json::json;
 
     #[test]
     fn job_ids_are_path_safe() {
@@ -996,5 +1069,46 @@ mod tests {
         assert!(!valid_job_id("../../escape"));
         assert!(!valid_job_id("contains space"));
         assert!(!valid_job_id(""));
+    }
+
+    #[test]
+    fn index_config_accepts_complete_valid_settings() {
+        let current = json!({
+            "embedding_model": "old",
+            "chunk_target_chars": 4000,
+            "chunk_overlap_chars": 800,
+            "embedding_batch_size": 16,
+            "embedding_slice_chunks": 64,
+            "sync_interval_seconds": 900
+        });
+        let payload = json!({
+            "embedding_model": "qwen3-embedding:4b-q4_K_M",
+            "chunk_target_chars": 4000,
+            "chunk_overlap_chars": 800,
+            "embedding_batch_size": 1,
+            "embedding_slice_chunks": 16,
+            "sync_interval_seconds": 900
+        });
+        let merged = merge_index_config(&payload, &current).expect("valid index config");
+        assert_eq!(merged["embedding_batch_size"], 1);
+        assert_eq!(merged["embedding_slice_chunks"], 16);
+    }
+
+    #[test]
+    fn index_config_rejects_invalid_relationships() {
+        let current = json!({
+            "embedding_model": "model",
+            "chunk_target_chars": 4000,
+            "chunk_overlap_chars": 800,
+            "embedding_batch_size": 16,
+            "embedding_slice_chunks": 64,
+            "sync_interval_seconds": 900
+        });
+        assert!(merge_index_config(&json!({"chunk_overlap_chars": 4000}), &current).is_err());
+        assert!(merge_index_config(
+            &json!({"embedding_batch_size": 32, "embedding_slice_chunks": 16}),
+            &current
+        )
+        .is_err());
     }
 }

@@ -9,6 +9,7 @@
 
 ### Changed
 
+- expose embedding model, chunk target/overlap, embedding batch/slice sizes and sync interval in the RAG index settings UI with backend validation; only model/chunk changes invalidate the active index, while batch/slice/sync tuning remains rebuild-free.
 - reconcile an interrupted RAG rebuild to a resumable paused state after a core/container restart, preserving the staging index and requiring an explicit Resume instead of automatically restarting heavy AI work.
 - isolate keyboard events inside the PLAI Shadow DOM so typing in chat and settings fields cannot trigger Paperless global shortcuts.
 - make tag, correspondent and document-type RAG scopes searchable type-ahead selectors, refresh Current document availability during Paperless SPA navigation, and keep index controls self-contained in the chat panel instead of linking to a non-existent Control Center index page.
