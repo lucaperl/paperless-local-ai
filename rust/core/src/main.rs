@@ -60,6 +60,9 @@ async fn async_main() -> Result<u8, Error> {
     let state = CoreState::from_env()?;
     let app = state.app_config.ensure()?;
     let prompt = state.prompt_config.ensure()?;
+    if let Err(error) = rag::reconcile_startup_state() {
+        eprintln!("[RAG] startup state reconciliation failed: {error}");
+    }
 
     let control_host = env_string("PROMPT_UI_HOST", "0.0.0.0");
     let control_port = env_port("PROMPT_UI_PORT", 8080)?;

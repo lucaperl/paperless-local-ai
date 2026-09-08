@@ -22,6 +22,7 @@ const RAG_DIR: &str = "/data/rag";
 const RAG_STATE_FILE: &str = "/data/rag/state.json";
 const RAG_CONFIG_FILE: &str = "/config/rag-config.json";
 const RAG_DB_FILE: &str = "/data/rag/rag.db";
+const RAG_BUILD_DB_FILE: &str = "/data/rag/rag.db.build";
 const RAG_JOB_DIR: &str = "/data/rag/jobs";
 const RAG_PAUSE_FILE: &str = "/data/rag/pause";
 const RELAY_SECRET_FILE: &str = "/integration/paperless-local-ai-relay.secret";
@@ -143,6 +144,71 @@ fn rag_state() -> Value {
         );
     }
     state
+}
+
+pub fn reconcile_startup_state() -> Result<()> {
+    let state_path = Path::new(RAG_STATE_FILE);
+    if !state_path.exists() {
+        return Ok(());
+    }
+
+    let mut state = read_json_or(state_path, serde_json::json!({}));
+    let Some(object) = state.as_object_mut() else {
+        return Ok(());
+    };
+
+    let running = object
+        .get("running")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let operation = object
+        .get("operation")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let phase = object
+        .get("phase")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+
+    let interrupted_rebuild = operation.as_deref() == Some("rebuild")
+        && Path::new(RAG_BUILD_DB_FILE).exists()
+        && (running || phase.as_deref() == Some("paused"));
+
+    if interrupted_rebuild {
+        atomic_write(Path::new(RAG_PAUSE_FILE), b"paused\n")?;
+        object.insert("running".into(), Value::Bool(false));
+        object.insert("paused".into(), Value::Bool(true));
+        object.insert("phase".into(), Value::String("paused".into()));
+        atomic_write(state_path, &serde_json::to_vec_pretty(&state)?)?;
+        println!(
+            "[RAG] interrupted rebuild staging index found; keeping it paused for explicit Resume"
+        );
+        return Ok(());
+    }
+
+    if running {
+        object.insert("running".into(), Value::Bool(false));
+        object.insert("operation".into(), Value::Null);
+        object.insert(
+            "phase".into(),
+            Value::String(
+                if Path::new(RAG_DB_FILE).exists() {
+                    "idle"
+                } else {
+                    "not_built"
+                }
+                .into(),
+            ),
+        );
+        object.insert(
+            "paused".into(),
+            Value::Bool(Path::new(RAG_PAUSE_FILE).exists()),
+        );
+        atomic_write(state_path, &serde_json::to_vec_pretty(&state)?)?;
+        println!("[RAG] cleared stale running index state after core restart");
+    }
+
+    Ok(())
 }
 
 fn valid_job_id(value: &str) -> bool {

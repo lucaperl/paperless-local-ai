@@ -35,3 +35,14 @@ def test_legacy_core_service_command_execs_rust_binary():
 
     assert "> /app/core_service.py" in dockerfile
     assert 'os.execv("/usr/local/bin/plai-core"' in dockerfile
+
+
+def test_core_reconciles_interrupted_rag_index_state_on_startup():
+    main = (ROOT / "rust/core/src/main.rs").read_text(encoding="utf-8")
+    rag = (ROOT / "rust/core/src/rag.rs").read_text(encoding="utf-8")
+
+    assert "rag::reconcile_startup_state()" in main
+    assert "pub fn reconcile_startup_state()" in rag
+    assert 'const RAG_BUILD_DB_FILE: &str = "/data/rag/rag.db.build";' in rag
+    assert 'atomic_write(Path::new(RAG_PAUSE_FILE), b"paused\\n")?' in rag
+    assert "keeping it paused for explicit Resume" in rag
