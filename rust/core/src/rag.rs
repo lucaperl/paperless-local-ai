@@ -630,7 +630,11 @@ pub async fn conversations_delete(
     }
 }
 
-fn merged_config_u64(payload: &Value, current: &Value, key: &str) -> std::result::Result<u64, String> {
+fn merged_config_u64(
+    payload: &Value,
+    current: &Value,
+    key: &str,
+) -> std::result::Result<u64, String> {
     match payload.get(key) {
         Some(value) => value
             .as_u64()
@@ -1105,10 +1109,12 @@ mod tests {
             "sync_interval_seconds": 900
         });
         assert!(merge_index_config(&json!({"chunk_overlap_chars": 4000}), &current).is_err());
-        assert!(merge_index_config(
-            &json!({"embedding_batch_size": 32, "embedding_slice_chunks": 16}),
-            &current
-        )
-        .is_err());
+        assert!(
+            merge_index_config(
+                &json!({"embedding_batch_size": 32, "embedding_slice_chunks": 16}),
+                &current
+            )
+            .is_err()
+        );
     }
 }
