@@ -91,18 +91,12 @@ fn require_auth(headers: &HeaderMap) -> Option<Response> {
     }
 }
 
-fn relay_user_id(headers: &HeaderMap) -> std::result::Result<i64, Response> {
-    let value = headers
+fn relay_user_id(headers: &HeaderMap) -> Option<i64> {
+    headers
         .get("x-paperless-user-id")
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.parse::<i64>().ok())
-        .filter(|value| *value > 0);
-    value.ok_or_else(|| {
-        error_response(
-            StatusCode::UNAUTHORIZED,
-            "Paperless user identity is missing",
-        )
-    })
+        .filter(|value| *value > 0)
 }
 
 fn read_json_or(path: impl AsRef<Path>, fallback: Value) -> Value {
@@ -208,8 +202,8 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-fn body_json(body: &Bytes) -> std::result::Result<Value, Response> {
-    serde_json::from_slice(body).map_err(|error| error_response(StatusCode::BAD_REQUEST, error))
+fn body_json(body: &Bytes) -> serde_json::Result<Value> {
+    serde_json::from_slice(body)
 }
 
 fn job_path(job_id: &str) -> PathBuf {
@@ -353,9 +347,11 @@ pub async fn bootstrap(State(_state): State<Arc<CoreState>>, headers: HeaderMap)
     if let Some(response) = require_auth(&headers) {
         return response;
     }
-    let user_id = match relay_user_id(&headers) {
-        Ok(value) => value,
-        Err(response) => return response,
+    let Some(user_id) = relay_user_id(&headers) else {
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "Paperless user identity is missing",
+        );
     };
     json_response(
         StatusCode::OK,
@@ -372,8 +368,11 @@ pub async fn status(State(_state): State<Arc<CoreState>>, headers: HeaderMap) ->
     if let Some(response) = require_auth(&headers) {
         return response;
     }
-    if let Err(response) = relay_user_id(&headers) {
-        return response;
+    if relay_user_id(&headers).is_none() {
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "Paperless user identity is missing",
+        );
     }
     json_response(
         StatusCode::OK,
@@ -385,8 +384,11 @@ pub async fn models(State(state): State<Arc<CoreState>>, headers: HeaderMap) -> 
     if let Some(response) = require_auth(&headers) {
         return response;
     }
-    if let Err(response) = relay_user_id(&headers) {
-        return response;
+    if relay_user_id(&headers).is_none() {
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "Paperless user identity is missing",
+        );
     }
     let base = match state.app_config.load() {
         Ok(config) => config.connections.ollama_url,
@@ -428,9 +430,11 @@ pub async fn conversations_list(
     if let Some(response) = require_auth(&headers) {
         return response;
     }
-    let user_id = match relay_user_id(&headers) {
-        Ok(value) => value,
-        Err(response) => return response,
+    let Some(user_id) = relay_user_id(&headers) else {
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "Paperless user identity is missing",
+        );
     };
     match chat_history::list(user_id) {
         Ok(value) => json_response(StatusCode::OK, value),
@@ -446,13 +450,15 @@ pub async fn conversations_create(
     if let Some(response) = require_auth(&headers) {
         return response;
     }
-    let user_id = match relay_user_id(&headers) {
-        Ok(value) => value,
-        Err(response) => return response,
+    let Some(user_id) = relay_user_id(&headers) else {
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "Paperless user identity is missing",
+        );
     };
     let payload = match body_json(&body) {
         Ok(value) => value,
-        Err(response) => return response,
+        Err(error) => return error_response(StatusCode::BAD_REQUEST, error),
     };
     match chat_history::create(
         user_id,
@@ -478,13 +484,15 @@ pub async fn conversations_get(
     if let Some(response) = require_auth(&headers) {
         return response;
     }
-    let user_id = match relay_user_id(&headers) {
-        Ok(value) => value,
-        Err(response) => return response,
+    let Some(user_id) = relay_user_id(&headers) else {
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "Paperless user identity is missing",
+        );
     };
     let payload = match body_json(&body) {
         Ok(value) => value,
-        Err(response) => return response,
+        Err(error) => return error_response(StatusCode::BAD_REQUEST, error),
     };
     let Some(conversation_id) = value_conversation_id(&payload) else {
         return error_response(StatusCode::BAD_REQUEST, "valid conversation_id is required");
@@ -506,13 +514,15 @@ pub async fn conversations_rename(
     if let Some(response) = require_auth(&headers) {
         return response;
     }
-    let user_id = match relay_user_id(&headers) {
-        Ok(value) => value,
-        Err(response) => return response,
+    let Some(user_id) = relay_user_id(&headers) else {
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "Paperless user identity is missing",
+        );
     };
     let payload = match body_json(&body) {
         Ok(value) => value,
-        Err(response) => return response,
+        Err(error) => return error_response(StatusCode::BAD_REQUEST, error),
     };
     let Some(conversation_id) = value_conversation_id(&payload) else {
         return error_response(StatusCode::BAD_REQUEST, "valid conversation_id is required");
@@ -535,13 +545,15 @@ pub async fn conversations_delete(
     if let Some(response) = require_auth(&headers) {
         return response;
     }
-    let user_id = match relay_user_id(&headers) {
-        Ok(value) => value,
-        Err(response) => return response,
+    let Some(user_id) = relay_user_id(&headers) else {
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "Paperless user identity is missing",
+        );
     };
     let payload = match body_json(&body) {
         Ok(value) => value,
-        Err(response) => return response,
+        Err(error) => return error_response(StatusCode::BAD_REQUEST, error),
     };
     let Some(conversation_id) = value_conversation_id(&payload) else {
         return error_response(StatusCode::BAD_REQUEST, "valid conversation_id is required");
@@ -560,8 +572,11 @@ pub async fn config_save(
     if let Some(response) = require_auth(&headers) {
         return response;
     }
-    if let Err(response) = relay_user_id(&headers) {
-        return response;
+    if relay_user_id(&headers).is_none() {
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "Paperless user identity is missing",
+        );
     }
     if rag_state()
         .get("running")
@@ -575,7 +590,7 @@ pub async fn config_save(
     }
     let payload = match body_json(&body) {
         Ok(value) => value,
-        Err(response) => return response,
+        Err(error) => return error_response(StatusCode::BAD_REQUEST, error),
     };
     let model = payload
         .get("embedding_model")
@@ -620,16 +635,18 @@ pub async fn chat_start(
     if let Some(response) = require_auth(&headers) {
         return response;
     }
-    let user_id = match relay_user_id(&headers) {
-        Ok(value) => value,
-        Err(response) => return response,
+    let Some(user_id) = relay_user_id(&headers) else {
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "Paperless user identity is missing",
+        );
     };
     if body.is_empty() || body.len() > MAX_CHAT_BODY_BYTES {
         return error_response(StatusCode::BAD_REQUEST, "invalid chat request size");
     }
     let mut payload = match body_json(&body) {
         Ok(value) => value,
-        Err(response) => return response,
+        Err(error) => return error_response(StatusCode::BAD_REQUEST, error),
     };
     let Some(conversation_id) = value_conversation_id(&payload).map(str::to_owned) else {
         return error_response(StatusCode::BAD_REQUEST, "valid conversation_id is required");
@@ -704,13 +721,15 @@ pub async fn chat_status(
     if let Some(response) = require_auth(&headers) {
         return response;
     }
-    let user_id = match relay_user_id(&headers) {
-        Ok(value) => value,
-        Err(response) => return response,
+    let Some(user_id) = relay_user_id(&headers) else {
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "Paperless user identity is missing",
+        );
     };
     let payload = match body_json(&body) {
         Ok(value) => value,
-        Err(response) => return response,
+        Err(error) => return error_response(StatusCode::BAD_REQUEST, error),
     };
     let Some(job_id) = value_job_id(&payload) else {
         return error_response(StatusCode::BAD_REQUEST, "valid job_id is required");
@@ -734,13 +753,15 @@ pub async fn chat_stop(
     if let Some(response) = require_auth(&headers) {
         return response;
     }
-    let user_id = match relay_user_id(&headers) {
-        Ok(value) => value,
-        Err(response) => return response,
+    let Some(user_id) = relay_user_id(&headers) else {
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "Paperless user identity is missing",
+        );
     };
     let payload = match body_json(&body) {
         Ok(value) => value,
-        Err(response) => return response,
+        Err(error) => return error_response(StatusCode::BAD_REQUEST, error),
     };
     let Some(job_id) = value_job_id(&payload) else {
         return error_response(StatusCode::BAD_REQUEST, "valid job_id is required");
@@ -760,8 +781,11 @@ pub async fn index_rebuild(State(state): State<Arc<CoreState>>, headers: HeaderM
     if let Some(response) = require_auth(&headers) {
         return response;
     }
-    if let Err(response) = relay_user_id(&headers) {
-        return response;
+    if relay_user_id(&headers).is_none() {
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "Paperless user identity is missing",
+        );
     }
     match spawn_index_job(state, "rebuild").await {
         Ok(()) => json_response(StatusCode::ACCEPTED, serde_json::json!({"started": true})),
@@ -773,8 +797,11 @@ pub async fn index_sync(State(state): State<Arc<CoreState>>, headers: HeaderMap)
     if let Some(response) = require_auth(&headers) {
         return response;
     }
-    if let Err(response) = relay_user_id(&headers) {
-        return response;
+    if relay_user_id(&headers).is_none() {
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "Paperless user identity is missing",
+        );
     }
     if rag_state()
         .get("rebuild_required")
@@ -800,8 +827,11 @@ pub async fn index_pause(
     if let Some(response) = require_auth(&headers) {
         return response;
     }
-    if let Err(response) = relay_user_id(&headers) {
-        return response;
+    if relay_user_id(&headers).is_none() {
+        return error_response(
+            StatusCode::UNAUTHORIZED,
+            "Paperless user identity is missing",
+        );
     }
     let payload: Value = serde_json::from_slice(&body).unwrap_or_else(|_| serde_json::json!({}));
     let paused = payload
