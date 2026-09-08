@@ -6,7 +6,7 @@
 
 When the optional Paperless UI integration is enabled, the integration injects a same-origin JavaScript asset into Paperless. After a successful authenticated PLAI bootstrap, it hides Paperless' native AI chat control and inserts the PLAI chat control in the same navbar area. The native component is hidden rather than removed. If PLAI cannot initialize after a future Paperless frontend change, the integration fails open and leaves Paperless' own UI available.
 
-The chat panel is isolated in Shadow DOM. The same integration keeps the existing Settings shortcut to the Control Center; there is no second chat UI in the Control Center and index controls are kept in the chat panel instead of linking to a duplicate Control Center index page.
+The chat panel is isolated in Shadow DOM. Keyboard events are stopped at that boundary after PLAI controls handle them, so typing in chat, model, scope or settings fields does not trigger Paperless' global keyboard shortcuts. The same integration keeps the existing Settings shortcut to the Control Center; there is no second chat UI in the Control Center and index controls are kept in the chat panel instead of linking to a duplicate Control Center index page.
 
 Browser requests stay on the Paperless origin below `/_plai/`. The browser does not connect directly to the Control Center port or Ollama. Paperless authenticates the browser session, requires a superuser for the initial implementation, applies CSRF protection to writes and relays only a fixed allow-list of RAG requests to `core-service`. The relay authenticates to the core with an internal random secret stored in the shared integration directory and never exposed to browser JavaScript.
 

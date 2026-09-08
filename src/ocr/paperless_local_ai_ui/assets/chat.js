@@ -243,6 +243,11 @@
     `;
     root.appendChild(shell);
 
+    const stopKeyboardPropagation = (event) => event.stopPropagation();
+    root.addEventListener("keydown", stopKeyboardPropagation);
+    root.addEventListener("keypress", stopKeyboardPropagation);
+    root.addEventListener("keyup", stopKeyboardPropagation);
+
     const defaults = boot.config?.chat_defaults || {};
     const state = {
       shell, root, open: false, historyOpen: false,

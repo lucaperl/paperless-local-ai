@@ -9,6 +9,7 @@
 
 ### Changed
 
+- isolate keyboard events inside the PLAI Shadow DOM so typing in chat and settings fields cannot trigger Paperless global shortcuts.
 - make tag, correspondent and document-type RAG scopes searchable type-ahead selectors, refresh Current document availability during Paperless SPA navigation, and keep index controls self-contained in the chat panel instead of linking to a non-existent Control Center index page.
 - replace the Paperless UI `IndexView` monkey-patch with fail-open Django middleware, external same-origin JS/CSS assets and a CSRF-protected `/_plai/` relay; the native Paperless chat component is only hidden after the PLAI bootstrap succeeds.
 - extend the existing Paperless integration publisher to ship UI assets and create the internal relay secret without adding a service, port or vector database.

@@ -122,3 +122,6 @@ def test_runtime_assets_do_not_embed_a_control_center_origin():
     assert "page_size=250" in script
     assert "syncDocumentContext" in script
     assert 'data-part="control-center"' not in script
+    assert 'root.addEventListener("keydown", stopKeyboardPropagation)' in script
+    assert 'root.addEventListener("keypress", stopKeyboardPropagation)' in script
+    assert 'root.addEventListener("keyup", stopKeyboardPropagation)' in script
