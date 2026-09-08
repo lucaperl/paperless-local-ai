@@ -117,3 +117,8 @@ def test_runtime_assets_do_not_embed_a_control_center_origin():
     assert "sessionStorage" not in script
     assert "conversations/create" in script
     assert "aria-expanded" in script
+    assert 'role="combobox"' in script
+    assert "scope_query" in script
+    assert "page_size=250" in script
+    assert "syncDocumentContext" in script
+    assert 'data-part="control-center"' not in script

@@ -189,9 +189,14 @@
                 <option value="document_type">Document type…</option>
               </select>
             </label>
-            <label class="scope-value hidden" data-part="scope-value">Choose
-              <select data-field="scope_id"></select>
-            </label>
+            <div class="scope-value hidden" data-part="scope-value">
+              <div class="field-label" data-part="scope-label">Choose</div>
+              <div class="scope-combobox" data-part="scope-combobox">
+                <input data-field="scope_query" type="text" autocomplete="off" role="combobox"
+                  aria-autocomplete="list" aria-expanded="false" aria-controls="plai-scope-options">
+                <div class="scope-options hidden" data-part="scope-options" id="plai-scope-options" role="listbox"></div>
+              </div>
+            </div>
             <label>Model
               <input data-field="model" list="plai-models" autocomplete="off">
               <datalist id="plai-models"></datalist>
@@ -221,7 +226,6 @@
                 <button type="button" data-action="sync">Sync</button>
                 <button type="button" data-action="rebuild">Rebuild</button>
                 <button type="button" data-action="pause">Pause</button>
-                <a data-part="control-center" target="_blank" rel="noopener noreferrer">Control Center ↗</a>
               </div>
             </div>
           </div>
@@ -248,11 +252,13 @@
       jobId: null, pollTimer: null, indexTimer: null,
       indexState: boot.state || {}, indexConfig: boot.config || {},
       conversations: [], controlCenterUrl: boot.control_center_url,
+      scopeOptionsByType: {}, scopeOptions: [], scopeOptionType: null,
+      scopeActiveIndex: -1, scopeLoadToken: 0, observedDocumentId: currentDocumentId(),
     };
 
     const q = (selector) => root.querySelector(selector);
     const fields = {
-      scope: q('[data-field="scope"]'), scope_id: q('[data-field="scope_id"]'), model: q('[data-field="model"]'),
+      scope: q('[data-field="scope"]'), scope_query: q('[data-field="scope_query"]'), model: q('[data-field="model"]'),
       think: q('[data-field="think"]'), num_ctx: q('[data-field="num_ctx"]'), top_k: q('[data-field="top_k"]'),
       temperature: q('[data-field="temperature"]'), num_predict: q('[data-field="num_predict"]'),
       embedding_model: q('[data-field="embedding_model"]'), question: q('[data-field="question"]'),
@@ -407,11 +413,10 @@
     function currentScopePayload() {
       const type = fields.scope.value;
       const docId = currentDocumentId();
-      const option = fields.scope_id.selectedOptions?.[0];
       return {
         type,
-        id: ["tag", "correspondent", "document_type"].includes(type) ? Number(fields.scope_id.value || 0) || null : null,
-        label: option?.textContent || null,
+        id: ["tag", "correspondent", "document_type"].includes(type) ? state.scopeId : null,
+        label: ["tag", "correspondent", "document_type"].includes(type) ? state.scopeLabel : null,
         document_id: type === "document" ? docId : null,
       };
     }
@@ -452,23 +457,146 @@
       } catch (_error) {}
     }
 
+    const scopedTypes = new Set(["tag", "correspondent", "document_type"]);
+    const scopeLabels = { tag: "Tag", correspondent: "Correspondent", document_type: "Document type" };
+
+    function closeScopeOptions() {
+      q('[data-part="scope-options"]').classList.add("hidden");
+      fields.scope_query.setAttribute("aria-expanded", "false");
+      fields.scope_query.removeAttribute("aria-activedescendant");
+      state.scopeActiveIndex = -1;
+    }
+
+    function scopeSearchValue(item) {
+      return `${item.name || ""} ${item.id}`.toLocaleLowerCase();
+    }
+
+    function visibleScopeOptions(showAll = false) {
+      const query = fields.scope_query.value.trim().toLocaleLowerCase();
+      const source = state.scopeOptions || [];
+      if (showAll || !query || (state.scopeLabel && fields.scope_query.value === state.scopeLabel)) {
+        return source.slice(0, 60);
+      }
+      return source.filter((item) => scopeSearchValue(item).includes(query)).slice(0, 60);
+    }
+
+    function selectScopeOption(item) {
+      state.scopeId = Number(item.id) || null;
+      state.scopeLabel = item.name || `ID ${item.id}`;
+      fields.scope_query.value = state.scopeLabel;
+      closeScopeOptions();
+    }
+
+    function renderScopeOptions(showAll = false) {
+      const list = q('[data-part="scope-options"]');
+      if (!scopedTypes.has(fields.scope.value) || fields.scope_query.disabled) {
+        closeScopeOptions();
+        return;
+      }
+      const items = visibleScopeOptions(showAll);
+      if (state.scopeActiveIndex >= items.length) state.scopeActiveIndex = items.length ? items.length - 1 : -1;
+      list.replaceChildren();
+
+      if (!items.length) {
+        const empty = document.createElement("div");
+        empty.className = "scope-option empty-option";
+        empty.textContent = "No matches";
+        list.appendChild(empty);
+      } else {
+        items.forEach((item, index) => {
+          const option = document.createElement("button");
+          option.type = "button";
+          option.className = `scope-option${index === state.scopeActiveIndex ? " active" : ""}`;
+          option.id = `plai-scope-option-${index}`;
+          option.setAttribute("role", "option");
+          option.setAttribute("aria-selected", item.id === state.scopeId ? "true" : "false");
+          option.textContent = item.name || `ID ${item.id}`;
+          option.addEventListener("mousedown", (event) => {
+            event.preventDefault();
+            selectScopeOption(item);
+          });
+          list.appendChild(option);
+        });
+      }
+
+      list.classList.remove("hidden");
+      fields.scope_query.setAttribute("aria-expanded", "true");
+      if (state.scopeActiveIndex >= 0) {
+        fields.scope_query.setAttribute("aria-activedescendant", `plai-scope-option-${state.scopeActiveIndex}`);
+      } else {
+        fields.scope_query.removeAttribute("aria-activedescendant");
+      }
+    }
+
+    async function fetchAllScopeOptions(type) {
+      if (state.scopeOptionsByType[type]) return state.scopeOptionsByType[type];
+      const endpoint = { tag: "tags/", correspondent: "correspondents/", document_type: "document_types/" }[type];
+      const items = [];
+      for (let page = 1; page <= 100; page += 1) {
+        const payload = await paperlessApi(`${endpoint}?page_size=250&ordering=name&page=${page}`);
+        const batch = Array.isArray(payload) ? payload : (payload.results || []);
+        for (const item of batch) {
+          if (item && item.id != null) items.push({ id: Number(item.id), name: String(item.name || `ID ${item.id}`) });
+        }
+        if (Array.isArray(payload) || !payload.next) break;
+        if (page === 100) throw new Error("Paperless scope list exceeded 100 pages");
+      }
+      state.scopeOptionsByType[type] = items;
+      return items;
+    }
+
     async function loadScopeOptions(type) {
       const wrap = q('[data-part="scope-value"]');
-      if (!["tag", "correspondent", "document_type"].includes(type)) { wrap.classList.add("hidden"); return; }
-      wrap.classList.remove("hidden"); fields.scope_id.replaceChildren();
-      const endpoint = { tag: "tags/?page_size=1000&ordering=name", correspondent: "correspondents/?page_size=1000&ordering=name", document_type: "document_types/?page_size=1000&ordering=name" }[type];
+      if (!scopedTypes.has(type)) {
+        wrap.classList.add("hidden");
+        state.scopeOptions = [];
+        state.scopeOptionType = null;
+        closeScopeOptions();
+        return;
+      }
+
+      wrap.classList.remove("hidden");
+      q('[data-part="scope-label"]').textContent = scopeLabels[type];
+      fields.scope_query.value = state.scope === type && state.scopeLabel ? state.scopeLabel : "";
+      fields.scope_query.disabled = true;
+      fields.scope_query.placeholder = `Loading ${scopeLabels[type].toLocaleLowerCase()}s…`;
+      closeScopeOptions();
+
+      const token = ++state.scopeLoadToken;
       try {
-        const payload = await paperlessApi(endpoint); const items = Array.isArray(payload) ? payload : (payload.results || []);
-        for (const item of items) { const option = document.createElement("option"); option.value = item.id; option.textContent = item.name || `ID ${item.id}`; fields.scope_id.appendChild(option); }
-        if (state.scope === type && state.scopeId) fields.scope_id.value = String(state.scopeId);
-      } catch (error) { setPhase(`Could not load Paperless filters: ${error.message}`); }
+        const items = await fetchAllScopeOptions(type);
+        if (token !== state.scopeLoadToken || fields.scope.value !== type) return;
+        state.scopeOptions = items;
+        state.scopeOptionType = type;
+        fields.scope_query.disabled = false;
+        fields.scope_query.placeholder = `Search ${scopeLabels[type].toLocaleLowerCase()}…`;
+        fields.scope_query.value = state.scope === type && state.scopeLabel ? state.scopeLabel : "";
+      } catch (error) {
+        if (token !== state.scopeLoadToken) return;
+        fields.scope_query.disabled = false;
+        fields.scope_query.placeholder = `Search ${scopeLabels[type].toLocaleLowerCase()}…`;
+        setPhase(`Could not load Paperless filters: ${error.message}`);
+      }
     }
 
     async function updateScopeUi(load = true) {
+      const docId = currentDocumentId();
       const docOption = [...fields.scope.options].find((option) => option.value === "document");
-      if (docOption) docOption.disabled = !currentDocumentId();
-      if (fields.scope.value === "document" && !currentDocumentId()) fields.scope.value = "all";
+      if (docOption) docOption.disabled = !docId;
+      if (fields.scope.value === "document" && !docId) {
+        fields.scope.value = "all";
+        state.scope = "all";
+        state.scopeId = null;
+        state.scopeLabel = null;
+      }
       if (load) await loadScopeOptions(fields.scope.value); else loadScopeOptions(fields.scope.value);
+    }
+
+    function syncDocumentContext() {
+      const docId = currentDocumentId();
+      if (docId === state.observedDocumentId) return;
+      state.observedDocumentId = docId;
+      updateScopeUi(false);
     }
 
     function renderIndex(payload) {
@@ -531,7 +659,7 @@
       state.open = true; shell.classList.remove("hidden");
       document.getElementById(BUTTON_ID)?.setAttribute("aria-expanded", "true");
       fillSettings(); renderMessages(); refreshModels();
-      q('[data-part="control-center"]').href = state.controlCenterUrl;
+      syncDocumentContext();
       await refreshConversations().catch((error) => setPhase(error.message));
       if (state.conversationId && state.conversations.some((item) => item.id === state.conversationId)) await loadConversation(state.conversationId).catch(() => newChat());
       if (state.indexTimer) clearTimeout(state.indexTimer); refreshIndex();
@@ -557,19 +685,64 @@
     q('[data-action="rebuild"]').addEventListener("click", () => indexAction("rebuild"));
     q('[data-action="pause"]').addEventListener("click", () => indexAction("pause"));
     q('[data-action="save-index-config"]').addEventListener("click", saveIndexConfig);
-    fields.scope.addEventListener("change", () => { state.scope = fields.scope.value; state.scopeId = null; updateScopeUi(); });
-    fields.scope_id.addEventListener("change", () => { state.scopeId = Number(fields.scope_id.value || 0) || null; state.scopeLabel = fields.scope_id.selectedOptions?.[0]?.textContent || null; });
+    fields.scope.addEventListener("change", () => {
+      state.scope = fields.scope.value;
+      state.scopeId = null;
+      state.scopeLabel = null;
+      updateScopeUi();
+    });
+    fields.scope_query.addEventListener("focus", () => renderScopeOptions(true));
+    fields.scope_query.addEventListener("input", () => {
+      if (fields.scope_query.value !== state.scopeLabel) {
+        state.scopeId = null;
+        state.scopeLabel = null;
+      }
+      state.scopeActiveIndex = -1;
+      renderScopeOptions(false);
+    });
+    fields.scope_query.addEventListener("keydown", (event) => {
+      if (!["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(event.key)) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeScopeOptions();
+        return;
+      }
+      const items = visibleScopeOptions(false);
+      if (!items.length) return;
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        state.scopeActiveIndex = Math.min(items.length - 1, state.scopeActiveIndex + 1);
+        renderScopeOptions(false);
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        state.scopeActiveIndex = Math.max(0, state.scopeActiveIndex <= 0 ? 0 : state.scopeActiveIndex - 1);
+        renderScopeOptions(false);
+      } else if (event.key === "Enter" && state.scopeActiveIndex >= 0) {
+        event.preventDefault();
+        selectScopeOption(items[state.scopeActiveIndex]);
+      }
+    });
+    fields.scope_query.addEventListener("blur", () => setTimeout(closeScopeOptions, 100));
     fields.question.addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } });
 
     fillSettings(); renderMessages(); renderIndex({ state: state.indexState, config: state.indexConfig });
-    return { open, close, toggle, isOpen: () => state.open, syncNav: () => addSettingsShortcut(state.controlCenterUrl), state };
+    return {
+      open, close, toggle, isOpen: () => state.open,
+      syncNav: () => addSettingsShortcut(state.controlCenterUrl),
+      syncContext: syncDocumentContext,
+      state,
+    };
   }
 
   async function start() {
     let boot; try { boot = await api("bootstrap"); } catch (_error) { return; }
     if (!boot?.ok) return;
     const panel = makePanel(boot);
-    const sync = () => { ensureButton(panel.toggle, panel.isOpen); panel.syncNav(); };
+    const sync = () => {
+      ensureButton(panel.toggle, panel.isOpen);
+      panel.syncNav();
+      panel.syncContext();
+    };
     new MutationObserver(sync).observe(document.documentElement, { childList: true, subtree: true });
     window.addEventListener("popstate", sync); window.addEventListener("hashchange", sync);
     sync();
