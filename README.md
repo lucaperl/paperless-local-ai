@@ -1,3 +1,6 @@
+> [!NOTE]
+> This project has been entirely vibe-coded. It works well in my setup, but bugs may still exist, so use it at your own discretion. Feedback, bug reports, and pull requests are very welcome.
+
 # paperless-local-ai
 
 **Local OCR, metadata automation and document chat for Paperless-ngx, designed for modest CPU-only hardware.**
@@ -11,9 +14,6 @@ It provides three first-class capabilities around an existing Paperless installa
 - **lightweight multi-turn document chat** with its own local SQLite RAG index and a chat panel inside Paperless.
 
 Paperless remains the document system of record and Ollama remains external. `paperless-local-ai` owns these AI pipelines and their runtime behavior while originals, searchable archives, document text and metadata stay in Paperless.
-
-> [!NOTE]
-> This project has been entirely vibe-coded. It works well in my setup, but bugs may still exist, so use it at your own discretion. Feedback, bug reports, and pull requests are very welcome.
 
 **[Try the live demo](https://lucaperl.github.io/paperless-local-ai/demo/)** - an interactive browser-only preview using synthetic Paperless, Ollama and OCR data.
 
