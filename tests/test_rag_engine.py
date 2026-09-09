@@ -106,10 +106,16 @@ def test_job_ids_reject_path_traversal():
 
 def test_embedding_query_uses_retrieval_instruction():
     rag = module()
-    text = rag.embedding_query_text(
-        "What is the notice period?",
-        [{"role": "user", "content": "Find my internet contract"}],
+    cfg = rag.validate_config({})
+    request = rag.validate_chat_request(
+        {
+            "question": "What is the notice period?",
+            "scope": "all",
+            "history": [{"role": "user", "content": "Find the relevant service agreement"}],
+        },
+        cfg,
     )
+    text = rag.embedding_query_text(request, cfg)
     assert text.startswith("Instruct: ")
     assert "personal document archive" in text
     assert "Previous user context:" in text
@@ -172,3 +178,62 @@ def test_generation_finish_metadata_marks_output_limit():
     }
     stopped = rag._generation_finish_metadata({"done_reason": "stop"}, settings)
     assert stopped["output_limit_reached"] is False
+
+def test_embedding_templates_and_retrieval_history_are_configurable():
+    rag = module()
+    cfg = rag.validate_config(
+        {
+            "embedding_query_template": "scope={{SEARCH_SCOPE}}\n{{CURRENT_QUESTION}}\n{{PREVIOUS_USER_CONTEXT}}",
+            "document_embedding_template": "Title: {{DOCUMENT_TITLE}}\n{{CHUNK}}",
+            "retrieval_history_turns": 1,
+        }
+    )
+    request = rag.validate_chat_request(
+        {
+            "question": "What does the agreement say?",
+            "scope": "all",
+            "history": [
+                {"role": "user", "content": "Old context that should be dropped"},
+                {"role": "assistant", "content": "Assistant text is never retrieval context"},
+                {"role": "user", "content": "Use the most recent service agreement"},
+            ],
+        },
+        cfg,
+    )
+    rendered = rag.embedding_query_text(request, cfg)
+    assert "What does the agreement say?" in rendered
+    assert "Use the most recent service agreement" in rendered
+    assert "Old context that should be dropped" not in rendered
+    assert "Assistant text is never retrieval context" not in rendered
+    prepared = {"id": 42, "title": "Sample Agreement", "created": "2026-01-15"}
+    assert rag.render_document_embedding_text(prepared, "Synthetic chunk text.", cfg) == "Title: Sample Agreement\nSynthetic chunk text."
+
+
+def test_default_structural_signature_remains_backward_compatible():
+    rag = module()
+    cfg = rag.validate_config({})
+    assert rag.config_signature(cfg) == {
+        "chunking_version": rag.CHUNKING_VERSION,
+        "embedding_model": "qwen3-embedding:4b-q4_K_M",
+        "chunk_target_chars": 2000,
+        "chunk_overlap_chars": 400,
+    }
+    cfg["embedding_dimensions"] = 1024
+    assert rag.config_signature(cfg)["embedding_dimensions"] == 1024
+
+
+def test_advanced_generation_settings_are_optional_and_validated():
+    rag = module()
+    settings = rag._validate_chat_settings(
+        {
+            "model": "example:latest", "think": "medium", "num_ctx": 8192, "top_k": 5,
+            "temperature": 0.1, "num_predict": 512, "sampler_top_k": 40,
+            "top_p": 0.9, "min_p": 0.05, "repeat_penalty": 1.1,
+            "repeat_last_n": 64, "seed": 42, "stop": ["END"],
+        }
+    )
+    assert settings["think"] == "medium"
+    assert settings["sampler_top_k"] == 40
+    assert settings["stop"] == ["END"]
+    with pytest.raises(ValueError):
+        rag._validate_chat_settings({**settings, "top_p": 2.0})

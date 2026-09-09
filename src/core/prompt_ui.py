@@ -83,7 +83,7 @@ HTML = r'''<!doctype html>
 .card{background:linear-gradient(180deg,#131c29,#101823);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}.panel{padding:18px}.panel+.panel{margin-top:14px}.hero-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:18px}.metric-card{padding:18px}.metric-title{font-size:15px;font-weight:700}.metric-value{font-size:14px;margin-top:10px}.metric-detail{margin-top:4px;color:var(--muted);font-size:12px}.good-text{color:var(--green)!important}.warn-text{color:var(--orange)!important}.bad-text{color:var(--red)!important}.section-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}.section{padding:18px}.section h2,.panel h2,.panel h3{margin-top:0}.section p,.panel>p{color:var(--muted)}.kv{display:grid;grid-template-columns:1fr auto;gap:10px;padding:10px 0;border-bottom:1px solid #202c3d}.kv:last-child{border-bottom:0}.kv span:first-child{color:var(--muted)}
 .flow{display:grid;gap:0;margin-top:16px}.flow-row{display:grid;grid-template-columns:32px 1fr;gap:12px;position:relative}.flow-row:not(:last-child)::before{content:"";position:absolute;left:15px;top:31px;bottom:-7px;width:2px;background:#29405b}.flow-dot{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#12253a;border:1px solid #2a4c70;color:var(--blue);font-size:12px;z-index:1}.flow-row.local .flow-dot{background:#123022;border-color:#28563e;color:var(--green)}.flow-copy{padding:5px 0 18px}.flow-title{font-weight:650}.flow-desc{color:var(--muted);font-size:12px;margin-top:2px}
 .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}.btn{border:1px solid var(--line2);background:#182434;color:var(--text);padding:9px 13px;border-radius:8px}.btn:hover{background:#1d2b3e}.btn.primary{background:#2460aa;border-color:#3275c6}.btn.good{background:#173925;border-color:#2a6742;color:#eafff0}.toolbar-status{margin-left:auto;color:var(--muted);font-size:12px}.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0;border-bottom:1px solid var(--line);padding-bottom:9px}.tab{border:1px solid transparent;background:transparent;color:var(--muted);padding:8px 11px;border-radius:8px}.tab:hover{background:#121c29;color:var(--text)}.tab.active{background:#1a2a3e;border-color:#2c425d;color:var(--text)}.tab-page{display:none}.tab-page.active{display:block}
-.section-help{border:1px solid var(--line);background:#0e1722;border-radius:9px;margin:0 0 14px;overflow:hidden}.section-help summary{cursor:pointer;list-style:none;padding:10px 12px;color:#c5d1df;font-size:12px;font-weight:650}.section-help summary::-webkit-details-marker{display:none}.section-help[open] summary{border-bottom:1px solid var(--line)}.help-body{padding:11px 12px;color:var(--muted);font-size:12px;line-height:1.55}.action-note{display:flex;gap:9px;align-items:flex-start;margin:10px 0 14px;padding:10px 12px;border-radius:9px;border:1px solid #35506d;background:#101b29;color:#cbd8e6;font-size:12px}.action-note strong{color:#fff}
+.section-help{border:1px solid var(--line);background:#0e1722;border-radius:9px;margin:0 0 14px;overflow:hidden}.section-help summary{cursor:pointer;list-style:none;padding:10px 12px;color:#c5d1df;font-size:12px;font-weight:650}.section-help summary::-webkit-details-marker{display:none}.section-help[open] summary{border-bottom:1px solid var(--line)}.help-body{padding:11px 12px;color:var(--muted);font-size:12px;line-height:1.55}.action-note{display:flex;gap:9px;align-items:flex-start;margin:10px 0 14px;padding:10px 12px;border-radius:9px;border:1px solid #35506d;background:#101b29;color:#cbd8e6;font-size:12px}.action-note strong{color:#fff}.advanced-panel{margin-top:14px;border:1px solid var(--line);border-radius:10px;background:#0e1722;overflow:hidden}.advanced-panel>summary{cursor:pointer;padding:11px 13px;color:#d3deea;font-size:12px;font-weight:700}.advanced-body{padding:13px;border-top:1px solid var(--line)}.info-dot{display:inline-grid;place-items:center;width:16px;height:16px;margin-left:4px;border:1px solid #465b75;border-radius:50%;color:#9fb2c8;font-size:10px;font-weight:800;cursor:help;vertical-align:middle}.compact-textarea{min-height:110px}.tiny-textarea{min-height:72px}.template-actions{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:7px}.template-actions .btn{padding:6px 9px;font-size:11px}.compact-preview{min-height:0;max-height:220px;margin-top:9px}.mini-details{margin-top:8px}.mini-details summary{cursor:pointer;color:#9fb2c8;font-size:11px}.mini-details .help-body{padding:8px 0 0}.rebuild-note{margin-top:10px;color:var(--orange);font-size:11px}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.form-grid.three{grid-template-columns:repeat(3,1fr)}.field label{display:block;color:#b7c2d1;margin-bottom:6px;font-size:12px}.field-help{color:var(--muted);font-size:11px;margin-top:5px}input,textarea,select{width:100%;border:1px solid var(--line);background:#0b121b;color:var(--text);border-radius:8px;padding:9px 10px;outline:none}input:focus,textarea:focus,select:focus{border-color:#4b77a8;box-shadow:0 0 0 3px rgba(75,119,168,.14)}textarea{min-height:230px;resize:vertical;line-height:1.45}.split{display:grid;grid-template-columns:1fr 1fr;gap:14px}.test-row{display:grid;grid-template-columns:220px auto auto 1fr;gap:10px;align-items:end}.result{margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:14px}.primary-result{grid-column:1/-1}.preview{background:#091019;border:1px solid var(--line);border-radius:8px;padding:12px;min-height:180px;max-height:620px;white-space:pre-wrap;overflow:auto;font-size:12px;color:#ced8e4}.status-box{padding:9px 11px;border-radius:8px;background:#111b28;border:1px solid var(--line);color:var(--muted);white-space:pre-wrap}.status-box.good{color:var(--green);border-color:#28563e}.status-box.warn{color:var(--orange);border-color:#6a5127}.status-box.bad{color:var(--red);border-color:#6b2f38}.result-summary{padding:12px;border:1px solid var(--line);border-radius:9px;background:#0d1520}.result-state{font-weight:700;margin-bottom:10px}.result-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.result-field{padding:8px 9px;border:1px solid #263448;border-radius:8px;background:#0b121b}.result-field span{display:block;color:var(--muted);font-size:11px;margin-bottom:3px}.history-item{display:grid;grid-template-columns:90px 1fr 180px auto;gap:10px;align-items:center;padding:11px 0;border-bottom:1px solid #202c3d}.connection-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}.connection{padding:16px}.placeholder-grid{display:grid;grid-template-columns:repeat(2,minmax(260px,1fr));gap:8px;margin-top:10px}.placeholder-item{background:#0d1520;border:1px solid var(--line);border-radius:8px;padding:10px}.placeholder-item code{display:block;color:var(--blue);font-size:12px;margin-bottom:4px}.placeholder-item span{color:var(--muted);font-size:11px}
 .strategy-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.strategy-card{display:block;border:1px solid var(--line2);background:#0d1520;border-radius:11px;padding:16px;cursor:pointer;position:relative}.strategy-card:has(input:checked){border-color:#4f8bd1;background:#10223a;box-shadow:0 0 0 2px rgba(107,168,255,.08)}.strategy-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.strategy-title{display:flex;align-items:center;gap:9px;font-weight:750}.strategy-title input{width:auto}.strategy-copy{margin-top:9px;color:var(--muted);font-size:12px;line-height:1.55}.strategy-best{margin-top:9px;color:#cbd8e6;font-size:12px}.badge-rec{padding:4px 7px;border-radius:999px;border:1px solid #28563e;color:var(--green);background:#10271c;font-size:10px;font-weight:700;white-space:nowrap}.badge-model{padding:4px 7px;border-radius:999px;border:1px solid #3a4d66;color:#b7c8da;background:#111b28;font-size:10px;font-weight:700;white-space:nowrap}
 .health-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px}.health-metric{padding:12px;background:#0d1520;border:1px solid var(--line);border-radius:9px}.health-metric span{display:block;color:var(--muted);font-size:11px}.health-metric strong{display:block;font-size:18px;margin-top:4px}.tag-table{width:100%;border-collapse:collapse;margin-top:8px}.tag-table th,.tag-table td{text-align:left;padding:8px;border-bottom:1px solid #202c3d;font-size:12px}.tag-table th{color:var(--muted);font-weight:600}.guidance-list{display:grid;gap:8px}.guidance-item{border:1px solid var(--line);border-radius:9px;background:#0d1520;overflow:hidden}.guidance-item summary{cursor:pointer;padding:11px 12px;display:flex;align-items:center;justify-content:space-between;gap:12px}.guidance-item .guidance-body{padding:0 12px 12px}.guidance-item textarea{min-height:100px}.guidance-state{color:var(--muted);font-size:11px}.inconsistency{padding:11px 0;border-bottom:1px solid #202c3d}.inconsistency:last-child{border-bottom:0}.inconsistency-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.tag-chip{padding:3px 7px;border-radius:999px;border:1px solid #3a4d66;background:#111b28;color:#c9d4e0;font-size:10px}.doc-list{margin:8px 0 0;padding-left:20px;color:var(--muted);font-size:11px}.separate-note{border-left:3px solid #4c6f99;padding:9px 11px;background:#0d1722;color:#b9c8d8;font-size:12px;margin:10px 0 14px}
@@ -231,54 +231,69 @@ HTML = r'''<!doctype html>
 
 
 <section class="page" id="page-document-chat">
-  <div class="page-head"><div><h1>Document Chat</h1><p>Global RAG prompt and index administration. Per-chat model and generation settings stay in the Paperless chat popup.</p></div><div id="ragConfigStatus" class="config-badge">Loading…</div></div>
+  <div class="page-head"><div><h1>Document Chat</h1><p>Global defaults, retrieval, embedding and index controls.</p></div><div id="ragConfigStatus" class="config-badge">Loading…</div></div>
   <div class="toolbar"><button id="ragSaveBtn" class="btn primary">Save RAG settings</button><span id="ragSaveStatus" class="toolbar-status">Loading configuration…</span></div>
 
   <div class="card panel">
-    <h2>System prompt</h2>
-    <p>This is the complete system prompt used by Document Chat. It is fully editable; no hidden immutable system prompt is added.</p>
-    <div class="field">
-      <label for="ragSystemPrompt">System prompt</label>
-      <textarea id="ragSystemPrompt" class="mono" style="min-height:300px"></textarea>
-      <div class="field-help">Variables are rendered fresh for every chat turn.</div>
+    <h2>Chat defaults</h2>
+    <div class="form-grid">
+      <div class="field"><label for="ragChatModel">Chat model</label><input id="ragChatModel" class="mono"></div>
+      <div class="field"><label for="ragTimezone">Timezone</label><input id="ragTimezone" class="mono" value="Europe/Berlin"></div>
     </div>
-    <div class="form-grid" style="margin-top:14px">
-      <div class="field"><label for="ragTimezone">Timezone</label><input id="ragTimezone" class="mono" value="Europe/Berlin"><div class="field-help">IANA timezone used by date/time variables.</div></div>
-      <div class="field" style="display:flex;align-items:end"><button id="ragResetPromptBtn" class="btn" type="button">Reset prompt to default</button></div>
-    </div>
-    <details class="section-help" style="margin-top:14px">
-      <summary>Available system-prompt variables</summary>
-      <div class="help-body"><div id="ragPlaceholderGrid" class="placeholder-grid"></div></div>
-    </details>
+    <div class="field" style="margin-top:14px"><label for="ragSystemPrompt">System prompt <span class="info-dot" title="The complete Document Chat system prompt. It is fully editable; PLAI does not add a hidden immutable system prompt.">i</span></label><textarea id="ragSystemPrompt" class="mono compact-textarea"></textarea><div class="template-actions"><button id="ragResetPromptBtn" class="btn" type="button">Reset</button></div><details class="mini-details"><summary>Variables</summary><div class="help-body"><div id="ragPlaceholderGrid" class="placeholder-grid"></div></div></details></div>
+    <details class="advanced-panel"><summary>Advanced chat & generation settings</summary><div class="advanced-body">
+      <div class="form-grid three">
+        <div class="field"><label for="ragThink">Thinking <span class="info-dot" title="Model-specific. Low, medium, high and max are only supported by compatible Ollama models.">i</span></label><select id="ragThink"><option value="auto">Auto</option><option value="off">Off</option><option value="on">On</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="max">Max</option></select></div>
+        <div class="field"><label for="ragNumCtx">Context size</label><input id="ragNumCtx" type="number" min="2048" max="131072" step="1024"></div>
+        <div class="field"><label for="ragTemperature">Temperature</label><input id="ragTemperature" type="number" min="0" max="2" step="0.1"></div>
+        <div class="field"><label for="ragNumPredict">Max output tokens</label><input id="ragNumPredict" type="number" min="64" max="4096" step="64"></div>
+        <div class="field"><label for="ragSamplerTopK">Sampler Top-K <span class="info-dot" title="Generation sampler Top-K, not Retrieval Top-K. Model-specific behavior. Leave blank to use the model default.">i</span></label><input id="ragSamplerTopK" type="number" min="0" max="1000" step="1" placeholder="Model default"></div>
+        <div class="field"><label for="ragTopP">Top-P <span class="info-dot" title="Model-specific generation sampler. Leave blank to use the model default.">i</span></label><input id="ragTopP" type="number" min="0" max="1" step="0.01" placeholder="Model default"></div>
+        <div class="field"><label for="ragMinP">Min-P <span class="info-dot" title="Model-specific generation sampler. Leave blank to use the model default.">i</span></label><input id="ragMinP" type="number" min="0" max="1" step="0.01" placeholder="Model default"></div>
+        <div class="field"><label for="ragRepeatPenalty">Repeat penalty <span class="info-dot" title="Model-specific generation option. Leave blank to use the model default.">i</span></label><input id="ragRepeatPenalty" type="number" min="0" max="10" step="0.01" placeholder="Model default"></div>
+        <div class="field"><label for="ragRepeatLastN">Repeat last N <span class="info-dot" title="Model-specific generation option. -1 means the context size in Ollama. Leave blank for the model default.">i</span></label><input id="ragRepeatLastN" type="number" min="-1" max="131072" step="1" placeholder="Model default"></div>
+        <div class="field"><label for="ragSeed">Seed <span class="info-dot" title="Generation seed. Leave blank to use the model default.">i</span></label><input id="ragSeed" type="number" min="0" max="2147483647" step="1" placeholder="Model default"></div>
+      </div>
+      <div class="field" style="margin-top:14px"><label for="ragStop">Stop sequences <span class="info-dot" title="Model-specific. One stop sequence per line; leave empty to use the model's own defaults.">i</span></label><textarea id="ragStop" class="mono tiny-textarea" placeholder="One sequence per line"></textarea></div>
+    </div></details>
   </div>
 
-  <div class="card panel">
-    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
-      <div><h2 style="margin-bottom:4px">RAG index</h2><p style="margin-top:0">Index settings are global. Model or chunking changes require a rebuild; batch, slice and sync tuning do not invalidate the active index.</p></div>
-      <div id="ragIndexBadge" class="config-badge">Loading…</div>
-    </div>
-    <div id="ragIndexDetail" class="status-box">Loading index state…</div>
-    <div class="form-grid" style="margin-top:14px">
-      <div class="field"><label for="ragEmbeddingModel">Embedding model</label><input id="ragEmbeddingModel" class="mono"></div>
-      <div class="field"><label for="ragSyncInterval">Sync interval (seconds)</label><input id="ragSyncInterval" type="number" min="60" max="86400" step="60"></div>
-      <div class="field"><label for="ragChunkTarget">Chunk target (characters)</label><input id="ragChunkTarget" type="number" min="1000" max="20000" step="100"></div>
-      <div class="field"><label for="ragChunkOverlap">Chunk overlap (characters)</label><input id="ragChunkOverlap" type="number" min="0" max="19999" step="100"></div>
-      <div class="field"><label for="ragBatchSize">Embedding batch size</label><input id="ragBatchSize" type="number" min="1" max="64" step="1"></div>
-      <div class="field"><label for="ragSliceSize">Embedding slice size</label><input id="ragSliceSize" type="number" min="1" max="256" step="1"></div>
-    </div>
-    <div class="toolbar" style="margin-top:16px;margin-bottom:0">
-      <button id="ragSyncBtn" class="btn" type="button">Sync</button>
-      <button id="ragRebuildBtn" class="btn" type="button">Rebuild</button>
-      <button id="ragPauseBtn" class="btn" type="button">Pause</button>
-      <span id="ragActionStatus" class="toolbar-status"></span>
-    </div>
+  <div class="card panel"><h2>Retrieval</h2><div class="form-grid"><div class="field"><label for="ragRetrievalTopK">Retrieval Top-K <span class="info-dot" title="Maximum number of retrieved chunks passed to the chat model. This is separate from generation Sampler Top-K.">i</span></label><input id="ragRetrievalTopK" type="number" min="1" max="12" step="1"></div></div>
+    <details class="advanced-panel"><summary>Advanced retrieval settings</summary><div class="advanced-body"><div class="form-grid three">
+      <div class="field"><label for="ragHistoryTurns">Previous user turns</label><input id="ragHistoryTurns" type="number" min="0" max="8" step="1"></div>
+      <div class="field"><label for="ragMinSimilarity">Minimum similarity <span class="info-dot" title="Embedding-model-specific cosine threshold. Leave blank to disable filtering.">i</span></label><input id="ragMinSimilarity" type="number" min="-1" max="1" step="0.01" placeholder="Disabled"></div>
+      <div class="field"><label for="ragMaxChunksPerDoc">Max chunks per document</label><input id="ragMaxChunksPerDoc" type="number" min="1" max="64" step="1" placeholder="Unlimited"></div>
+    </div></div></details>
   </div>
+
+  <div class="card panel"><h2>Embedding & index</h2><div class="form-grid three">
+    <div class="field"><label for="ragEmbeddingModel">Embedding model <span class="info-dot" title="Model-specific. Changing the model requires an index rebuild.">i</span></label><input id="ragEmbeddingModel" class="mono"></div>
+    <div class="field"><label for="ragChunkTarget">Chunk target (characters)</label><input id="ragChunkTarget" type="number" min="1000" max="20000" step="100"></div>
+    <div class="field"><label for="ragChunkOverlap">Chunk overlap (characters)</label><input id="ragChunkOverlap" type="number" min="0" max="19999" step="100"></div>
+  </div>
+    <details class="advanced-panel"><summary>Advanced embedding settings</summary><div class="advanced-body">
+      <div class="field"><label for="ragQueryTemplate">Embedding query template <span class="info-dot" title="Model-specific. The built-in default is designed for Qwen3-Embedding and follows its recommended query-side instruction format. Other embedding models may require a different prefix, template, or no instruction.">i</span></label><textarea id="ragQueryTemplate" class="mono compact-textarea"></textarea><div class="template-actions"><button id="ragQueryPreviewBtn" class="btn" type="button">Preview</button><button id="ragResetQueryTemplateBtn" class="btn" type="button">Reset</button></div><details class="mini-details"><summary>Variables</summary><div class="help-body"><div id="ragQueryPlaceholderGrid" class="placeholder-grid"></div></div></details><pre id="ragQueryPreview" class="preview compact-preview" style="display:none"></pre></div>
+      <div class="field" style="margin-top:16px"><label for="ragDocumentTemplate">Document embedding template <span class="info-dot" title="Model-specific. Qwen3-Embedding uses the plain chunk by default. Other embedding models may recommend prefixes or metadata. This changes corpus vectors and requires a rebuild.">i</span></label><textarea id="ragDocumentTemplate" class="mono compact-textarea"></textarea><div class="template-actions"><button id="ragDocumentPreviewBtn" class="btn" type="button">Preview</button><button id="ragResetDocumentTemplateBtn" class="btn" type="button">Reset</button></div><details class="mini-details"><summary>Variables</summary><div class="help-body"><div id="ragDocumentPlaceholderGrid" class="placeholder-grid"></div></div></details><pre id="ragDocumentPreview" class="preview compact-preview" style="display:none"></pre></div>
+      <div class="form-grid three" style="margin-top:16px">
+        <div class="field"><label for="ragEmbeddingDimensions">Embedding dimensions <span class="info-dot" title="Model-specific. Leave blank for the model's native dimension. Custom dimensions require model support, such as MRL/Matryoshka support, and an index rebuild.">i</span></label><input id="ragEmbeddingDimensions" type="number" min="1" max="65536" step="1" placeholder="Native"></div>
+        <div class="field"><label for="ragQueryTruncate">Query truncate <span class="info-dot" title="If enabled, Ollama truncates query inputs that exceed the embedding context. If disabled, Ollama returns an error instead.">i</span></label><select id="ragQueryTruncate"><option value="true">On</option><option value="false">Off</option></select></div>
+        <div class="field"><label for="ragDocumentTruncate">Document truncate <span class="info-dot" title="If changed, corpus embedding behavior changes and the index must be rebuilt.">i</span></label><select id="ragDocumentTruncate"><option value="true">On</option><option value="false">Off</option></select></div>
+        <div class="field"><label for="ragEmbeddingNumCtx">Embedding context <span class="info-dot" title="Model-specific Ollama num_ctx override for embeddings. Leave blank for automatic/model default. Changing it requires a rebuild.">i</span></label><input id="ragEmbeddingNumCtx" type="number" min="512" max="131072" step="512" placeholder="Auto"></div>
+        <div class="field"><label for="ragBatchSize">Embedding batch size</label><input id="ragBatchSize" type="number" min="1" max="64" step="1"></div>
+        <div class="field"><label for="ragSliceSize">Embedding slice size</label><input id="ragSliceSize" type="number" min="1" max="256" step="1"></div>
+        <div class="field"><label for="ragSyncInterval">Sync interval (seconds)</label><input id="ragSyncInterval" type="number" min="60" max="86400" step="60"></div>
+      </div><div class="rebuild-note">Structural embedding changes are saved immediately but only become active after a rebuild.</div>
+    </div></details>
+  </div>
+
+  <div class="card panel"><div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start"><h2 style="margin:0">Index status</h2><div id="ragIndexBadge" class="config-badge">Loading…</div></div><div id="ragIndexDetail" class="status-box" style="margin-top:14px">Loading index state…</div><div class="toolbar" style="margin-top:16px;margin-bottom:0"><button id="ragSyncBtn" class="btn" type="button">Sync</button><button id="ragRebuildBtn" class="btn" type="button">Rebuild</button><button id="ragPauseBtn" class="btn" type="button">Pause</button><span id="ragActionStatus" class="toolbar-status"></span></div></div>
 </section>
 
 </div></main></div>
 <script>
 let currentConfig=null,currentAppConfig=null,currentTaxonomy=[],currentHistoryStatus=null,paperlessUiReady=false,paperlessUiSetup=null;let classPromptPresets={};
-let currentRagConfig=null,currentRagState=null,ragDefaultSystemPrompt="";
+let currentRagConfig=null,currentRagState=null,ragDefaultSystemPrompt="",ragDefaultQueryTemplate="",ragDefaultDocumentTemplate="";
+let ragQueryPlaceholders=[],ragDocumentPlaceholders=[];
 const $=id=>document.getElementById(id);const esc=v=>String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 async function api(path,opts={}){const r=await fetch(path,{headers:{'Content-Type':'application/json'},...opts});const t=await r.text();let data;try{data=JSON.parse(t)}catch{data={error:t}}if(!r.ok)throw new Error(data.error||`${r.status} ${r.statusText}`);return data}
 function setStatus(id,msg,ok=true){const el=$(id);if(!el)return;el.textContent=msg;el.classList.toggle('good-text',ok);el.classList.toggle('bad-text',!ok);el.classList.toggle('good',ok&&el.classList.contains('status-box'));el.classList.toggle('bad',!ok&&el.classList.contains('status-box'))}
@@ -331,108 +346,30 @@ $('appPaperlessUiToggleBtn').onclick=async()=>{const enabled=!!currentAppConfig?
 async function loadHistory(){try{const r=await api('/api/history');renderHistory(r.items||[],'historyList','restoreHistory')}catch(e){$('historyList').textContent=e.message}}window.restoreHistory=async file=>{if(!confirm('Restore this classification version as a new current version?'))return;const r=await api('/api/history/restore',{method:'POST',body:JSON.stringify({file})});fill(r.config);await loadHistory();await loadTagging();setStatus('saveStatus',`Restored and saved as v${r.config.version}`)};$('historyRefresh').onclick=loadHistory;
 async function refreshAppHistory(){const r=await api('/api/app/history');renderAppHistory(r.items||[])}window.restoreAppHistory=async file=>{if(!confirm('Restore these app settings as a new current version?'))return;const r=await api('/api/app/history/restore',{method:'POST',body:JSON.stringify({file})});appFill(r.config,r.token_configured);renderAppHistory(r.history||[]);await checkPaperlessUiSetup();await loadTagging()};$('appHistoryRefresh').onclick=()=>refreshAppHistory().catch(e=>setStatus('appSaveStatus',e.message,false));
 
-function ragDraft(){
-  return {
-    embedding_model:$('ragEmbeddingModel').value.trim(),
-    chunk_target_chars:Number($('ragChunkTarget').value),
-    chunk_overlap_chars:Number($('ragChunkOverlap').value),
-    embedding_batch_size:Number($('ragBatchSize').value),
-    embedding_slice_chunks:Number($('ragSliceSize').value),
-    sync_interval_seconds:Number($('ragSyncInterval').value),
-    system_prompt:$('ragSystemPrompt').value,
-    timezone:$('ragTimezone').value.trim()
-  };
-}
-function renderRagPlaceholders(names){
-  const grid=$('ragPlaceholderGrid');if(!grid)return;grid.innerHTML='';
-  const descriptions={
-    CURRENT_DATE:'Current local date (YYYY-MM-DD)',CURRENT_TIME:'Current local time (HH:MM)',
-    CURRENT_DATETIME:'Current local date and time',CURRENT_WEEKDAY:'Current weekday name',
-    CURRENT_YEAR:'Current year',TIMEZONE:'Configured IANA timezone',
-    USERNAME:'Authenticated Paperless username',USER_ID:'Authenticated Paperless user ID',
-    CHAT_MODEL:'Selected chat model',CONTEXT_SIZE:'Selected context size',
-    RETRIEVAL_TOP_K:'Selected retrieval Top-K',SEARCH_SCOPE:'Current search scope and label',
-    CURRENT_DOCUMENT_ID:'Current document ID, otherwise empty'
-  };
-  for(const name of names||[]){
-    const item=document.createElement('div');item.className='placeholder-item';
-    const code=document.createElement('code');code.textContent=`{{${name}}}`;
-    const desc=document.createElement('span');desc.textContent=descriptions[name]||'Dynamic chat value.';
-    item.append(code,desc);grid.appendChild(item);
-  }
-}
-function renderRagState(state){
-  currentRagState=state||{};
-  const s=currentRagState;
-  let badge=s.index_exists?`${s.indexed_documents||0} docs · ${s.indexed_chunks||0} chunks`:'Not built';
-  if(s.running)badge=`${s.operation||'index'}: ${s.phase||'running'}`;
-  if(s.paused)badge='Paused';
-  if(s.rebuild_required)badge+=' · rebuild required';
-  $('ragIndexBadge').textContent=badge;
-  const parts=[
-    `State: ${s.phase||'unknown'}`,
-    `Documents: ${s.indexed_documents||0}/${s.total||s.indexed_documents||0}`,
-    `Chunks: ${s.indexed_chunks||0}`,
-    s.last_build?`Last build: ${s.last_build}`:null,
-    s.last_sync?`Last sync: ${s.last_sync}`:null,
-    s.last_error?`Error: ${s.last_error}`:null
-  ].filter(Boolean);
-  $('ragIndexDetail').textContent=parts.join(' · ');
-  $('ragIndexDetail').className=`status-box${s.last_error?' bad':(s.index_exists?' good':' warn')}`;
-  $('ragPauseBtn').textContent=s.paused?'Resume':'Pause';
-}
-function fillRag(config,state){
-  currentRagConfig=config||{};
-  $('ragSystemPrompt').value=currentRagConfig.system_prompt??'';
-  $('ragTimezone').value=currentRagConfig.timezone||'Europe/Berlin';
-  $('ragEmbeddingModel').value=currentRagConfig.embedding_model||'';
-  $('ragChunkTarget').value=currentRagConfig.chunk_target_chars??2000;
-  $('ragChunkOverlap').value=currentRagConfig.chunk_overlap_chars??400;
-  $('ragBatchSize').value=currentRagConfig.embedding_batch_size??1;
-  $('ragSliceSize').value=currentRagConfig.embedding_slice_chunks??16;
-  $('ragSyncInterval').value=currentRagConfig.sync_interval_seconds??900;
-  $('ragConfigStatus').textContent='RAG config loaded';
-  renderRagState(state);
-}
-async function loadRag(){
-  try{
-    const r=await api('/api/control/rag/bootstrap');
-    ragDefaultSystemPrompt=r.default_system_prompt||'';
-    renderRagPlaceholders(r.placeholders||[]);
-    fillRag(r.config,r.state);
-    setStatus('ragSaveStatus','Saved RAG configuration loaded.');
-  }catch(e){setStatus('ragSaveStatus',e.message,false)}
-}
-async function refreshRagStatus(){
-  try{
-    const r=await api('/api/control/rag/bootstrap');
-    currentRagConfig=r.config||currentRagConfig;
-    renderRagState(r.state);
-  }catch(e){setStatus('ragActionStatus',e.message,false)}
-}
-async function saveRag(){
-  try{
-    const r=await api('/api/control/rag/config',{method:'POST',body:JSON.stringify(ragDraft())});
-    fillRag(r.config,r.state);
-    setStatus('ragSaveStatus',r.state?.rebuild_required?'Saved · active index remains usable, rebuild required.':'Saved · active.');
-  }catch(e){setStatus('ragSaveStatus',e.message,false)}
-}
-async function ragIndexAction(action){
-  if(action==='rebuild'&&!confirm('Rebuild the complete PLAI RAG index? Paperless documents are not modified, and the active index remains usable until activation.'))return;
-  try{
-    setStatus('ragActionStatus',action==='pause'?(currentRagState?.paused?'Resuming…':'Pausing…'):`Starting ${action}…`);
-    await api(`/api/control/rag/index/${action}`,{method:'POST',body:'{}'});
-    await refreshRagStatus();
-  }catch(e){setStatus('ragActionStatus',e.message,false)}
-}
-$('ragSaveBtn').onclick=saveRag;
-$('ragResetPromptBtn').onclick=()=>{if(confirm('Reset the editable Document Chat system prompt to the built-in default? You still need to Save RAG settings.')){$('ragSystemPrompt').value=ragDefaultSystemPrompt;setStatus('ragSaveStatus','Default prompt loaded · not saved yet.')}};
-$('ragSyncBtn').onclick=()=>ragIndexAction('sync');
-$('ragRebuildBtn').onclick=()=>ragIndexAction('rebuild');
-$('ragPauseBtn').onclick=()=>ragIndexAction('pause');
-for(const id of ['ragSystemPrompt','ragTimezone','ragEmbeddingModel','ragChunkTarget','ragChunkOverlap','ragBatchSize','ragSliceSize','ragSyncInterval']){
-  $(id).addEventListener('input',()=>markUnsaved('ragSaveStatus'));
-}
+function optionalNumber(id){const raw=$(id).value.trim();return raw===''?null:Number(raw)}
+function stopDraft(){return $('ragStop').value.split(/\r?\n/).filter(x=>x.length>0)}
+function ragDraft(){return {
+  embedding_model:$('ragEmbeddingModel').value.trim(),embedding_query_template:$('ragQueryTemplate').value,document_embedding_template:$('ragDocumentTemplate').value,
+  embedding_dimensions:optionalNumber('ragEmbeddingDimensions'),query_truncate:$('ragQueryTruncate').value==='true',document_truncate:$('ragDocumentTruncate').value==='true',embedding_num_ctx:optionalNumber('ragEmbeddingNumCtx'),
+  chunk_target_chars:Number($('ragChunkTarget').value),chunk_overlap_chars:Number($('ragChunkOverlap').value),embedding_batch_size:Number($('ragBatchSize').value),embedding_slice_chunks:Number($('ragSliceSize').value),sync_interval_seconds:Number($('ragSyncInterval').value),
+  retrieval_history_turns:Number($('ragHistoryTurns').value),retrieval_min_similarity:optionalNumber('ragMinSimilarity'),max_chunks_per_document:optionalNumber('ragMaxChunksPerDoc'),system_prompt:$('ragSystemPrompt').value,timezone:$('ragTimezone').value.trim(),
+  chat_defaults:{model:$('ragChatModel').value.trim(),think:$('ragThink').value,num_ctx:Number($('ragNumCtx').value),top_k:Number($('ragRetrievalTopK').value),temperature:Number($('ragTemperature').value),num_predict:Number($('ragNumPredict').value),sampler_top_k:optionalNumber('ragSamplerTopK'),top_p:optionalNumber('ragTopP'),min_p:optionalNumber('ragMinP'),repeat_penalty:optionalNumber('ragRepeatPenalty'),repeat_last_n:optionalNumber('ragRepeatLastN'),seed:optionalNumber('ragSeed'),stop:stopDraft()}
+}}
+function renderPlaceholderGrid(id,names,descriptions={}){const grid=$(id);if(!grid)return;grid.innerHTML='';for(const name of names||[]){const item=document.createElement('div');item.className='placeholder-item';const code=document.createElement('code');code.textContent=`{{${name}}}`;const desc=document.createElement('span');desc.textContent=descriptions[name]||'Dynamic value.';item.append(code,desc);grid.appendChild(item)}}
+function renderRagPlaceholders(names){renderPlaceholderGrid('ragPlaceholderGrid',names,{CURRENT_DATE:'Current local date (YYYY-MM-DD)',CURRENT_TIME:'Current local time (HH:MM)',CURRENT_DATETIME:'Current local date and time',CURRENT_WEEKDAY:'Current weekday name',CURRENT_YEAR:'Current year',TIMEZONE:'Configured IANA timezone',USERNAME:'Authenticated Paperless username',USER_ID:'Authenticated Paperless user ID',CHAT_MODEL:'Selected chat model',CONTEXT_SIZE:'Selected context size',RETRIEVAL_TOP_K:'Selected retrieval Top-K',SEARCH_SCOPE:'Current search scope and label',CURRENT_DOCUMENT_ID:'Current document ID, otherwise empty'})}
+function renderEmbeddingPlaceholders(){renderPlaceholderGrid('ragQueryPlaceholderGrid',ragQueryPlaceholders,{RETRIEVAL_QUERY:'Current question plus configured previous user turns',CURRENT_QUESTION:'Current question only',PREVIOUS_USER_CONTEXT:'Previous user turns only',SEARCH_SCOPE:'Current search scope'});renderPlaceholderGrid('ragDocumentPlaceholderGrid',ragDocumentPlaceholders,{CHUNK:'Raw indexed text chunk',DOCUMENT_TITLE:'Paperless document title',DOCUMENT_CREATED:'Paperless created date',DOCUMENT_ID:'Paperless document ID'})}
+function renderTemplate(template,values){return String(template||'').replace(/{{\s*([A-Z0-9_]+)\s*}}/g,(match,name)=>Object.prototype.hasOwnProperty.call(values,name)?values[name]:match)}
+function previewQueryTemplate(){const question='What is the notice period in my service contract?';const previous='Find the relevant service agreement.';const retrieval=`Previous user context:\n${previous}\nCurrent question:\n${question}`;$('ragQueryPreview').textContent=renderTemplate($('ragQueryTemplate').value,{RETRIEVAL_QUERY:retrieval,CURRENT_QUESTION:question,PREVIOUS_USER_CONTEXT:previous,SEARCH_SCOPE:'all documents'});$('ragQueryPreview').style.display='block'}
+function previewDocumentTemplate(){$('ragDocumentPreview').textContent=renderTemplate($('ragDocumentTemplate').value,{CHUNK:'This is a synthetic document passage used only for template preview.',DOCUMENT_TITLE:'Sample Service Agreement',DOCUMENT_CREATED:'2026-01-15',DOCUMENT_ID:'42'});$('ragDocumentPreview').style.display='block'}
+function renderRagState(state){currentRagState=state||{};const s=currentRagState;let badge=s.index_exists?`${s.indexed_documents||0} docs · ${s.indexed_chunks||0} chunks`:'Not built';if(s.running)badge=`${s.operation||'index'}: ${s.phase||'running'}`;if(s.paused)badge='Paused';if(s.rebuild_required)badge+=' · rebuild required';$('ragIndexBadge').textContent=badge;const parts=[`State: ${s.phase||'unknown'}`,`Documents: ${s.indexed_documents||0}/${s.total||s.indexed_documents||0}`,`Chunks: ${s.indexed_chunks||0}`,s.last_build?`Last build: ${s.last_build}`:null,s.last_sync?`Last sync: ${s.last_sync}`:null,s.last_error?`Error: ${s.last_error}`:null].filter(Boolean);$('ragIndexDetail').textContent=parts.join(' · ');$('ragIndexDetail').className=`status-box${s.last_error?' bad':(s.index_exists?' good':' warn')}`;$('ragPauseBtn').textContent=s.paused?'Resume':'Pause'}
+function setOptional(id,value){$(id).value=value===null||value===undefined?'':value}
+function fillRag(config,state){currentRagConfig=config||{};const chat=currentRagConfig.chat_defaults||{};$('ragChatModel').value=chat.model||'';$('ragSystemPrompt').value=currentRagConfig.system_prompt??'';$('ragTimezone').value=currentRagConfig.timezone||'Europe/Berlin';$('ragThink').value=chat.think||'off';$('ragNumCtx').value=chat.num_ctx??8192;$('ragRetrievalTopK').value=chat.top_k??5;$('ragTemperature').value=chat.temperature??0.1;$('ragNumPredict').value=chat.num_predict??512;setOptional('ragSamplerTopK',chat.sampler_top_k);setOptional('ragTopP',chat.top_p);setOptional('ragMinP',chat.min_p);setOptional('ragRepeatPenalty',chat.repeat_penalty);setOptional('ragRepeatLastN',chat.repeat_last_n);setOptional('ragSeed',chat.seed);$('ragStop').value=Array.isArray(chat.stop)?chat.stop.join('\n'):'';$('ragEmbeddingModel').value=currentRagConfig.embedding_model||'';$('ragQueryTemplate').value=currentRagConfig.embedding_query_template??ragDefaultQueryTemplate;$('ragDocumentTemplate').value=currentRagConfig.document_embedding_template??ragDefaultDocumentTemplate;setOptional('ragEmbeddingDimensions',currentRagConfig.embedding_dimensions);$('ragQueryTruncate').value=String(currentRagConfig.query_truncate!==false);$('ragDocumentTruncate').value=String(currentRagConfig.document_truncate!==false);setOptional('ragEmbeddingNumCtx',currentRagConfig.embedding_num_ctx);$('ragChunkTarget').value=currentRagConfig.chunk_target_chars??2000;$('ragChunkOverlap').value=currentRagConfig.chunk_overlap_chars??400;$('ragBatchSize').value=currentRagConfig.embedding_batch_size??1;$('ragSliceSize').value=currentRagConfig.embedding_slice_chunks??16;$('ragSyncInterval').value=currentRagConfig.sync_interval_seconds??900;$('ragHistoryTurns').value=currentRagConfig.retrieval_history_turns??2;setOptional('ragMinSimilarity',currentRagConfig.retrieval_min_similarity);setOptional('ragMaxChunksPerDoc',currentRagConfig.max_chunks_per_document);$('ragConfigStatus').textContent='RAG config loaded';renderRagState(state)}
+async function loadRag(){try{const r=await api('/api/control/rag/bootstrap');ragDefaultSystemPrompt=r.default_system_prompt||'';ragDefaultQueryTemplate=r.default_embedding_query_template||'';ragDefaultDocumentTemplate=r.default_document_embedding_template||'';ragQueryPlaceholders=r.query_placeholders||[];ragDocumentPlaceholders=r.document_placeholders||[];renderRagPlaceholders(r.placeholders||[]);renderEmbeddingPlaceholders();fillRag(r.config,r.state);setStatus('ragSaveStatus','Saved RAG configuration loaded.')}catch(e){setStatus('ragSaveStatus',e.message,false)}}
+async function refreshRagStatus(){try{const r=await api('/api/control/rag/bootstrap');currentRagConfig=r.config||currentRagConfig;renderRagState(r.state)}catch(e){setStatus('ragActionStatus',e.message,false)}}
+async function saveRag(){try{const r=await api('/api/control/rag/config',{method:'POST',body:JSON.stringify(ragDraft())});fillRag(r.config,r.state);setStatus('ragSaveStatus',r.state?.rebuild_required?'Saved · active index remains usable, rebuild required.':'Saved · active.')}catch(e){setStatus('ragSaveStatus',e.message,false)}}
+async function ragIndexAction(action){if(action==='rebuild'&&!confirm('Rebuild the complete PLAI RAG index? Paperless documents are not modified, and the active index remains usable until activation.'))return;try{setStatus('ragActionStatus',action==='pause'?(currentRagState?.paused?'Resuming…':'Pausing…'):`Starting ${action}…`);await api(`/api/control/rag/index/${action}`,{method:'POST',body:'{}'});await refreshRagStatus()}catch(e){setStatus('ragActionStatus',e.message,false)}}
+$('ragSaveBtn').onclick=saveRag;$('ragResetPromptBtn').onclick=()=>{$('ragSystemPrompt').value=ragDefaultSystemPrompt;markUnsaved('ragSaveStatus')};$('ragResetQueryTemplateBtn').onclick=()=>{$('ragQueryTemplate').value=ragDefaultQueryTemplate;markUnsaved('ragSaveStatus')};$('ragResetDocumentTemplateBtn').onclick=()=>{$('ragDocumentTemplate').value=ragDefaultDocumentTemplate;markUnsaved('ragSaveStatus')};$('ragQueryPreviewBtn').onclick=previewQueryTemplate;$('ragDocumentPreviewBtn').onclick=previewDocumentTemplate;$('ragSyncBtn').onclick=()=>ragIndexAction('sync');$('ragRebuildBtn').onclick=()=>ragIndexAction('rebuild');$('ragPauseBtn').onclick=()=>ragIndexAction('pause');
+for(const id of ['ragChatModel','ragSystemPrompt','ragTimezone','ragThink','ragNumCtx','ragRetrievalTopK','ragTemperature','ragNumPredict','ragSamplerTopK','ragTopP','ragMinP','ragRepeatPenalty','ragRepeatLastN','ragSeed','ragStop','ragEmbeddingModel','ragQueryTemplate','ragDocumentTemplate','ragEmbeddingDimensions','ragQueryTruncate','ragDocumentTruncate','ragEmbeddingNumCtx','ragChunkTarget','ragChunkOverlap','ragBatchSize','ragSliceSize','ragSyncInterval','ragHistoryTurns','ragMinSimilarity','ragMaxChunksPerDoc']){$(id).addEventListener('input',()=>markUnsaved('ragSaveStatus'));$(id).addEventListener('change',()=>markUnsaved('ragSaveStatus'))}
 
 const pageMeta={overview:['Overview','System overview and current configuration'],classification:['Classification','Local metadata and tag automation'],'app-settings':['App Settings','Connections, workflow, matching, OCR and runtime'],'document-chat':['Document Chat','RAG prompt and index administration']};function activatePage(page){if(!pageMeta[page])page='overview';document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.page===page));document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===`page-${page}`));$('topTitle').textContent=pageMeta[page][0];$('topSubtitle').textContent=pageMeta[page][1];try{localStorage.setItem('paperlessControlCenterPage',page)}catch{}}function activateTab(group,id){const nav=document.querySelector(`.tabs[data-tabs="${group}"]`),target=$(id);if(!nav||!target)return;nav.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));nav.closest('.page').querySelectorAll('.tab-page').forEach(x=>x.classList.toggle('active',x.id===id));try{localStorage.setItem(`paperlessControlCenterTab:${group}`,id)}catch{}}document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>activatePage(b.dataset.page));document.querySelectorAll('.tabs .tab').forEach(b=>b.onclick=()=>activateTab(b.closest('.tabs').dataset.tabs,b.dataset.tab));for(const [group,fallback] of [['classification','class-test'],['app','app-connections']]){let tab=fallback;try{tab=localStorage.getItem(`paperlessControlCenterTab:${group}`)||fallback}catch{}activateTab(group,tab)}let initialPage='overview';try{initialPage=localStorage.getItem('paperlessControlCenterPage')||initialPage}catch{}activatePage(initialPage);
 init();loadApp();loadRag();refreshOcrRecovery();setInterval(refreshOcrRecovery,5000);setInterval(refreshRagStatus,5000);

@@ -124,3 +124,9 @@ button:disabled { opacity: .5; cursor: default; }
   .history-delete-question{color:#cbd5e1}
   .limit-warning{background:#3b2f12;color:#fcd34d;border-color:#d97706}
 }
+.expert-settings{grid-column:1/-1;margin-top:.55rem;border-top:1px solid rgba(127,127,127,.18);padding-top:.5rem}
+.expert-settings summary{cursor:pointer;color:#64748b;font-size:11px;font-weight:650;user-select:none}
+.expert-grid{margin-top:.55rem}
+.expert-grid .wide{grid-column:1/-1}
+.expert-grid textarea{min-height:64px;resize:vertical}
+.info-dot{display:inline-grid;place-items:center;width:14px;height:14px;border:1px solid currentColor;border-radius:50%;font-size:9px;font-weight:700;cursor:help;opacity:.7;vertical-align:middle}

@@ -205,12 +205,21 @@
           </div>
           <div class="settings hidden" data-part="settings">
             <div class="settings-grid">
-              <label>Thinking<select data-field="think"><option value="auto">Auto</option><option value="off">Off</option><option value="on">On</option></select></label>
+              <label>Thinking <span class="info-dot" title="Model-specific. Low, medium, high and max require a compatible Ollama model.">i</span><select data-field="think"><option value="auto">Auto</option><option value="off">Off</option><option value="on">On</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="max">Max</option></select></label>
               <label>Context<input data-field="num_ctx" type="number" min="2048" max="131072" step="1024"></label>
               <label>Retrieval Top-K<input data-field="top_k" type="number" min="1" max="12" step="1"></label>
               <label>Temperature<input data-field="temperature" type="number" min="0" max="2" step="0.1"></label>
               <label>Max output tokens<input data-field="num_predict" type="number" min="64" max="4096" step="64"><span class="settings-help">Thinking uses the same output-token budget.</span></label>
             </div>
+            <details class="expert-settings"><summary>Expert generation</summary><div class="settings-grid expert-grid">
+              <label>Sampler Top-K <span class="info-dot" title="Generation sampler, not Retrieval Top-K. Model-specific; blank uses model default.">i</span><input data-field="sampler_top_k" type="number" min="0" max="1000" step="1" placeholder="Model default"></label>
+              <label>Top-P <span class="info-dot" title="Model-specific; blank uses model default.">i</span><input data-field="top_p" type="number" min="0" max="1" step="0.01" placeholder="Model default"></label>
+              <label>Min-P <span class="info-dot" title="Model-specific; blank uses model default.">i</span><input data-field="min_p" type="number" min="0" max="1" step="0.01" placeholder="Model default"></label>
+              <label>Repeat penalty <span class="info-dot" title="Model-specific; blank uses model default.">i</span><input data-field="repeat_penalty" type="number" min="0" max="10" step="0.01" placeholder="Model default"></label>
+              <label>Repeat last N <span class="info-dot" title="-1 means context size in Ollama; blank uses model default.">i</span><input data-field="repeat_last_n" type="number" min="-1" max="131072" step="1" placeholder="Model default"></label>
+              <label>Seed<input data-field="seed" type="number" min="0" max="2147483647" step="1" placeholder="Model default"></label>
+              <label class="wide">Stop sequences <span class="info-dot" title="Model-specific. One sequence per line; blank uses model defaults.">i</span><textarea data-field="stop" rows="3" placeholder="One sequence per line"></textarea></label>
+            </div></details>
           </div>
           <main class="messages" data-part="messages"></main>
           <button type="button" class="jump-bottom hidden" data-action="jump-bottom">↓ New content</button>
@@ -251,14 +260,25 @@
       scope: q('[data-field="scope"]'), scope_query: q('[data-field="scope_query"]'), model: q('[data-field="model"]'),
       think: q('[data-field="think"]'), num_ctx: q('[data-field="num_ctx"]'), top_k: q('[data-field="top_k"]'),
       temperature: q('[data-field="temperature"]'), num_predict: q('[data-field="num_predict"]'),
-      question: q('[data-field="question"]'),
+      sampler_top_k: q('[data-field="sampler_top_k"]'), top_p: q('[data-field="top_p"]'), min_p: q('[data-field="min_p"]'),
+      repeat_penalty: q('[data-field="repeat_penalty"]'), repeat_last_n: q('[data-field="repeat_last_n"]'),
+      seed: q('[data-field="seed"]'), stop: q('[data-field="stop"]'), question: q('[data-field="question"]'),
     };
+
+    function optionalSettingNumber(field) {
+      const value = String(field?.value ?? "").trim();
+      return value === "" ? null : Number(value);
+    }
 
     function normalizeSettings() {
       return {
         model: String(fields.model.value || defaults.model || "").trim(), think: String(fields.think.value || "off"),
         num_ctx: Number(fields.num_ctx.value || 8192), top_k: Number(fields.top_k.value || 5),
         temperature: Number(fields.temperature.value || 0.1), num_predict: Number(fields.num_predict.value || 512),
+        sampler_top_k: optionalSettingNumber(fields.sampler_top_k), top_p: optionalSettingNumber(fields.top_p),
+        min_p: optionalSettingNumber(fields.min_p), repeat_penalty: optionalSettingNumber(fields.repeat_penalty),
+        repeat_last_n: optionalSettingNumber(fields.repeat_last_n), seed: optionalSettingNumber(fields.seed),
+        stop: String(fields.stop.value || "").split(/\r?\n/).filter((value) => value.length > 0),
       };
     }
 
@@ -269,6 +289,11 @@
       fields.top_k.value = state.settings.top_k || defaults.top_k || 5;
       fields.temperature.value = state.settings.temperature ?? defaults.temperature ?? 0.1;
       fields.num_predict.value = state.settings.num_predict || defaults.num_predict || 512;
+      for (const name of ["sampler_top_k", "top_p", "min_p", "repeat_penalty", "repeat_last_n", "seed"]) {
+        const value = state.settings[name] ?? defaults[name] ?? null;
+        fields[name].value = value === null ? "" : value;
+      }
+      fields.stop.value = (state.settings.stop ?? defaults.stop ?? []).join("\n");
       fields.scope.value = state.scope;
       updateScopeUi(false);
     }

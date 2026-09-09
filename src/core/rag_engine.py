@@ -51,6 +51,10 @@ If the evidence is insufficient, say so clearly.
 Cite relevant sources as [1], [2], etc.
 Answer in the user's language and keep answers concise unless the user asks for detail."""
 
+DEFAULT_EMBEDDING_QUERY_TEMPLATE = """Instruct: Given a user question about a personal document archive, retrieve relevant document passages that answer the question
+Query: {{RETRIEVAL_QUERY}}"""
+DEFAULT_DOCUMENT_EMBEDDING_TEMPLATE = "{{CHUNK}}"
+
 RAG_PROMPT_PLACEHOLDERS: dict[str, str] = {
     "CURRENT_DATE": "Current local date in YYYY-MM-DD format.",
     "CURRENT_TIME": "Current local time in HH:MM format.",
@@ -66,17 +70,37 @@ RAG_PROMPT_PLACEHOLDERS: dict[str, str] = {
     "SEARCH_SCOPE": "Current search scope and selected label when available.",
     "CURRENT_DOCUMENT_ID": "Current Paperless document ID for Current document scope, otherwise empty.",
 }
+EMBEDDING_QUERY_PLACEHOLDERS: dict[str, str] = {
+    "RETRIEVAL_QUERY": "Current question plus the configured number of previous user turns.",
+    "CURRENT_QUESTION": "Current user question only.",
+    "PREVIOUS_USER_CONTEXT": "Previous user turns used for retrieval, without assistant messages.",
+    "SEARCH_SCOPE": "Current search scope and selected label when available.",
+}
+DOCUMENT_EMBEDDING_PLACEHOLDERS: dict[str, str] = {
+    "CHUNK": "Raw Paperless text chunk stored in the RAG index.",
+    "DOCUMENT_TITLE": "Paperless document title.",
+    "DOCUMENT_CREATED": "Paperless document created date when available.",
+    "DOCUMENT_ID": "Paperless document ID.",
+}
 RAG_PLACEHOLDER_RE = re.compile(r"{{\s*([A-Z0-9_]+)\s*}}")
-
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "version": 1,
     "embedding_model": "qwen3-embedding:4b-q4_K_M",
+    "embedding_query_template": DEFAULT_EMBEDDING_QUERY_TEMPLATE,
+    "document_embedding_template": DEFAULT_DOCUMENT_EMBEDDING_TEMPLATE,
+    "embedding_dimensions": None,
+    "query_truncate": True,
+    "document_truncate": True,
+    "embedding_num_ctx": None,
     "chunk_target_chars": 2000,
     "chunk_overlap_chars": 400,
     "embedding_batch_size": 1,
     "embedding_slice_chunks": 16,
     "sync_interval_seconds": 900,
+    "retrieval_history_turns": 2,
+    "retrieval_min_similarity": None,
+    "max_chunks_per_document": None,
     "system_prompt": DEFAULT_RAG_SYSTEM_PROMPT,
     "timezone": "Europe/Berlin",
     "chat_defaults": {
@@ -86,6 +110,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "top_k": 5,
         "temperature": 0.1,
         "num_predict": 512,
+        "sampler_top_k": None,
+        "top_p": None,
+        "min_p": None,
+        "repeat_penalty": None,
+        "repeat_last_n": None,
+        "seed": None,
+        "stop": [],
     },
 }
 
@@ -127,17 +158,64 @@ def load_json(path: Path, default: Any) -> Any:
         return default
 
 
+def _validate_template(
+    name: str,
+    value: str,
+    allowed_placeholders: set[str],
+    *,
+    allow_empty: bool = False,
+) -> str:
+    text = str(value)
+    if len(text) > 32000:
+        raise ValueError(f"{name} must contain at most 32000 characters")
+    if not allow_empty and not text.strip():
+        raise ValueError(f"{name} must not be empty")
+    unknown = sorted(set(RAG_PLACEHOLDER_RE.findall(text)) - allowed_placeholders)
+    if unknown:
+        raise ValueError(f"Unknown {name} placeholders: " + ", ".join(unknown))
+    return text
+
+
+def _optional_int(value: Any, name: str, minimum: int, maximum: int) -> int | None:
+    if value is None or value == "":
+        return None
+    parsed = int(value)
+    if not minimum <= parsed <= maximum:
+        raise ValueError(f"{name} must be between {minimum} and {maximum}")
+    return parsed
+
+
+def _optional_float(
+    value: Any, name: str, minimum: float, maximum: float
+) -> float | None:
+    if value is None or value == "":
+        return None
+    parsed = float(value)
+    if not math.isfinite(parsed) or not minimum <= parsed <= maximum:
+        raise ValueError(f"{name} must be between {minimum} and {maximum}")
+    return parsed
+
+
 def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
     cfg = json.loads(json.dumps(DEFAULT_CONFIG))
     if isinstance(raw, dict):
         for key in (
             "version",
             "embedding_model",
+            "embedding_query_template",
+            "document_embedding_template",
+            "embedding_dimensions",
+            "query_truncate",
+            "document_truncate",
+            "embedding_num_ctx",
             "chunk_target_chars",
             "chunk_overlap_chars",
             "embedding_batch_size",
             "embedding_slice_chunks",
             "sync_interval_seconds",
+            "retrieval_history_turns",
+            "retrieval_min_similarity",
+            "max_chunks_per_document",
             "system_prompt",
             "timezone",
         ):
@@ -149,26 +227,55 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
     cfg["embedding_model"] = str(cfg["embedding_model"]).strip()
     if not cfg["embedding_model"]:
         raise ValueError("embedding_model must not be empty")
+
+    cfg["embedding_query_template"] = _validate_template(
+        "embedding_query_template",
+        cfg["embedding_query_template"],
+        set(EMBEDDING_QUERY_PLACEHOLDERS),
+    )
+    cfg["document_embedding_template"] = _validate_template(
+        "document_embedding_template",
+        cfg["document_embedding_template"],
+        set(DOCUMENT_EMBEDDING_PLACEHOLDERS),
+    )
+    cfg["embedding_dimensions"] = _optional_int(
+        cfg.get("embedding_dimensions"), "embedding_dimensions", 1, 65536
+    )
+    if not isinstance(cfg.get("query_truncate"), bool):
+        raise ValueError("query_truncate must be true or false")
+    if not isinstance(cfg.get("document_truncate"), bool):
+        raise ValueError("document_truncate must be true or false")
+    cfg["embedding_num_ctx"] = _optional_int(
+        cfg.get("embedding_num_ctx"), "embedding_num_ctx", 512, 131072
+    )
+
     cfg["chunk_target_chars"] = int(cfg["chunk_target_chars"])
     cfg["chunk_overlap_chars"] = int(cfg["chunk_overlap_chars"])
     cfg["embedding_batch_size"] = int(cfg["embedding_batch_size"])
     cfg["embedding_slice_chunks"] = int(cfg["embedding_slice_chunks"])
     cfg["sync_interval_seconds"] = int(cfg["sync_interval_seconds"])
-    cfg["system_prompt"] = str(cfg.get("system_prompt", ""))
-    cfg["timezone"] = str(cfg.get("timezone") or "").strip()
-    if len(cfg["system_prompt"]) > 32000:
-        raise ValueError("system_prompt must contain at most 32000 characters")
-    unknown_placeholders = sorted(
-        set(RAG_PLACEHOLDER_RE.findall(cfg["system_prompt"])) - set(RAG_PROMPT_PLACEHOLDERS)
+    cfg["retrieval_history_turns"] = int(cfg["retrieval_history_turns"])
+    cfg["retrieval_min_similarity"] = _optional_float(
+        cfg.get("retrieval_min_similarity"), "retrieval_min_similarity", -1.0, 1.0
     )
-    if unknown_placeholders:
-        raise ValueError("Unknown RAG system prompt placeholders: " + ", ".join(unknown_placeholders))
+    cfg["max_chunks_per_document"] = _optional_int(
+        cfg.get("max_chunks_per_document"), "max_chunks_per_document", 1, 64
+    )
+
+    cfg["system_prompt"] = _validate_template(
+        "system_prompt",
+        cfg.get("system_prompt", ""),
+        set(RAG_PROMPT_PLACEHOLDERS),
+        allow_empty=True,
+    )
+    cfg["timezone"] = str(cfg.get("timezone") or "").strip()
     if not cfg["timezone"] or len(cfg["timezone"]) > 128:
         raise ValueError("timezone must contain 1 to 128 characters")
     try:
         ZoneInfo(cfg["timezone"])
     except ZoneInfoNotFoundError as exc:
         raise ValueError(f"unknown timezone: {cfg['timezone']}") from exc
+
     if not 1000 <= cfg["chunk_target_chars"] <= 20000:
         raise ValueError("chunk_target_chars must be between 1000 and 20000")
     if not 0 <= cfg["chunk_overlap_chars"] < cfg["chunk_target_chars"]:
@@ -179,17 +286,11 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("embedding_slice_chunks must be between embedding_batch_size and 256")
     if not 60 <= cfg["sync_interval_seconds"] <= 86400:
         raise ValueError("sync_interval_seconds must be between 60 and 86400")
+    if not 0 <= cfg["retrieval_history_turns"] <= 8:
+        raise ValueError("retrieval_history_turns must be between 0 and 8")
 
-    chat = cfg["chat_defaults"]
-    chat["model"] = str(chat["model"]).strip()
-    chat["think"] = str(chat["think"]).strip().lower()
-    chat["num_ctx"] = int(chat["num_ctx"])
-    chat["top_k"] = int(chat["top_k"])
-    chat["temperature"] = float(chat["temperature"])
-    chat["num_predict"] = int(chat["num_predict"])
-    _validate_chat_settings(chat)
+    cfg["chat_defaults"] = _validate_chat_settings(cfg["chat_defaults"])
     return cfg
-
 
 def ensure_config() -> dict[str, Any]:
     raw = load_json(CONFIG_FILE, {})
@@ -360,12 +461,22 @@ def index_counts(path: Path = DB_FILE) -> tuple[int, int]:
 
 
 def config_signature(cfg: dict[str, Any]) -> dict[str, Any]:
-    return {
+    # Default-valued additions are omitted so pre-existing indexes remain compatible.
+    signature: dict[str, Any] = {
         "chunking_version": CHUNKING_VERSION,
         "embedding_model": cfg["embedding_model"],
         "chunk_target_chars": cfg["chunk_target_chars"],
         "chunk_overlap_chars": cfg["chunk_overlap_chars"],
     }
+    if cfg["document_embedding_template"] != DEFAULT_DOCUMENT_EMBEDDING_TEMPLATE:
+        signature["document_embedding_template"] = cfg["document_embedding_template"]
+    if cfg["embedding_dimensions"] is not None:
+        signature["embedding_dimensions"] = cfg["embedding_dimensions"]
+    if cfg["document_truncate"] is not True:
+        signature["document_truncate"] = cfg["document_truncate"]
+    if cfg["embedding_num_ctx"] is not None:
+        signature["embedding_num_ctx"] = cfg["embedding_num_ctx"]
+    return signature
 
 
 def active_signature() -> dict[str, Any] | None:
@@ -394,6 +505,17 @@ def active_embedding_model() -> str:
         raise RuntimeError("RAG index has no active embedding model")
     return model.strip()
 
+
+def active_embedding_runtime() -> tuple[int | None, int | None]:
+    signature = active_signature()
+    if not isinstance(signature, dict):
+        raise RuntimeError("RAG index has no active embedding configuration")
+    dimensions = signature.get("embedding_dimensions")
+    num_ctx = signature.get("embedding_num_ctx")
+    return (
+        int(dimensions) if isinstance(dimensions, int) and dimensions > 0 else None,
+        int(num_ctx) if isinstance(num_ctx, int) and num_ctx > 0 else None,
+    )
 
 def app_connections() -> tuple[str, str]:
     cfg = load_app_config()
@@ -525,27 +647,35 @@ def unload_model(ollama_url: str, model: str) -> None:
         pass
 
 
-def embed_inputs(inputs: list[str], model: str, *, keep_alive: Any = 0) -> list[array]:
+def embed_inputs(
+    inputs: list[str],
+    model: str,
+    *,
+    keep_alive: Any = 0,
+    truncate: bool = True,
+    dimensions: int | None = None,
+    num_ctx: int | None = None,
+) -> list[array]:
     if not inputs:
         return []
     _, ollama_url = app_connections()
-    response = requests.post(
-        f"{ollama_url}/api/embed",
-        json={
-            "model": model,
-            "input": inputs,
-            "truncate": True,
-            "keep_alive": keep_alive,
-        },
-        timeout=3600,
-    )
+    request: dict[str, Any] = {
+        "model": model,
+        "input": inputs,
+        "truncate": truncate,
+        "keep_alive": keep_alive,
+    }
+    if dimensions is not None:
+        request["dimensions"] = dimensions
+    if num_ctx is not None:
+        request["options"] = {"num_ctx": num_ctx}
+    response = requests.post(f"{ollama_url}/api/embed", json=request, timeout=3600)
     response.raise_for_status()
     payload = response.json()
     embeddings = payload.get("embeddings")
     if not isinstance(embeddings, list) or len(embeddings) != len(inputs):
         raise RuntimeError("Ollama returned an unexpected embedding response")
     return [_normalize_embedding(vector) for vector in embeddings]
-
 
 def embed_chunk_group(chunks: list[str], cfg: dict[str, Any]) -> list[array]:
     """Embed a bounded group while sharing one model load across many documents."""
@@ -572,17 +702,23 @@ def embed_chunk_group(chunks: list[str], cfg: dict[str, Any]) -> list[array]:
                     if STOP or PAUSE_FILE.exists():
                         raise InterruptedError("paused")
                     batch = chunks[batch_cursor : min(slice_end, batch_cursor + batch_size)]
-                    output.extend(embed_inputs(batch, model, keep_alive="5m"))
+                    output.extend(
+                        embed_inputs(
+                            batch,
+                            model,
+                            keep_alive="5m",
+                            truncate=cfg["document_truncate"],
+                            dimensions=cfg["embedding_dimensions"],
+                            num_ctx=cfg["embedding_num_ctx"],
+                        )
+                    )
                     batch_cursor += len(batch)
             finally:
-                # Indexing deliberately keeps the model warm only inside one bounded
-                # slice. Release it before releasing ai.lock so OCR/metadata can run.
                 unload_model(ollama_url, model)
         cursor = slice_end
         if cursor < len(chunks):
             time.sleep(0.25)
     return output
-
 
 def prepare_document(document: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
     doc_id = int(document["id"])
@@ -641,6 +777,21 @@ def write_prepared_document(
     return len(text_chunks)
 
 
+def render_document_embedding_text(
+    prepared: dict[str, Any], chunk: str, cfg: dict[str, Any]
+) -> str:
+    values = {
+        "CHUNK": chunk,
+        "DOCUMENT_TITLE": str(prepared.get("title") or ""),
+        "DOCUMENT_CREATED": str(prepared.get("created") or ""),
+        "DOCUMENT_ID": str(prepared.get("id") or ""),
+    }
+    return RAG_PLACEHOLDER_RE.sub(
+        lambda match: values.get(match.group(1), match.group(0)),
+        cfg["document_embedding_template"],
+    )
+
+
 def process_prepared_group(
     connection: sqlite3.Connection,
     prepared_group: list[dict[str, Any]],
@@ -648,7 +799,11 @@ def process_prepared_group(
 ) -> int:
     if not prepared_group:
         return 0
-    flattened = [chunk for item in prepared_group for chunk in item["chunks"]]
+    flattened = [
+        render_document_embedding_text(item, chunk, cfg)
+        for item in prepared_group
+        for chunk in item["chunks"]
+    ]
     embeddings = embed_chunk_group(flattened, cfg)
     offset = 0
     written = 0
@@ -659,7 +814,6 @@ def process_prepared_group(
     if offset != len(embeddings):
         raise RuntimeError("internal embedding group offset mismatch")
     return written
-
 
 def grouped_prepared_documents(
     documents: Iterable[dict[str, Any]], cfg: dict[str, Any]
@@ -949,8 +1103,9 @@ def _validate_chat_settings(raw: dict[str, Any]) -> dict[str, Any]:
     if not model:
         raise ValueError("model is required")
     think = str(raw.get("think", "off")).strip().lower()
-    if think not in {"auto", "off", "on"}:
-        raise ValueError("think must be auto, off or on")
+    if think not in {"auto", "off", "on", "low", "medium", "high", "max"}:
+        raise ValueError("think must be auto, off, on, low, medium, high or max")
+
     num_ctx = int(raw.get("num_ctx", 8192))
     top_k = int(raw.get("top_k", 5))
     temperature = float(raw.get("temperature", 0.1))
@@ -963,6 +1118,29 @@ def _validate_chat_settings(raw: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("temperature must be between 0 and 2")
     if not 64 <= num_predict <= 4096:
         raise ValueError("num_predict must be between 64 and 4096")
+
+    sampler_top_k = _optional_int(raw.get("sampler_top_k"), "sampler_top_k", 0, 1000)
+    top_p = _optional_float(raw.get("top_p"), "top_p", 0.0, 1.0)
+    min_p = _optional_float(raw.get("min_p"), "min_p", 0.0, 1.0)
+    repeat_penalty = _optional_float(raw.get("repeat_penalty"), "repeat_penalty", 0.0, 10.0)
+    repeat_last_n_raw = raw.get("repeat_last_n")
+    repeat_last_n = None
+    if repeat_last_n_raw is not None and repeat_last_n_raw != "":
+        repeat_last_n = int(repeat_last_n_raw)
+        if not -1 <= repeat_last_n <= 131072:
+            raise ValueError("repeat_last_n must be between -1 and 131072")
+    seed = _optional_int(raw.get("seed"), "seed", 0, 2147483647)
+
+    stop_raw = raw.get("stop")
+    if stop_raw is None:
+        stop: list[str] = []
+    elif isinstance(stop_raw, list):
+        stop = [str(item) for item in stop_raw if str(item)]
+    else:
+        raise ValueError("stop must be an array of strings")
+    if len(stop) > 16 or any(len(item) > 200 for item in stop):
+        raise ValueError("stop may contain at most 16 sequences of at most 200 characters")
+
     return {
         "model": model,
         "think": think,
@@ -970,8 +1148,14 @@ def _validate_chat_settings(raw: dict[str, Any]) -> dict[str, Any]:
         "top_k": top_k,
         "temperature": temperature,
         "num_predict": num_predict,
+        "sampler_top_k": sampler_top_k,
+        "top_p": top_p,
+        "min_p": min_p,
+        "repeat_penalty": repeat_penalty,
+        "repeat_last_n": repeat_last_n,
+        "seed": seed,
+        "stop": stop,
     }
-
 
 def _generation_finish_metadata(
     final_raw: dict[str, Any], settings: dict[str, Any]
@@ -1051,26 +1235,55 @@ def validate_chat_request(payload: dict[str, Any], cfg: dict[str, Any]) -> dict[
     }
 
 
-def retrieval_query(question: str, history: list[dict[str, str]]) -> str:
-    prior = [item["content"] for item in history if item["role"] == "user"][-2:]
+def _search_scope_text(request: dict[str, Any]) -> str:
+    scope = request["scope"]
+    scope_label = request.get("scope_label") or ""
+    if scope_label:
+        return f"{scope}: {scope_label}"
+    if scope == "document" and request.get("document_id"):
+        return f"current document: {request['document_id']}"
+    return scope.replace("_", " ")
+
+
+def retrieval_query(
+    question: str,
+    history: list[dict[str, str]],
+    history_turns: int = 2,
+) -> str:
+    if history_turns <= 0:
+        return question
+    prior = [item["content"] for item in history if item["role"] == "user"][-history_turns:]
     if not prior:
         return question
     return "Previous user context:\n" + "\n".join(prior) + "\nCurrent question:\n" + question
 
 
-def embedding_query_text(question: str, history: list[dict[str, str]]) -> str:
-    # Qwen3-Embedding recommends an instruction on the query side while corpus
-    # documents stay unprefixed. Keep the instruction stable so index vectors
-    # remain model-agnostic and only query behavior changes.
-    query = retrieval_query(question, history)
-    return (
-        "Instruct: Given a user question about a personal document archive, "
-        "retrieve relevant document passages that answer the question\n"
-        f"Query: {query}"
+def embedding_query_text(request: dict[str, Any], cfg: dict[str, Any]) -> str:
+    history_turns = cfg["retrieval_history_turns"]
+    prior = (
+        [item["content"] for item in request["history"] if item["role"] == "user"][-history_turns:]
+        if history_turns > 0
+        else []
+    )
+    values = {
+        "RETRIEVAL_QUERY": retrieval_query(request["question"], request["history"], history_turns),
+        "CURRENT_QUESTION": request["question"],
+        "PREVIOUS_USER_CONTEXT": "\n".join(prior),
+        "SEARCH_SCOPE": _search_scope_text(request),
+    }
+    return RAG_PLACEHOLDER_RE.sub(
+        lambda match: values.get(match.group(1), match.group(0)),
+        cfg["embedding_query_template"],
     )
 
-
-def retrieve(query_vector: array, *, document_ids: set[int] | None, top_k: int) -> list[dict[str, Any]]:
+def retrieve(
+    query_vector: array,
+    *,
+    document_ids: set[int] | None,
+    top_k: int,
+    min_similarity: float | None = None,
+    max_chunks_per_document: int | None = None,
+) -> list[dict[str, Any]]:
     import numpy as np
 
     query = np.frombuffer(query_vector.tobytes(), dtype=np.float32)
@@ -1111,11 +1324,18 @@ def retrieve(query_vector: array, *, document_ids: set[int] | None, top_k: int) 
         if math.isfinite(score):
             scored.append((score, row))
     scored.sort(key=lambda item: item[0], reverse=True)
+
     result: list[dict[str, Any]] = []
-    for score, row in scored[:top_k]:
+    per_document: dict[int, int] = {}
+    for score, row in scored:
+        if min_similarity is not None and score < min_similarity:
+            continue
+        doc_id = int(row[0])
+        if max_chunks_per_document is not None and per_document.get(doc_id, 0) >= max_chunks_per_document:
+            continue
         result.append(
             {
-                "document_id": int(row[0]),
+                "document_id": doc_id,
                 "ordinal": int(row[1]),
                 "text": str(row[2]),
                 "title": str(row[4] or f"Document {row[0]}"),
@@ -1123,8 +1343,10 @@ def retrieve(query_vector: array, *, document_ids: set[int] | None, top_k: int) 
                 "score": round(score, 6),
             }
         )
+        per_document[doc_id] = per_document.get(doc_id, 0) + 1
+        if len(result) >= top_k:
+            break
     return result
-
 
 def scope_document_ids(request: dict[str, Any]) -> set[int] | None:
     scope = request["scope"]
@@ -1147,14 +1369,7 @@ def scope_document_ids(request: dict[str, Any]) -> set[int] | None:
 
 def render_system_prompt(request: dict[str, Any], cfg: dict[str, Any]) -> str:
     now = datetime.now(ZoneInfo(cfg["timezone"]))
-    scope = request["scope"]
-    scope_label = request.get("scope_label") or ""
-    if scope_label:
-        search_scope = f"{scope}: {scope_label}"
-    elif scope == "document" and request.get("document_id"):
-        search_scope = f"current document: {request['document_id']}"
-    else:
-        search_scope = scope.replace("_", " ")
+    search_scope = _search_scope_text(request)
 
     values = {
         "CURRENT_DATE": now.strftime("%Y-%m-%d"),
@@ -1311,10 +1526,14 @@ def chat(job_id: str, request_path: Path) -> None:
             wait_callback=waiting_update,
         ):
             update_job(job_id, phase="embedding", waiting_for=None)
+            active_dimensions, active_num_ctx = active_embedding_runtime()
             query_embedding = embed_inputs(
-                [embedding_query_text(request["question"], request["history"])],
+                [embedding_query_text(request, cfg)],
                 active_embedding_model(),
                 keep_alive=0,
+                truncate=cfg["query_truncate"],
+                dimensions=active_dimensions,
+                num_ctx=active_num_ctx,
             )[0]
             embedding_seconds = time.monotonic() - embed_started
             if job_stopped(job_id):
@@ -1327,6 +1546,8 @@ def chat(job_id: str, request_path: Path) -> None:
                 query_embedding,
                 document_ids=scope_document_ids(request),
                 top_k=settings["top_k"],
+                min_similarity=cfg["retrieval_min_similarity"],
+                max_chunks_per_document=cfg["max_chunks_per_document"],
             )
             messages, selected = _bounded_prompt(request, retrieved, cfg)
             retrieval_seconds = time.monotonic() - retrieval_started
@@ -1360,10 +1581,26 @@ def chat(job_id: str, request_path: Path) -> None:
                     "num_predict": settings["num_predict"],
                 },
             }
+            optional_options = {
+                "top_k": settings["sampler_top_k"],
+                "top_p": settings["top_p"],
+                "min_p": settings["min_p"],
+                "repeat_penalty": settings["repeat_penalty"],
+                "repeat_last_n": settings["repeat_last_n"],
+                "seed": settings["seed"],
+            }
+            for option, value in optional_options.items():
+                if value is not None:
+                    ollama_payload["options"][option] = value
+            if settings["stop"]:
+                ollama_payload["options"]["stop"] = settings["stop"]
+
             if settings["think"] == "off":
                 ollama_payload["think"] = False
             elif settings["think"] == "on":
                 ollama_payload["think"] = True
+            elif settings["think"] in {"low", "medium", "high", "max"}:
+                ollama_payload["think"] = settings["think"]
 
             generation_started = time.monotonic()
             last_flush = 0.0

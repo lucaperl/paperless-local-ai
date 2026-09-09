@@ -136,6 +136,14 @@ def test_runtime_assets_do_not_embed_a_control_center_origin():
     assert "function renderMarkdown" in script
     assert "message.thinking" in script
     assert 'assistant.thinking = job.thinking || ""' in script
+    assert 'data-field="sampler_top_k"' in script
+    assert 'data-field="top_p"' in script
+    assert 'data-field="min_p"' in script
+    assert 'data-field="repeat_penalty"' in script
+    assert 'data-field="repeat_last_n"' in script
+    assert 'data-field="seed"' in script
+    assert 'data-field="stop"' in script
+    assert '<option value="medium">Medium</option>' in script
     assert 'data-action="jump-bottom"' in script
     assert "state.autoScroll = isNearBottom(container)" in script
     assert "state.hasNewContent = true" in script

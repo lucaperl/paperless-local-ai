@@ -56,6 +56,12 @@ def test_control_center_contains_document_chat_administration():
     assert 'id="ragSystemPrompt"' in source
     assert 'id="ragPlaceholderGrid"' in source
     assert 'id="ragRebuildBtn"' in source
+    assert 'id="ragQueryTemplate"' in source
+    assert 'id="ragDocumentTemplate"' in source
+    assert 'id="ragEmbeddingDimensions"' in source
+    assert 'id="ragHistoryTurns"' in source
+    assert 'id="ragSamplerTopK"' in source
+    assert "Qwen3-Embedding" in source
     assert "/api/control/rag/bootstrap" in source
     assert '"/api/control/rag/bootstrap"' in rust_control
     assert "DEFAULT_RAG_SYSTEM_PROMPT" in rag
