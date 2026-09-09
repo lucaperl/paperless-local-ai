@@ -95,7 +95,7 @@ jobs:
             type=raw,value=latest,enable=${{ !github.event.release.prerelease }}
           labels: |
             org.opencontainers.image.title=paperless-local-ai ${{ matrix.component }}
-            org.opencontainers.image.description=Local PaddleOCR/OCRmyPDF and metadata automation for Paperless-ngx
+            org.opencontainers.image.description=Local OCR, metadata automation and document chat for Paperless-ngx
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
       - name: Build and push

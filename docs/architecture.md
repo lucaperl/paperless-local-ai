@@ -176,9 +176,52 @@ Potential inconsistencies use complete-linkage clustering on the same document r
 
 One optional description is stored per Paperless tag ID. Guidance is supplied only when the LLM is responsible for tags, so a confident Hybrid match is unaffected by it.
 
-## Paperless native classifier
+## Native Paperless AI and PLAI
 
-Paperless-ngx 3.1.0 includes its own trained automatic classifier. Hybrid tagging uses a separate retrieval/gating layer because this workflow needs an explicit similarity/support decision, a deliberate LLM fallback and the same nearest reviewed documents as prompt examples. This is an integration/control choice rather than a universal accuracy claim. See [Paperless native classifier vs Hybrid tagging](tagging.md#paperless-native-classifier-vs-hybrid-tagging).
+Paperless-ngx already provides optional native AI features. The comparison here is anchored to **Paperless-ngx 3.1.0**, the current end-to-end tested reference for this project. The native chat contract described below was also source-checked in Paperless-ngx 3.1.1, 3.1.2 and 3.1.3.
+
+### Metadata
+
+Paperless 3.1.0 builds one structured AI suggestion request for title, tags, correspondents, document types, storage paths and dates. If output localization is requested, a second model request can localize supported returned text fields.
+
+PLAI also keeps its normal metadata generation to one structured request. The difference is workflow and control: classification is triggered automatically from the configured Paperless Document Added workflow, tags can take the Hybrid-history fast path or receive reviewed examples on fallback, prompt components and rendered schema are inspectable, correspondent resolution is performed conservatively after generation, and the resulting metadata is written back behind an explicit human-review boundary.
+
+PLAI currently does not manage storage paths. Paperless native AI suggestions remain a separate feature and can still be used for capabilities that PLAI does not replace.
+
+See [Paperless native classifier vs Hybrid tagging](tagging.md#paperless-native-classifier-vs-hybrid-tagging).
+
+### Document chat
+
+Paperless 3.1.0 through 3.1.3 use a single-turn native chat backend. `stream_chat_with_documents()` receives a current `query_str` and a document queryset plus access/output-language flags; it does not receive a conversation identifier or previous user/assistant messages.
+
+Its retrieval/synthesis path is also framework-driven:
+
+1. create a LlamaIndex `VectorIndexRetriever` with `similarity_top_k=5`;
+2. retrieve once to determine the source-document references returned to the UI;
+3. create LlamaIndex QA and refine templates plus the default response synthesizer;
+4. pass the same retriever to `RetrieverQueryEngine`;
+5. execute the query, causing the query engine to retrieve again before response synthesis;
+6. synthesize the answer through LlamaIndex's default `COMPACT` mode, implemented as `CompactAndRefine`.
+
+The native AI configuration exposes generation and embedding backends/models, context size, embedding chunk size and related connection settings. Retrieval Top-K, conversation/retrieval history, similarity/document caps, adjacent chunks, retrieval diagnostics and prompt/index lifecycle controls are not exposed as native chat controls in the Paperless 3.1.0 through 3.1.3 path described above.
+
+PLAI owns this path directly instead:
+
+```text
+current question + bounded retrieval history
+  -> exactly one Ollama /api/embed request
+  -> exact local cosine retrieval from SQLite
+  -> optional adjacent chunks + live Paperless source metadata
+  -> explicit prompt/context-budget assembly
+  -> exactly one Ollama /api/chat request
+  -> answer + deterministic Paperless source links
+```
+
+There is no query-rewrite LLM, reranker LLM, refine chain, summarizer or agent loop on the normal PLAI path. Adjacent-chunk expansion, live metadata lookup and retrieval diagnostics add no model request.
+
+PLAI also persists conversations server-side. Retrieval history and answer-model history are separate bounded controls, so follow-up questions can intentionally use earlier turns rather than every question being an isolated request.
+
+This bounded execution model is part of the CPU-first architecture: on modest local hardware, each heavyweight model operation is explicit and shares the same global AI resource slot as OCR, metadata work and index embedding.
 
 ## Correspondent resolution
 
