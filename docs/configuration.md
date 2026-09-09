@@ -103,7 +103,7 @@ Classification controls one structured local-LLM request. The model always handl
 
 Document type and LLM-selected tags are constrained to current Paperless values. Correspondent output is free text and is resolved locally after the call.
 
-The **Context window** is the maximum capacity available to the request, not the number of tokens processed by every classification. Actual latency mainly follows the rendered prompt size. The **Document text limit** is a character limit; longer Paperless text is truncated by keeping the configured share from the beginning and the remainder from the end.
+The **Context window** is the maximum capacity available to the request, not the number of tokens processed by every classification. Actual latency mainly follows the rendered prompt size. The **Document text limit** defaults to **6,000 characters**. Longer Paperless text is truncated by retaining **80% from the beginning and 20% from the end**. This keeps prompts bounded on modest hardware while preserving closing content such as totals, signatures and final clauses.
 
 ### Prompt composition
 
