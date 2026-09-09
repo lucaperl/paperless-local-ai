@@ -14,6 +14,7 @@ If GitHub private vulnerability reporting is enabled for this repository, use **
 
 - The Control Center has no built-in authentication and should be bound only to localhost or a trusted LAN.
 - The suggestion bridge is an internal compatibility endpoint and should be reachable by Paperless, not exposed to the public Internet.
+- RAG endpoints on `core-service` require the internal Paperless relay secret. Browser access goes through authenticated/CSRF-protected `/_plai/` routes and is currently Paperless-superuser only. Persistent chat history below `/data/chat` is private user data keyed by the authenticated Paperless user ID; do not expose chat-history files, the relay secret or `/data/rag` index files.
 - The OCR service requires `OCR_SERVICE_TOKEN`, but it is still intended for private/LAN use only.
 - `PAPERLESS_TOKEN` and `OCR_SERVICE_TOKEN` belong in deployment secret/environment configuration, never in AppConfig/history or Git.
 - The project has no built-in telemetry/cloud inference endpoint. Document text is sent to the operator-configured Ollama endpoint, which may itself be local or remote.

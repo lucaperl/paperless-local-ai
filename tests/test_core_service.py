@@ -35,3 +35,64 @@ def test_legacy_core_service_command_execs_rust_binary():
 
     assert "> /app/core_service.py" in dockerfile
     assert 'os.execv("/usr/local/bin/plai-core"' in dockerfile
+
+
+def test_core_reconciles_interrupted_rag_index_state_on_startup():
+    main = (ROOT / "rust/core/src/main.rs").read_text(encoding="utf-8")
+    rag = (ROOT / "rust/core/src/rag.rs").read_text(encoding="utf-8")
+
+    assert "rag::reconcile_startup_state()" in main
+    assert "pub fn reconcile_startup_state()" in rag
+    assert 'const RAG_BUILD_DB_FILE: &str = "/data/rag/rag.db.build";' in rag
+    assert 'atomic_write(Path::new(RAG_PAUSE_FILE), b"paused\\n")?' in rag
+    assert "keeping it paused for explicit Resume" in rag
+
+
+def test_control_center_contains_document_chat_administration():
+    source = (ROOT / "src/core/prompt_ui.py").read_text(encoding="utf-8")
+    rust_control = (ROOT / "rust/core/src/control.rs").read_text(encoding="utf-8")
+    rag = (ROOT / "rust/core/src/rag.rs").read_text(encoding="utf-8")
+    chat_history = (ROOT / "rust/core/src/chat_history.rs").read_text(encoding="utf-8")
+    assert 'data-page="document-chat"' in source
+    assert 'id="ragSystemPrompt"' in source
+    assert 'id="ragPlaceholderGrid"' in source
+    assert 'id="ragRebuildBtn"' in source
+    assert 'id="ragQueryTemplate"' in source
+    assert 'id="ragDocumentTemplate"' in source
+    assert 'id="ragEmbeddingDimensions"' in source
+    assert 'id="ragHistoryMode"' in source
+    assert 'id="ragHistoryTurns"' in source
+    assert 'id="ragAnswerTemplate"' in source
+    assert 'id="ragConversationHistory"' in source
+    assert 'id="ragAdjacentChunks"' in source
+    assert 'id="ragRetrievalContextPercent"' in source
+    assert 'id="ragRetrievalDiagnostics"' in source
+    assert 'id="ragSamplerTopK"' in source
+    assert "Qwen3-Embedding" in source
+    assert "/api/control/rag/bootstrap" in source
+    assert '"/api/control/rag/bootstrap"' in rust_control
+    assert "DEFAULT_RAG_SYSTEM_PROMPT" in rag
+    assert "DEFAULT_ANSWER_PROMPT_TEMPLATE" in rag
+    assert '"CURRENT_DATE"' in rag
+    assert 'message["diagnostics"]' in chat_history
+def test_control_center_exposes_retrieved_source_template_controls():
+    source = (ROOT / "src/core/prompt_ui.py").read_text(encoding="utf-8")
+    rag = (ROOT / "rust/core/src/rag.rs").read_text(encoding="utf-8")
+    assert 'id="ragSourceTemplate"' in source
+    assert 'id="ragSourcePlaceholderGrid"' in source
+    assert 'id="ragSourcePreviewBtn"' in source
+    assert 'id="ragResetSourceTemplateBtn"' in source
+    assert "DOCUMENT_TAGS" in source
+    assert "DOCUMENT_CUSTOM_FIELDS" in source
+    assert "DOCUMENT_RAW_JSON" in source
+    assert "DEFAULT_SOURCE_PROMPT_TEMPLATE" in rag
+    assert "SOURCE_PROMPT_PLACEHOLDERS" in rag
+    assert '"source_placeholders": source_placeholders' in rag
+
+def test_control_center_shows_previous_user_turns_default_three():
+    source = (ROOT / "src/core/prompt_ui.py").read_text(encoding="utf-8")
+    assert (
+        '<input id="ragHistoryTurns" type="number" min="0" max="8" '
+        'step="1" value="3">'
+    ) in source
+    assert "Default: 3." in source

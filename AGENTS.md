@@ -4,9 +4,9 @@ This file describes project invariants for coding agents and contributors.
 
 ## Project scope
 
-`paperless-local-ai` is a small companion stack for Paperless-ngx. It improves scan OCR through Paperless/OCRmyPDF plus a local PaddleOCR service and applies text-only metadata classification through an external Ollama server.
+`paperless-local-ai` is a small companion stack for Paperless-ngx. It improves scan OCR through Paperless/OCRmyPDF plus a local PaddleOCR service, applies text-only metadata classification through an external Ollama server, and optionally provides a deliberately lightweight local RAG chat inside the Paperless UI.
 
-Do not turn it into a bundled Paperless distribution, an Ollama distribution, or a RAG/document-chat suite without an explicit project decision.
+The lightweight RAG/document-chat scope is an explicit project decision. Keep it bounded: do not turn the project into a bundled Paperless/Ollama distribution, a dedicated vector-database stack, an agent framework, or an uncontrolled multi-call RAG pipeline.
 
 ## Architecture invariants
 
@@ -29,6 +29,14 @@ Do not turn it into a bundled Paperless distribution, an Ollama distribution, or
 - Tag Guidance affects LLM tag decisions only and must not change deterministic confident Hybrid matches.
 - Potential tag inconsistency diagnostics are advisory only and must never rewrite historical tags.
 - Native suggestion matching must fail closed when identity is missing or ambiguous.
+- RAG owns a separate, regenerable SQLite index below `/data/rag`; Paperless remains authoritative and PLAI must not depend on Paperless internal LlamaIndex/vector-store schemas.
+- A normal RAG chat turn performs exactly one Ollama `/api/embed` request and one Ollama `/api/chat` request. Do not add query-rewrite, reranker, refine, summarizer or agent LLM calls to the normal path.
+- RAG heavy work uses the existing `/coordination/ai.lock`. Full-index embedding is bounded and releases the lock between slices so OCR/metadata are not starved.
+- The RAG helper is disposable work launched by the existing Rust core. Do not add another long-running service or vector database for this archive size.
+- Browser RAG access stays same-origin through the Paperless integration, requires Paperless authentication + CSRF for writes, uses an internal relay secret, and is superuser-only until permission-aware retrieval is explicitly implemented.
+- Per-chat RAG model/context/Thinking/retrieval settings are independent of metadata `PromptConfig` and must never mutate metadata-classification settings.
+- RAG conversations persist server-side below `/data/chat`, are keyed to the authenticated Paperless user supplied by the trusted relay, and must not add LLM summarization/title calls. Multiple chats may have waiting jobs, but each conversation has at most one active turn and all heavy inference remains serialized by `/coordination/ai.lock`.
+- `/coordination/ai-status.json` is display metadata only. A stale/missing activity file must never be used as a synchronization primitive or block work.
 
 ## Prompt ownership
 
@@ -49,6 +57,7 @@ Do not scatter settings.
 - Deployment/secrets: `.env` / Compose only when Docker needs the value before process start, or when it is a secret.
 - Paperless-side OCR plugin values stay in the Paperless deployment because Paperless must know them at start.
 - Shared runtime: `/config/app-config.json`, owned by Control Center → App Settings.
+- RAG index defaults: `/config/rag-config.json`; chat overrides are conversation settings and do not alter metadata configuration. The active index signature remains authoritative for query embeddings until an explicit rebuild activates changed index settings.
 - Classification: `/config/prompt-config.json`, including prompt components, model settings, tagging strategy and per-tag guidance.
 - The supported History gate controls are versioned App Settings: minimum similarity, minimum support and minimum winner share. Other History implementation constants stay in code unless a supported operator use case is explicitly added.
 - Internal implementation constants stay code unless there is a supported operator use case.
@@ -79,6 +88,7 @@ Current published OCR support is linux/amd64. Do not claim ARM64 until the Paddl
 - Tests, documentation and examples must use clearly synthetic fixtures. Never reuse names, organizations, addresses, document IDs, titles, excerpts or other values taken from a private Paperless archive.
 - Do not add telemetry or cloud dependencies by default.
 - The Control Center has no authentication; documentation must warn against public exposure.
+- RAG document text may be returned only through the authenticated Paperless relay; do not expose RAG job/index endpoints or the relay secret to browser JavaScript.
 - The OCR service is token-authenticated but must still be documented as a private/LAN endpoint.
 - Preserve the original Paperless document; searchable OCR belongs in Paperless' archive/content path.
 - Retrieved document excerpts may be sent only to the configured local Ollama endpoint and must be framed as untrusted document content by the editable default prompt.
@@ -103,6 +113,8 @@ For Hybrid tagging changes, also test confidence-gated routing, fast-path schema
 For correspondent resolver changes, test exact, strong fuzzy, ambiguous and genuinely new-name behavior.
 
 For OCR lifecycle/plugin changes, also verify the session/lock contract and one real Paperless end-to-end document.
+
+For RAG changes, test scope validation, prompt-injection framing, query-side embedding instruction, path-safe job IDs, fail-open UI injection and the one-embed + one-chat normal-path invariant.
 
 ## Release discipline
 

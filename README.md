@@ -21,6 +21,7 @@ Title, document type, date and sender/issuer are extracted in one structured LLM
 - **Optional Paperless-native correspondent review** — local resolution applies safe existing matches; the optional Suggestions integration can expose plausible new senders through Document Suggestions.
 - **Designed for CPU-only systems** — OCR, Hybrid-history work and LLM inference are serialized; heavyweight OCR/history/model runtimes are released after use.
 - **Control Center** — configure connections, workflow tags, correspondent matching (with a read-only live tester), OCR, prompts, model settings, tagging strategy, per-tag guidance, history health, Dry Run and configuration history from one UI.
+- **Optional Paperless RAG chat** — a multi-turn chat injected into Paperless itself, backed by a separate local SQLite index and a fixed one-embed + one-chat inference path.
 
 ## Why this architecture
 
@@ -143,6 +144,12 @@ The Control Center configures:
 
 Prompts and model settings can be previewed and tested against an existing Paperless document without modifying that document. Saved configurations are versioned and can be restored.
 
+## Optional Paperless RAG chat
+
+When the Paperless UI integration is enabled, `paperless-local-ai` replaces the visible native Paperless chat control with its own multi-turn panel. Paperless itself is not patched. The panel supports the current document or the full archive, follow-up questions, deterministic Paperless source links and per-chat Ollama model/Thinking/context/Top-K/temperature/output settings.
+
+The PLAI index is SQLite below the existing core data mount. A normal question performs **one Ollama embedding request and one Ollama chat request**; there is no LlamaIndex refine chain or extra query-rewrite/reranker LLM. The first build is explicit and later changes are synchronized incrementally. Browser → backend traffic stays same-origin through Paperless and is currently restricted to Paperless superusers. See [RAG chat](docs/rag-chat.md).
+
 ## Requirements
 
 Paperless-ngx · Ollama · Docker Compose or TrueNAS SCALE · linux/amd64
@@ -158,7 +165,7 @@ Choose one deployment guide:
 
 Then complete the required [Paperless integration](docs/paperless-setup.md) and review [Configuration](docs/configuration.md).
 
-More: [Tagging](docs/tagging.md) · [Troubleshooting](docs/troubleshooting.md) · [Compatibility](docs/compatibility.md) · [Architecture](docs/architecture.md)
+More: [RAG chat](docs/rag-chat.md) · [Tagging](docs/tagging.md) · [Troubleshooting](docs/troubleshooting.md) · [Compatibility](docs/compatibility.md) · [Architecture](docs/architecture.md)
 
 ## Security
 

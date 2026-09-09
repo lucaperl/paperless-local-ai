@@ -58,7 +58,7 @@ pub fn sync_if_available(config: &AppConfig) -> Result<bool> {
 pub fn sync_required(config: &AppConfig) -> Result<()> {
     if !storage_ready() {
         return Err(Error::Config(
-            "Paperless UI integration storage is not mounted in core-service; update the deployment before enabling the shortcut".into(),
+            "Paperless UI integration storage is not mounted in core-service; update the deployment before enabling the Paperless UI integration".into(),
         ));
     }
     sync_to(&state_file(), config)

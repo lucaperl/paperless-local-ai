@@ -7,6 +7,7 @@ import logging
 import math
 import os
 import select
+import secrets
 import shutil
 import socket
 import subprocess
@@ -44,6 +45,7 @@ PORT = int(os.getenv("OCR_SERVICE_PORT", "8082"))
 TOKEN = os.getenv("OCR_SERVICE_TOKEN", "")
 MAX_REQUEST_BYTES = int(os.getenv("OCR_MAX_REQUEST_BYTES", str(100 * 1024 * 1024)))
 AI_LOCK_FILE = Path("/coordination/ai.lock")
+AI_STATUS_FILE = AI_LOCK_FILE.with_name("ai-status.json")
 INTEGRATION_SOURCE = Path(os.getenv("OCR_PLUGIN_SOURCE", "/app/ocrmypdf_plai.py"))
 INTEGRATION_TARGET = Path("/integration/ocrmypdf_plai.py")
 PAPERLESS_UI_SOURCE = Path("/app/paperless_local_ai_ui")
@@ -544,6 +546,17 @@ class PaddleSession:
             return None
         return round(time.monotonic() - self._started_at, 1)
 
+    def _write_ai_activity(self) -> None:
+        payload = {
+            "operation": "ocr",
+            "label": "OCR",
+            "started_at_ms": int(time.time() * 1000),
+        }
+        AI_STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = AI_STATUS_FILE.with_name(AI_STATUS_FILE.name + ".tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False) + "\n", encoding="utf-8")
+        os.replace(tmp, AI_STATUS_FILE)
+
     def _acquire_global_lock(self) -> float:
         AI_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
         lock_file = AI_LOCK_FILE.open("a+")
@@ -551,6 +564,7 @@ class PaddleSession:
         LOG.info("Waiting for global AI lock")
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
         wait_seconds = time.monotonic() - wait_started
+        self._write_ai_activity()
         LOG.info("Global AI lock acquired after %.2fs", wait_seconds)
         self._lock_file = lock_file
         return wait_seconds
@@ -558,6 +572,7 @@ class PaddleSession:
     def _release_global_lock(self) -> None:
         if self._lock_file is None:
             return
+        AI_STATUS_FILE.unlink(missing_ok=True)
         try:
             fcntl.flock(self._lock_file.fileno(), fcntl.LOCK_UN)
         finally:
@@ -831,7 +846,10 @@ def sync_paperless_ui_integration() -> None:
         raise RuntimeError(f"Paperless UI integration source missing: {PAPERLESS_UI_SOURCE}")
     PAPERLESS_UI_TARGET.mkdir(parents=True, exist_ok=True)
     expected = set()
-    for source in PAPERLESS_UI_SOURCE.rglob("*.py"):
+    allowed_suffixes = {".py", ".js", ".css"}
+    for source in PAPERLESS_UI_SOURCE.rglob("*"):
+        if not source.is_file() or source.suffix not in allowed_suffixes:
+            continue
         relative = source.relative_to(PAPERLESS_UI_SOURCE)
         expected.add(relative)
         target = PAPERLESS_UI_TARGET / relative
@@ -840,9 +858,24 @@ def sync_paperless_ui_integration() -> None:
         shutil.copyfile(source, tmp)
         os.replace(tmp, target)
         target.chmod(0o644)
-    for target in PAPERLESS_UI_TARGET.rglob("*.py"):
+    for target in PAPERLESS_UI_TARGET.rglob("*"):
+        if not target.is_file() or target.suffix not in allowed_suffixes:
+            continue
         if target.relative_to(PAPERLESS_UI_TARGET) not in expected:
             target.unlink()
+
+    secret_file = Path("/integration/paperless-local-ai-relay.secret")
+    try:
+        relay_secret = secret_file.read_text(encoding="utf-8").strip()
+    except OSError:
+        relay_secret = ""
+    if len(relay_secret) < 32:
+        tmp = secret_file.with_name(secret_file.name + ".tmp")
+        tmp.write_text(secrets.token_urlsafe(32) + "\n", encoding="utf-8")
+        tmp.chmod(0o644)
+        os.replace(tmp, secret_file)
+    else:
+        secret_file.chmod(0o644)
     LOG.info("Paperless UI integration ready at %s", PAPERLESS_UI_TARGET)
 
 

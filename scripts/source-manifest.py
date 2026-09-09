@@ -11,6 +11,8 @@ VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
 
 files = {}
 source_paths = list((ROOT / "src").rglob("*.py"))
+source_paths.extend((ROOT / "src").rglob("*.js"))
+source_paths.extend((ROOT / "src").rglob("*.css"))
 source_paths.extend((ROOT / "rust" / "core" / "src").rglob("*.rs"))
 source_paths.append(ROOT / "rust" / "core" / "build.rs")
 for path in sorted(source_paths):

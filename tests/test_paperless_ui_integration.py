@@ -4,7 +4,7 @@ import importlib
 import json
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,7 +35,7 @@ class Response:
         self.headers[key] = value
 
 
-def _module(tmp_path, monkeypatch):
+def _injection(tmp_path, monkeypatch):
     state = tmp_path / "paperless-local-ai-ui.json"
     monkeypatch.setenv("PLAI_PAPERLESS_UI_STATE_FILE", str(state))
     sys.modules.pop("paperless_local_ai_ui.injection", None)
@@ -45,110 +45,115 @@ def _module(tmp_path, monkeypatch):
 
 
 def test_disabled_is_noop(tmp_path, monkeypatch):
-    module, state = _module(tmp_path, monkeypatch)
-    state.write_text(
-        json.dumps({"enabled": False, "control_center_url": "https://plai.example/"})
-    )
+    module, state = _injection(tmp_path, monkeypatch)
+    state.write_text(json.dumps({"enabled": False, "control_center_url": "https://plai.example/"}))
     response = Response()
     original = response.content
     assert module.inject_response(response).content == original
 
 
-def test_enabled_injects_settings_link_script(tmp_path, monkeypatch):
-    module, state = _module(tmp_path, monkeypatch)
-    state.write_text(
-        json.dumps({"enabled": True, "control_center_url": "https://plai.example/"})
-    )
+def test_enabled_injects_external_chat_asset(tmp_path, monkeypatch):
+    module, state = _injection(tmp_path, monkeypatch)
+    state.write_text(json.dumps({"enabled": True, "control_center_url": "https://plai.example/"}))
     response = Response()
     module.inject_response(response)
     text = response.content.decode()
     assert "data-paperless-local-ai-ui" in text
-    assert "paperless-local-ai-settings-link" in text
-    assert 'document.createTextNode("paperless-local-ai")' in text
-    assert "https://plai.example/" in text
-    assert 'href === "admin/"' in text
+    assert 'src="/_plai/assets/chat.js"' in text
+    assert "documents.views" not in Path(module.__file__).read_text(encoding="utf-8")
     assert response.headers["Content-Length"] == str(len(response.content))
 
 
+def test_subpath_asset_url_uses_request_prefix(tmp_path, monkeypatch):
+    module, state = _injection(tmp_path, monkeypatch)
+    state.write_text(json.dumps({"enabled": True, "control_center_url": "https://plai.example/"}))
+    response = Response()
+    request = SimpleNamespace(path="/paperless/documents/1/details", path_info="/documents/1/details", META={})
+    module.inject_response(response, request)
+    assert 'src="/paperless/_plai/assets/chat.js"' in response.content.decode()
+
+
+def test_compressed_html_fails_open(tmp_path, monkeypatch):
+    module, state = _injection(tmp_path, monkeypatch)
+    state.write_text(json.dumps({"enabled": True, "control_center_url": "https://plai.example/"}))
+    response = Response()
+    response.headers["Content-Encoding"] = "gzip"
+    original = response.content
+    assert module.inject_response(response).content == original
+
+
 def test_invalid_url_fails_closed(tmp_path, monkeypatch):
-    module, state = _module(tmp_path, monkeypatch)
-    state.write_text(
-        json.dumps({"enabled": True, "control_center_url": "javascript:alert(1)"})
-    )
+    module, state = _injection(tmp_path, monkeypatch)
+    state.write_text(json.dumps({"enabled": True, "control_center_url": "javascript:alert(1)"}))
     response = Response()
     original = response.content
     assert module.inject_response(response).content == original
 
 
-def test_embedded_url_cannot_break_out_of_script(tmp_path, monkeypatch):
-    module, state = _module(tmp_path, monkeypatch)
-    state.write_text(
-        json.dumps(
-            {
-                "enabled": True,
-                "control_center_url": "https://plai.example/</script><script>alert(1)</script>",
-            }
-        )
-    )
-    response = Response()
-    module.inject_response(response)
-    text = response.content.decode()
-    assert "</script><script>alert(1)</script>" not in text
-    assert "\\u003c/script\\u003e" in text
-
-
-
-def _middleware_module(monkeypatch, *, attach_error: bool = False):
+def test_middleware_is_fail_open_and_marks_normal_responses(monkeypatch):
     injection = importlib.import_module("paperless_local_ai_ui.injection")
-
-    documents = ModuleType("documents")
-    documents.__path__ = []
-    views = ModuleType("documents.views")
-
-    class IndexView:
-        pass
-
-    views.IndexView = IndexView
-    documents.views = views
-    monkeypatch.setitem(sys.modules, "documents", documents)
-    monkeypatch.setitem(sys.modules, "documents.views", views)
-
-    attached = []
-
-    if attach_error:
-        def fail(_index_view):
-            raise RuntimeError("attach failed")
-
-        monkeypatch.setattr(injection, "patch_index_view", fail)
-    else:
-        monkeypatch.setattr(injection, "patch_index_view", attached.append)
-
+    relay = ModuleType("paperless_local_ai_ui.relay")
+    relay.handle = lambda _request: None
+    monkeypatch.setitem(sys.modules, "paperless_local_ai_ui.relay", relay)
     sys.modules.pop("paperless_local_ai_ui.middleware", None)
     module = importlib.import_module("paperless_local_ai_ui.middleware")
-    return module, attached, IndexView
+    monkeypatch.setattr(injection, "inject_response", lambda response, _request=None: response)
 
-
-def test_middleware_marks_responses_after_successful_attach(monkeypatch):
-    module, attached, index_view = _middleware_module(monkeypatch)
     response = Response(content=b"")
-
     middleware = module.PaperlessLocalAiUiMiddleware(lambda _request: response)
-    result = middleware(None)
-
-    assert attached == [index_view]
+    result = middleware(SimpleNamespace(path_info="/documents/"))
     assert result is response
     assert result.headers["X-Paperless-Local-AI-UI"] == "ready"
 
 
-def test_middleware_does_not_claim_ready_when_attach_fails(monkeypatch):
-    module, _attached, _index_view = _middleware_module(
-        monkeypatch,
-        attach_error=True,
-    )
-    response = Response(content=b"")
-
-    middleware = module.PaperlessLocalAiUiMiddleware(lambda _request: response)
-    result = middleware(None)
-
-    assert result is response
-    assert "X-Paperless-Local-AI-UI" not in result.headers
+def test_runtime_assets_do_not_embed_a_control_center_origin():
+    script = (ROOT / "src/ocr/paperless_local_ai_ui/assets/chat.js").read_text(encoding="utf-8")
+    assert "192.168." not in script
+    assert "http://" not in script
+    assert "https://" not in script
+    assert "_plai/" in script
+    assert "#chatDropdown" not in script  # selector uses getElementById, avoiding CSS coupling
+    assert 'getElementById("chatDropdown")' in script
+    assert 'const CHAT_OPEN_KEY = "paperless-local-ai-chat-open-v1"' in script
+    assert "sessionStorage.setItem(CHAT_OPEN_KEY" in script
+    assert "sessionStorage.getItem(CHAT_OPEN_KEY)" in script
+    assert "conversations/create" in script
+    assert "aria-expanded" in script
+    assert 'role="combobox"' in script
+    assert "scope_query" in script
+    assert "page_size=250" in script
+    assert "syncDocumentContext" in script
+    assert 'data-part="control-center"' not in script
+    assert 'root.addEventListener("keydown", stopKeyboardPropagation)' in script
+    assert 'root.addEventListener("keypress", stopKeyboardPropagation)' in script
+    assert 'root.addEventListener("keyup", stopKeyboardPropagation)' in script
+    assert 'data-field="model"' in script
+    assert 'data-field="think"' in script
+    assert 'data-field="num_ctx"' in script
+    assert 'data-field="top_k"' in script
+    assert 'class="index-box"' not in script
+    assert 'data-action="rebuild"' not in script
+    assert "function renderMarkdown" in script
+    assert "message.thinking" in script
+    assert 'assistant.thinking = job.thinking || ""' in script
+    assert 'data-field="sampler_top_k"' in script
+    assert 'data-field="top_p"' in script
+    assert 'data-field="min_p"' in script
+    assert 'data-field="repeat_penalty"' in script
+    assert 'data-field="repeat_last_n"' in script
+    assert 'data-field="seed"' in script
+    assert 'data-field="stop"' in script
+    assert 'data-field="conversation_history_messages"' in script
+    assert 'data-field="show_retrieval_diagnostics"' in script
+    assert "Retrieval details" in script
+    assert "assistant.diagnostics = job.diagnostics" in script
+    assert '<option value="medium">Medium</option>' in script
+    assert 'data-action="jump-bottom"' in script
+    assert "state.autoScroll = isNearBottom(container)" in script
+    assert "state.hasNewContent = true" in script
+    assert "thinkingOpenByJob" in script
+    assert "output_limit_reached" in script
+    assert "Thinking uses the same output-token budget." in script
+    assert "window.prompt(" not in script
+    assert 'className = "history-popover hidden"' in script
+    assert 'className = "history-rename"' in script

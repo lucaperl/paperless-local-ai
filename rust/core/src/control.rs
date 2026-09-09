@@ -13,6 +13,7 @@ use crate::prompt::{
     PLACEHOLDERS, PromptConfig, TaggingContext, prompt_hashes, prompt_preset,
     prune_parent_tag_names, render_prompts, validate_result,
 };
+use crate::rag;
 use crate::state::{CORE_CONTAINER_RECYCLE_IDLE_SECONDS, CoreState};
 use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, State};
@@ -75,6 +76,50 @@ pub fn router(state: Arc<CoreState>) -> Router {
         )
         .route("/api/app/paperless-ui", post(paperless_ui_update))
         .route("/api/app/paperless-ui/status", get(paperless_ui_status))
+        .route("/api/rag/bootstrap", get(rag::bootstrap))
+        .route("/api/rag/status", get(rag::status))
+        .route("/api/rag/models", get(rag::models))
+        .route("/api/rag/conversations", post(rag::conversations_list))
+        .route(
+            "/api/rag/conversations/create",
+            post(rag::conversations_create),
+        )
+        .route("/api/rag/conversations/get", post(rag::conversations_get))
+        .route(
+            "/api/rag/conversations/rename",
+            post(rag::conversations_rename),
+        )
+        .route(
+            "/api/rag/conversations/delete",
+            post(rag::conversations_delete),
+        )
+        .route("/api/rag/config", post(rag::config_save))
+        .route("/api/rag/chat/start", post(rag::chat_start))
+        .route("/api/rag/chat/status", post(rag::chat_status))
+        .route("/api/rag/chat/stop", post(rag::chat_stop))
+        .route("/api/rag/index/sync", post(rag::index_sync))
+        .route("/api/rag/index/rebuild", post(rag::index_rebuild))
+        .route("/api/rag/index/pause", post(rag::index_pause))
+        .route(
+            "/api/control/rag/bootstrap",
+            get(rag::control_rag_bootstrap),
+        )
+        .route(
+            "/api/control/rag/config",
+            post(rag::control_rag_config_save),
+        )
+        .route(
+            "/api/control/rag/index/sync",
+            post(rag::control_rag_index_sync),
+        )
+        .route(
+            "/api/control/rag/index/rebuild",
+            post(rag::control_rag_index_rebuild),
+        )
+        .route(
+            "/api/control/rag/index/pause",
+            post(rag::control_rag_index_pause),
+        )
         .route("/api/state", get(prompt_state))
         .route("/api/health", get(health))
         .route("/api/history", get(prompt_history))
@@ -266,7 +311,7 @@ async fn paperless_ui_update(State(state): State<Arc<CoreState>>, body: Bytes) -
         .ok_or_else(|| ApiError::bad("enabled must be true or false"))?;
     if enabled && !paperless_ui::storage_ready() {
         return Err(ApiError::bad(
-            "Paperless UI integration storage is not mounted in core-service; update the deployment before enabling the shortcut",
+            "Paperless UI integration storage is not mounted in core-service; update the deployment before enabling the Paperless UI integration",
         ));
     }
     if enabled && !paperless_ui::integration_package_ready() {
