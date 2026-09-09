@@ -426,3 +426,25 @@ def test_source_placeholder_catalog_covers_readable_paperless_document_fields():
     }
     assert required <= set(rag.SOURCE_PROMPT_PLACEHOLDERS)
     assert "DOCUMENT_RAW_JSON" in rag.SOURCE_PROMPT_PLACEHOLDERS
+
+def test_legacy_literal_backslash_n_prompt_defaults_are_normalized():
+    rag = module()
+    cfg = rag.validate_config(
+        {
+            "source_prompt_template": rag.DEFAULT_SOURCE_PROMPT_TEMPLATE.replace(
+                "\n", "\\n"
+            ),
+            "answer_prompt_template": rag.DEFAULT_ANSWER_PROMPT_TEMPLATE.replace(
+                "\n", "\\n"
+            ),
+        }
+    )
+    assert cfg["source_prompt_template"] == rag.DEFAULT_SOURCE_PROMPT_TEMPLATE
+    assert cfg["answer_prompt_template"] == rag.DEFAULT_ANSWER_PROMPT_TEMPLATE
+    assert "\\n" not in cfg["source_prompt_template"]
+    assert "\\n" not in cfg["answer_prompt_template"]
+
+
+def test_retrieval_history_turns_default_is_three():
+    rag = module()
+    assert rag.validate_config({})["retrieval_history_turns"] == 3

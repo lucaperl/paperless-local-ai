@@ -273,6 +273,13 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
         cfg["document_embedding_template"],
         set(DOCUMENT_EMBEDDING_PLACEHOLDERS),
     )
+    legacy_source_prompt = DEFAULT_SOURCE_PROMPT_TEMPLATE.replace("\n", "\\n")
+    if cfg["source_prompt_template"] == legacy_source_prompt:
+        cfg["source_prompt_template"] = DEFAULT_SOURCE_PROMPT_TEMPLATE
+    legacy_answer_prompt = DEFAULT_ANSWER_PROMPT_TEMPLATE.replace("\n", "\\n")
+    if cfg["answer_prompt_template"] == legacy_answer_prompt:
+        cfg["answer_prompt_template"] = DEFAULT_ANSWER_PROMPT_TEMPLATE
+
     cfg["source_prompt_template"] = _validate_template(
         "source_prompt_template",
         cfg["source_prompt_template"],

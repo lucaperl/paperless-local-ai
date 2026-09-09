@@ -88,3 +88,11 @@ def test_control_center_exposes_retrieved_source_template_controls():
     assert "DEFAULT_SOURCE_PROMPT_TEMPLATE" in rag
     assert "SOURCE_PROMPT_PLACEHOLDERS" in rag
     assert '"source_placeholders": source_placeholders' in rag
+
+def test_control_center_shows_previous_user_turns_default_three():
+    source = (ROOT / "src/core/prompt_ui.py").read_text(encoding="utf-8")
+    assert (
+        '<input id="ragHistoryTurns" type="number" min="0" max="8" '
+        'step="1" value="3">'
+    ) in source
+    assert "Default: 3." in source
