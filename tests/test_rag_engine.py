@@ -139,14 +139,14 @@ def test_system_prompt_variables_are_validated_and_rendered():
             "scope": "tag",
             "scope_id": 7,
             "scope_label": "Contracts",
-            "_plai_username": "luca",
+            "_plai_username": "sample-user",
             "_plai_user_id": 42,
         },
         cfg,
     )
     rendered = rag.render_system_prompt(request, cfg)
     assert "{{" not in rendered
-    assert "user=luca" in rendered
+    assert "user=sample-user" in rendered
     assert "scope=tag: Contracts" in rendered
     assert "model=qwen3.5:4b" in rendered
     assert "tz=Europe/Berlin" in rendered
@@ -154,7 +154,7 @@ def test_system_prompt_variables_are_validated_and_rendered():
 
 def test_unknown_system_prompt_variable_is_rejected():
     rag = module()
-    with pytest.raises(ValueError, match="Unknown RAG system prompt placeholders"):
+    with pytest.raises(ValueError, match="Unknown system_prompt placeholders"):
         rag.validate_config({"system_prompt": "Hello {{NOT_A_REAL_VARIABLE}}"})
 
 
