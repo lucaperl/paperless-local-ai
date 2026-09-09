@@ -114,7 +114,7 @@ After Paperless has restarted with these values, the Control Center verifies tha
 
 The configured Control Center URL must be reachable from **inside the Paperless container** because the authenticated same-origin relay forwards RAG requests to `core-service` through that URL. RAG writes require the normal Paperless CSRF token and are currently restricted to Paperless superusers. The browser never receives the Paperless API token or the internal relay secret.
 
-The first RAG index build is started explicitly from the injected chat settings. Paperless' native embedding backend is not required for PLAI RAG. See [RAG chat](rag-chat.md).
+The first PLAI RAG index build is started explicitly from **Control Center → Document Chat → Index status**. Paperless' native embedding backend is not required for PLAI RAG. The Paperless chat panel is for conversations/per-chat settings; global prompt, retrieval, embedding and index administration stays in the Control Center. See [RAG chat](rag-chat.md).
 
 The plugin is verified against OCRmyPDF **17.7.1** in Paperless-ngx **3.1.0**.
 

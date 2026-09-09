@@ -10,7 +10,8 @@ You need:
 - a running Ollama instance reachable from the app containers;
 - Docker Compose v2;
 - a Paperless API token;
-- an installed Ollama model (`qwen3.5:4b` is the default);
+- an installed Ollama chat/classification model (`qwen3.5:4b` is the default);
+- if document chat is used, an installed embedding model (`qwen3-embedding:4b-q4_K_M` is the default);
 - permission to add the OCRmyPDF plugin mount/environment to Paperless.
 
 Fresh installations use English OCR and English prompt defaults. OCR language and the three editable prompt components can be changed independently in the Control Center.
@@ -141,7 +142,24 @@ Follow [Paperless setup](paperless-setup.md).
 
 Only the metadata/review workflow tags are required by the app. OCR runs directly during Paperless import through OCRmyPDF.
 
-## 7. Verify
+## 7. Optional: enable document chat
+
+Document chat is part of the supported project scope but remains opt-in.
+
+Complete the **Optional Paperless UI integration and RAG chat** section in [Paperless setup](paperless-setup.md), restart Paperless so the integration package is loaded, then enable the Paperless UI integration from the Control Center.
+
+Under **Control Center → Document Chat**:
+
+1. review the chat/retrieval defaults;
+2. verify the embedding model exists in Ollama;
+3. keep the CPU-first defaults unless you have benchmarked your hardware;
+4. start the first index build explicitly under **Index status**.
+
+Paperless' native embedding backend is not required. The PLAI index is local/regenerable and a normal chat turn uses one embedding request plus one chat request.
+
+On CPU-only hardware, the first full index build can take hours for a non-trivial archive. It is sliced and releases the shared AI slot between slices so OCR/metadata work is not permanently blocked.
+
+## 8. Verify
 
 Run:
 

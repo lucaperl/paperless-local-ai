@@ -9,7 +9,8 @@ Tested reference: **TrueNAS SCALE 25.10.6**.
 You need:
 
 - working Paperless-ngx and Ollama services;
-- an installed Ollama model (`qwen3.5:4b` is the default);
+- an installed Ollama chat/classification model (`qwen3.5:4b` is the default);
+- if document chat is used, the default `qwen3-embedding:4b-q4_K_M` embedding model (or another configured embedding model);
 - a persistent TrueNAS dataset;
 - a Paperless API token;
 - a random OCR service token;
@@ -81,7 +82,7 @@ ocr-service
 core-service
 ```
 
-`core-service` hosts metadata polling, the Control Center, the suggestion-bridge endpoint and the lightweight History broker in one persistent Rust process. The scientific History engine remains an on-demand Python subprocess, while ports `30148` and `30149` stay unchanged.
+`core-service` hosts metadata polling, the Control Center, the suggestion-bridge endpoint, the lightweight History broker and RAG chat/index job orchestration in one persistent Rust process. The scientific History engine remains an on-demand Python subprocess, while ports `30148` and `30149` stay unchanged.
 
 ## 4. Configure the Control Center
 
@@ -143,7 +144,17 @@ Create the required metadata/review tags and a **Document Added** workflow that 
 
 OCR does not use a separate PaddleOCR queue tag. It happens inside Paperless import before the metadata workflow. See [Paperless setup](paperless-setup.md) for the complete review and matching configuration.
 
-## 7. Test one document
+## 7. Optional: enable document chat
+
+Document chat remains opt-in but is a first-class supported feature.
+
+Add the Paperless-side `PYTHONPATH` / `PAPERLESS_APPS` integration described in [Paperless setup](paperless-setup.md), restart Paperless, then enable the Paperless UI integration from the Control Center.
+
+Review **Control Center → Document Chat** and start the first RAG build explicitly under **Index status**. Paperless' native embedding backend can remain disabled/empty. The index lives in the existing persistent PLAI data mount and does not add a third long-running service.
+
+The defaults are intentionally conservative for CPU-only TrueNAS hosts: embedding batch `1`, slice `16`, 2000-character chunks with 400-character overlap. Full builds are expected to be much slower on CPU than on GPU hardware and can take hours; the active index remains available during later rebuilds and heavy work releases the shared AI slot between slices.
+
+## 8. Test one document
 
 Use a scanned PDF you can verify.
 

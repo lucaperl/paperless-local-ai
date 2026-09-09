@@ -3,41 +3,45 @@
 
 # paperless-local-ai
 
-**Improved OCR with PaddleOCR and efficient local-LLM metadata automation for Paperless-ngx — designed for modest CPU-only hardware.**
+**Local AI for Paperless-ngx: better OCR, metadata automation and document chat — designed for modest CPU-only hardware.**
 
-`paperless-local-ai` uses **PaddleOCR instead of Tesseract** for scanned pages that need OCR and applies Paperless metadata with a local Ollama model. It integrates into Paperless' OCRmyPDF import path, so Paperless stays the document system of record.
+`paperless-local-ai` is a focused companion stack that adds a local-AI layer around an existing Paperless-ngx installation without replacing Paperless or bundling Ollama. It has three first-class capabilities:
 
-Title, document type, date and sender/issuer are extracted in one structured LLM request. Content tags can use **Hybrid tagging**, which combines reviewed-document similarity with an LLM fallback, or **LLM direct**, where the model selects tags for every document. Sender names are resolved locally against existing Paperless correspondents. If the optional Paperless Suggestions integration is configured, plausible new names are exposed there for review; otherwise unmatched names remain for manual review. New correspondents are never auto-created.
+- **scan OCR** with PaddleOCR / PP-OCRv6 through Paperless' OCRmyPDF import path;
+- **structured metadata automation** for title, document type, date, correspondent and tags;
+- **lightweight document chat** with a local SQLite RAG index and a chat panel inside Paperless.
+
+The project is deliberately **CPU-first and resource-aware**. Heavy OCR, history, embedding and chat/model work share one AI slot instead of competing for RAM and CPU. Heavy helpers are started on demand and released again, Ollama models are explicitly unloaded after work, and RAG uses SQLite plus exact cosine retrieval instead of a separate vector database or agent framework. A GPU can make inference faster, but it is not required by the architecture.
+
+Paperless remains the document system of record. The original document is preserved, OCR/searchable archives and metadata stay in Paperless, and the RAG index is a regenerable search cache rather than a second document store.
 
 **[Try the live demo](https://lucaperl.github.io/paperless-local-ai/demo/)** — an interactive browser-only preview using synthetic Paperless, Ollama and OCR data.
 
 ## Highlights
 
 - **Improved scan OCR with PaddleOCR** — PP-OCRv6 Medium is the quality-focused default, with Small and Tiny profiles when lower inference cost matters.
-- **Hybrid tagging** — compares new documents with reviewed Paperless documents, reuses a complete known leaf-tag set only behind a strict similarity/agreement gate, and sends cases without a confident observed-set match to the LLM with relevant reviewed examples and optional Tag Guidance.
-- **LLM direct** — lets a sufficiently capable local model choose tags directly from the Paperless taxonomy.
-- **Editable prompt composition** — System, Base classification and Tagging prompts are all editable. The Tagging prompt is sent only when the LLM actually has to choose tags.
-- **One LLM request per document** — title, type, date and sender/issuer are produced together; tags are included in the same request only on an LLM tag route.
-- **Optional Paperless-native correspondent review** — local resolution applies safe existing matches; the optional Suggestions integration can expose plausible new senders through Document Suggestions.
-- **Designed for CPU-only systems** — OCR, Hybrid-history work and LLM inference are serialized; heavyweight OCR/history/model runtimes are released after use.
-- **Control Center** — configure connections, workflow tags, correspondent matching (with a read-only live tester), OCR, prompts, model settings, tagging strategy, per-tag guidance, history health, Dry Run and configuration history from one UI.
-- **Optional Paperless RAG chat** — a multi-turn chat injected into Paperless itself, backed by a separate local SQLite index and a fixed one-embed + one-chat inference path.
+- **Structured local metadata automation** — title, document type, date and sender/issuer are extracted together; tags join the same LLM request only when the active tag route needs the model.
+- **Hybrid tagging for compact models** — reviewed Paperless documents can provide a confidence-gated exact tag-set reuse path, with an LLM fallback when the archive does not provide enough evidence.
+- **LLM direct tagging** — lets a sufficiently capable local model choose tags directly from the Paperless taxonomy.
+- **Conservative correspondent handling** — existing names are resolved locally; plausible new names can be exposed through the optional Paperless Suggestions bridge, but correspondents are never auto-created.
+- **Lightweight document chat** — persistent multi-chat RAG inside Paperless with document/tag/correspondent/type scopes, deterministic source links, live Paperless metadata, configurable prompt assembly and retrieval diagnostics.
+- **One embed + one chat model call per normal RAG turn** — no query-rewrite LLM, reranker LLM, refine chain, summarizer or agent loop on the normal path.
+- **Designed for modest CPU-only systems** — OCR, Hybrid-history work, metadata inference, RAG chat and index slices are serialized through one shared resource lock; heavyweight runtimes are released after use.
+- **Control Center** — one UI for connections, OCR, workflow settings, classification prompts/tagging, model settings, RAG prompts/retrieval/index administration, diagnostics, safe tests and configuration history.
 
 ## Why this architecture
 
-`paperless-local-ai` is built around three priorities: **OCR quality, practical local inference on modest hardware, and predictable automation inside Paperless.**
+`paperless-local-ai` is built around four priorities: **useful local AI, strong OCR, predictable Paperless integration and practical operation on modest hardware.**
 
-**Better OCR before classification.** Metadata extraction can only be as reliable as the text it receives. PP-OCRv6 Medium is the quality-focused default; Small and Tiny trade recognition quality for lower inference cost. HPI/OpenVINO accelerates the selected profile on CPU.
+**Useful local AI on small servers.** The project favors bounded, inspectable pipelines over maximum throughput. Only one heavyweight AI workload runs at a time, model residency is kept short, scientific/history helpers are disposable, and the RAG path avoids a separate vector service. This makes the stack practical on CPU-only home servers where RAM and sustained inference time matter more than benchmark concurrency.
 
-**Semantic metadata stays with the LLM.** Title, document type, date and sender/issuer benefit directly from document understanding, so they are produced together by the configured Ollama model.
+**Better OCR before downstream AI.** Metadata extraction and document retrieval can only be as reliable as the text they receive. PP-OCRv6 Medium is the quality-focused default; Small and Tiny trade recognition quality for lower inference cost. HPI/OpenVINO accelerates the selected profile on CPU.
 
-**Tags use an explicit Hybrid route by default.** Compact local models can understand what a document is about while still applying a personal filing taxonomy inconsistently. Hybrid tagging first compares the document with already reviewed Paperless documents. A complete reviewed leaf-tag set is reused only when the closest match is sufficiently similar and nearby reviewed examples agree strongly enough on that exact set. History considers only complete tag sets already present in reviewed history and never synthesizes a new combination. If no observed set passes the evidence gate, the LLM chooses the tags using the current Tag Guidance and relevant reviewed examples.
+**Structured automation instead of open-ended agents.** Metadata classification uses one structured request with constrained Paperless values where appropriate. Hybrid tagging can reuse a complete reviewed tag set only behind an explicit evidence gate; uncertain cases go to the LLM. Correspondent extraction is followed by conservative local resolution, and genuinely new correspondents are never auto-created.
 
-Paperless itself already contains an automatic classifier that learns from existing documents. The Hybrid route serves a different integration goal: it exposes an explicit evidence gate before reuse, can hand uncertain cases to the local LLM, and uses the same retrieved documents as examples for that fallback. It does **not** claim to be universally more accurate than Paperless' classifier. See [Tagging](docs/tagging.md#paperless-native-classifier-vs-hybrid-tagging) for the technical comparison.
+**Document chat stays lightweight.** The RAG feature is a first-class project capability but remains deliberately bounded. It keeps a regenerable SQLite index, performs exact local cosine retrieval, and uses exactly one query embedding request plus one chat-generation request for a normal turn. Full index work is sliced so the shared AI slot is released between batches, and an existing active index remains usable while a replacement index is built.
 
-**Sender extraction is followed by conservative local resolution.** The LLM returns the actual sender/issuer as free text. Normalized exact matches and deliberately strong unambiguous fuzzy matches can resolve to an existing Paperless correspondent. Other plausible names can be exposed through Document Suggestions when the optional bridge integration is configured; otherwise they remain unresolved for manual review.
-
-**Resource-aware execution.** The persistent `core-service` runtime is one Rust process. PaddleOCR/OpenVINO, on-demand Hybrid-history work and Ollama inference share one resource lock. The scientific Hybrid-history stack runs only in a disposable Python subprocess; OCR sessions and interactive history lookups can be reused briefly, while heavyweight subprocesses and the Ollama model are released after use.
+**Paperless remains authoritative.** OCR integrates into Paperless/OCRmyPDF, metadata is written back to Paperless, chat source links point to Paperless documents, and live source metadata is read from Paperless at chat time. `paperless-local-ai` does not become a second document management system.
 
 ## Reference performance
 
@@ -56,7 +60,7 @@ The **Context window** sets the maximum available context and affects RAM usage.
 
 ## RAM usage and tuning
 
-The main memory consumers are PaddleOCR during OCR and the Ollama model during metadata classification. Hybrid-history TF-IDF/scikit-learn state is loaded only in an on-demand subprocess and released again after use. Heavy OCR, history and LLM work is serialized through the shared resource lock.
+The main memory consumers are PaddleOCR and whichever Ollama model is active for metadata, embedding or chat. Hybrid-history TF-IDF/scikit-learn state is loaded only in an on-demand subprocess and released again after use. Heavy OCR, history, metadata, RAG chat and index work is serialized through the shared resource lock; the normal RAG path does not keep the embedding and chat models resident together.
 
 | Workload | Configuration | Measured peak |
 |---|---|---:|
@@ -71,24 +75,39 @@ If RAM is limited, lower **Maximum OCR image side** first for OCR pressure and r
 
 ## How it fits into Paperless
 
-During import, Paperless/OCRmyPDF decides whether a page needs OCR. Native-text pages are not sent to PaddleOCR. Pages requiring OCR are sent through the included OCRmyPDF plugin to the local PaddleOCR service, which returns OCRmyPDF-native `OcrElement` geometry.
+There are two complementary paths.
 
-After a document is added, a Paperless **Document Added** workflow assigns the classification queue tag. The metadata worker chooses the tag route, performs one structured Ollama request, resolves the extracted sender locally and writes validated metadata back to the same Paperless document.
+**Import and automation path**
 
-The configured review tag can have any name. It stays on the document until human review is complete; removing it makes the document eligible for trusted Hybrid history once queue/error tags are also gone. The recommended Paperless setup marks the chosen review tag as an **Inbox tag** so Paperless adds it automatically during import.
+```text
+Paperless import
+→ OCRmyPDF
+→ PaddleOCR when OCR is needed
+→ searchable Paperless archive/content
+→ Document Added workflow
+→ local metadata classification/tagging
+→ Paperless metadata
+→ human review
+```
 
-For an exclusive paperless-local-ai metadata workflow, set Paperless **Matching algorithm** to **None** for the content tags, document types, correspondents and technical workflow/review tags managed by paperless-local-ai. See [Paperless setup](docs/paperless-setup.md) for the exact setup.
+**Interactive document-chat path**
+
+```text
+Paperless chat panel
+→ one local query embedding
+→ exact retrieval from the PLAI SQLite index
+→ live Paperless metadata for selected sources
+→ one local chat generation
+→ answer + Paperless source links
+```
+
+The uploaded PDF stays Paperless' original. The RAG index contains only regenerable chunks/embeddings and minimal index metadata; Paperless content remains authoritative. Changing non-structural chat/retrieval settings does not rebuild the index. Structural embedding changes are saved separately from the active index signature and take effect only after an explicit atomic rebuild.
 
 <p align="center">
-  <img src="images/paperless-flow.svg" alt="paperless-local-ai workflow" width="65%">
+  <img src="images/paperless-flow.svg" alt="paperless-local-ai import and metadata workflow" width="65%">
 </p>
 
-Paperless stays the system of record:
-
-- the uploaded **original is preserved**;
-- OCRmyPDF creates the searchable archive/PDF-A representation;
-- Paperless stores OCR text and reviewed metadata;
-- Hybrid tagging reads reviewed Paperless documents and writes new metadata back to Paperless.
+The diagram above shows the import/metadata path. Document chat is a separate read/query path over the same Paperless archive.
 
 ## Tagging
 
@@ -132,27 +151,33 @@ Lowering **Minimum similarity** accepts more name variation. Lowering **Minimum 
 
 ## Control Center
 
-The Control Center configures:
+The Control Center configures both automation and document-chat administration:
 
 - Paperless and Ollama connections;
 - classification queue/error/review tags;
-- correspondent similarity/winner-margin thresholds and the read-only matching tester;
-- OCR language, PaddleOCR model, maximum OCR image side, retry schedule and recovery state;
+- correspondent matching thresholds and the read-only matching tester;
+- OCR language, PaddleOCR profile, image-size limit and retry/recovery behavior;
 - metadata Dry Run and worker timing;
-- model settings and all three classification prompt components;
-- **Hybrid tagging / LLM direct**, History health, supported History matching controls and per-tag Tag Guidance.
+- classification model settings plus System/Base/Tagging prompts;
+- Hybrid tagging / LLM direct, History health and per-tag guidance;
+- global document-chat defaults, System/source/answer prompt assembly, retrieval behavior and diagnostics;
+- embedding model/templates, chunking, batch/slice settings, sync interval and index Sync/Rebuild/Pause state.
 
-Prompts and model settings can be previewed and tested against an existing Paperless document without modifying that document. Saved configurations are versioned and can be restored.
+The actual document chat lives inside Paperless. The Control Center owns global/admin settings; per-chat overrides stay with each server-side conversation. Saved app/classification configurations are versioned and can be restored.
 
-## Optional Paperless RAG chat
+## Document chat
 
-When the Paperless UI integration is enabled, `paperless-local-ai` replaces the visible native Paperless chat control with its own multi-turn panel. Paperless itself is not patched. The panel supports the current document or the full archive, follow-up questions, deterministic Paperless source links and per-chat Ollama model/Thinking/context/Top-K/temperature/output settings.
+When the Paperless UI integration is enabled, `paperless-local-ai` injects its own multi-turn document chat into Paperless without patching Paperless source files. The feature is opt-in at deployment/UI level, but document chat is part of the supported project scope rather than an external add-on.
 
-The PLAI index is SQLite below the existing core data mount. A normal question performs **one Ollama embedding request and one Ollama chat request**; there is no LlamaIndex refine chain or extra query-rewrite/reranker LLM. The first build is explicit and later changes are synchronized incrementally. Browser → backend traffic stays same-origin through Paperless and is currently restricted to Paperless superusers. See [RAG chat](docs/rag-chat.md).
+Chats persist server-side and support scopes for the current document, all documents, tags, correspondents and document types. Per-chat controls include model/Thinking/context/generation settings plus retrieval overrides. Source links are deterministic Paperless links, and retrieved sources can include live Paperless metadata such as title, created date, correspondent and document type.
+
+The normal heavy-work path is fixed at **one Ollama `/api/embed` request and one Ollama `/api/chat` request**. Retrieval is exact cosine search against a local SQLite index; there is no LlamaIndex refine chain, reranker LLM, query-rewrite LLM or agent loop. Index rebuilds are explicit and sliced so OCR/metadata can use the same resource-constrained machine between embedding slices.
+
+See [RAG chat](docs/rag-chat.md) for prompt variables, retrieval/index controls, lifecycle behavior and the current defaults.
 
 ## Requirements
 
-Paperless-ngx · Ollama · Docker Compose or TrueNAS SCALE · linux/amd64
+Paperless-ngx · Ollama · Docker Compose or TrueNAS SCALE · linux/amd64 · GPU not required
 
 Tested reference: **Paperless-ngx 3.1.0 · OCRmyPDF 17.7.1 · TrueNAS SCALE 25.10.6 · Ollama 0.32.11**. See [Compatibility](docs/compatibility.md) for the exact tested scope.
 
