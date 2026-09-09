@@ -75,3 +75,16 @@ def test_control_center_contains_document_chat_administration():
     assert "DEFAULT_ANSWER_PROMPT_TEMPLATE" in rag
     assert '"CURRENT_DATE"' in rag
     assert 'message["diagnostics"]' in chat_history
+def test_control_center_exposes_retrieved_source_template_controls():
+    source = (ROOT / "src/core/prompt_ui.py").read_text(encoding="utf-8")
+    rag = (ROOT / "rust/core/src/rag.rs").read_text(encoding="utf-8")
+    assert 'id="ragSourceTemplate"' in source
+    assert 'id="ragSourcePlaceholderGrid"' in source
+    assert 'id="ragSourcePreviewBtn"' in source
+    assert 'id="ragResetSourceTemplateBtn"' in source
+    assert "DOCUMENT_TAGS" in source
+    assert "DOCUMENT_CUSTOM_FIELDS" in source
+    assert "DOCUMENT_RAW_JSON" in source
+    assert "DEFAULT_SOURCE_PROMPT_TEMPLATE" in rag
+    assert "SOURCE_PROMPT_PLACEHOLDERS" in rag
+    assert '"source_placeholders": source_placeholders' in rag

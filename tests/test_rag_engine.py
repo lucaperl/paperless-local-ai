@@ -360,3 +360,69 @@ def test_new_retrieval_controls_are_validated():
         rag.validate_config({"retrieval_context_percent": 5})
     with pytest.raises(ValueError, match="answer_prompt_template"):
         rag.validate_config({"answer_prompt_template": "{{UNKNOWN}}"})
+def test_retrieved_source_template_exposes_document_metadata_variables():
+    rag = module()
+    cfg = rag.validate_config(
+        {
+            "source_prompt_template": (
+                "[{{SOURCE_NUMBER}}] {{DOCUMENT_TITLE}} | {{DOCUMENT_CREATED}} | "
+                "{{DOCUMENT_CORRESPONDENT}} | {{DOCUMENT_TYPE}} | {{DOCUMENT_TAGS}} | "
+                "{{DOCUMENT_CUSTOM_FIELDS}} | {{DOCUMENT_MIME_TYPE}}\n{{CHUNK}}"
+            )
+        }
+    )
+    item = {
+        "document_id": 42,
+        "ordinal": 3,
+        "title": "Sample Record",
+        "created": "2026-01-15",
+        "score": 0.912345,
+        "context_text": "Synthetic retrieved passage.",
+        "neighbor_ordinals": [2, 4],
+        "document_values": {
+            "DOCUMENT_ID": "42",
+            "DOCUMENT_TITLE": "Sample Record",
+            "DOCUMENT_CREATED": "2026-01-15",
+            "DOCUMENT_CORRESPONDENT": "Example Organization",
+            "DOCUMENT_TYPE": "Agreement",
+            "DOCUMENT_TAGS": "Finance, Review",
+            "DOCUMENT_CUSTOM_FIELDS": '[{"field":4,"field_name":"Reference","value":"ABC-123"}]',
+            "DOCUMENT_MIME_TYPE": "application/pdf",
+        },
+    }
+    rendered = rag.render_source_prompt(item, 1, cfg)
+    assert rendered.startswith("[1] Sample Record | 2026-01-15 | Example Organization")
+    assert "Agreement | Finance, Review" in rendered
+    assert "application/pdf" in rendered
+    assert rendered.endswith("Synthetic retrieved passage.")
+
+
+def test_source_template_default_adds_useful_metadata_without_rebuild():
+    rag = module()
+    cfg = rag.validate_config({})
+    assert "{{DOCUMENT_TITLE}}" in cfg["source_prompt_template"]
+    assert "{{DOCUMENT_CREATED}}" in cfg["source_prompt_template"]
+    assert "{{DOCUMENT_CORRESPONDENT}}" in cfg["source_prompt_template"]
+    assert "{{DOCUMENT_TYPE}}" in cfg["source_prompt_template"]
+    assert "{{DOCUMENT_ID}}" in cfg["source_prompt_template"]
+    assert "{{CHUNK}}" in cfg["source_prompt_template"]
+    with pytest.raises(ValueError, match="source_prompt_template"):
+        rag.validate_config({"source_prompt_template": "{{NOT_A_DOCUMENT_FIELD}}"})
+
+
+def test_source_placeholder_catalog_covers_readable_paperless_document_fields():
+    rag = module()
+    required = {
+        "DOCUMENT_ID", "DOCUMENT_CORRESPONDENT", "DOCUMENT_TYPE",
+        "DOCUMENT_STORAGE_PATH", "DOCUMENT_TITLE", "DOCUMENT_CONTENT",
+        "DOCUMENT_TAGS", "DOCUMENT_CREATED", "DOCUMENT_CREATED_DATE",
+        "DOCUMENT_MODIFIED", "DOCUMENT_ADDED", "DOCUMENT_DELETED_AT",
+        "DOCUMENT_ARCHIVE_SERIAL_NUMBER", "DOCUMENT_ORIGINAL_FILE_NAME",
+        "DOCUMENT_ARCHIVED_FILE_NAME", "DOCUMENT_DUPLICATE_DOCUMENTS",
+        "DOCUMENT_OWNER", "DOCUMENT_PERMISSIONS", "DOCUMENT_USER_CAN_CHANGE",
+        "DOCUMENT_IS_SHARED_BY_REQUESTER", "DOCUMENT_NOTES",
+        "DOCUMENT_CUSTOM_FIELDS", "DOCUMENT_PAGE_COUNT", "DOCUMENT_MIME_TYPE",
+        "DOCUMENT_ROOT_DOCUMENT", "DOCUMENT_VERSIONS",
+    }
+    assert required <= set(rag.SOURCE_PROMPT_PLACEHOLDERS)
+    assert "DOCUMENT_RAW_JSON" in rag.SOURCE_PROMPT_PLACEHOLDERS

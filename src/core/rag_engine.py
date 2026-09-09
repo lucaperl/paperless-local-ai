@@ -54,6 +54,14 @@ Answer in the user's language and keep answers concise unless the user asks for 
 DEFAULT_EMBEDDING_QUERY_TEMPLATE = """Instruct: Given a user question about a personal document archive, retrieve relevant document passages that answer the question
 Query: {{RETRIEVAL_QUERY}}"""
 DEFAULT_DOCUMENT_EMBEDDING_TEMPLATE = "{{CHUNK}}"
+DEFAULT_SOURCE_PROMPT_TEMPLATE = """[Source {{SOURCE_NUMBER}}]
+Title: {{DOCUMENT_TITLE}}
+Created: {{DOCUMENT_CREATED}}
+Correspondent: {{DOCUMENT_CORRESPONDENT}}
+Document type: {{DOCUMENT_TYPE}}
+Document ID: {{DOCUMENT_ID}}
+
+{{CHUNK}}"""
 DEFAULT_ANSWER_PROMPT_TEMPLATE = """DOCUMENT EXCERPTS:
 
 {{DOCUMENT_EXCERPTS}}
@@ -96,6 +104,7 @@ ANSWER_PROMPT_PLACEHOLDERS: dict[str, str] = {
     "SOURCE_COUNT": "Number of source blocks included in the prompt.",
     "CURRENT_DOCUMENT_ID": "Current Paperless document ID when document scope is active.",
 }
+SOURCE_PROMPT_PLACEHOLDERS: dict[str, str] = {'SOURCE_NUMBER': '1-based source number used by answer citations.', 'SIMILARITY_SCORE': 'Cosine-similarity score of the primary retrieved chunk.', 'CHUNK_ORDINAL': 'Primary chunk ordinal within the document.', 'NEIGHBOR_ORDINALS': 'Comma-separated adjacent chunk ordinals included as context.', 'CHUNK': 'Retrieved chunk text, including configured adjacent chunks.', 'DOCUMENT_ID': 'Paperless document ID.', 'DOCUMENT_TITLE': 'Current Paperless document title.', 'DOCUMENT_CONTENT': 'Full current Paperless OCR/content text. Usually avoid this in a source template because it can be very large.', 'DOCUMENT_CORRESPONDENT': 'Current Paperless correspondent name, resolved from its ID.', 'DOCUMENT_CORRESPONDENT_ID': 'Current Paperless correspondent ID.', 'DOCUMENT_TYPE': 'Current Paperless document type name, resolved from its ID.', 'DOCUMENT_TYPE_ID': 'Current Paperless document type ID.', 'DOCUMENT_STORAGE_PATH': 'Current Paperless storage path name, resolved from its ID.', 'DOCUMENT_STORAGE_PATH_ID': 'Current Paperless storage path ID.', 'DOCUMENT_TAGS': 'Comma-separated current Paperless tag names.', 'DOCUMENT_TAG_IDS': 'Comma-separated current Paperless tag IDs.', 'DOCUMENT_CREATED': 'Current Paperless created date.', 'DOCUMENT_CREATED_DATE': 'Deprecated Paperless created_date field when returned.', 'DOCUMENT_MODIFIED': 'Current Paperless modified timestamp.', 'DOCUMENT_ADDED': 'Current Paperless added timestamp.', 'DOCUMENT_DELETED_AT': 'Paperless deleted_at timestamp when present.', 'DOCUMENT_ARCHIVE_SERIAL_NUMBER': 'Paperless archive serial number (ASN) when present.', 'DOCUMENT_ORIGINAL_FILE_NAME': 'Original file name returned by Paperless.', 'DOCUMENT_ARCHIVED_FILE_NAME': 'Archived file name returned by Paperless.', 'DOCUMENT_DUPLICATE_DOCUMENTS': 'JSON representation of duplicate_documents.', 'DOCUMENT_OWNER': 'Paperless owner username/name, resolved from its ID when available.', 'DOCUMENT_OWNER_ID': 'Paperless owner ID.', 'DOCUMENT_PERMISSIONS': 'JSON representation of permissions when the API returns them.', 'DOCUMENT_USER_CAN_CHANGE': 'Paperless user_can_change value.', 'DOCUMENT_IS_SHARED_BY_REQUESTER': 'Paperless is_shared_by_requester value.', 'DOCUMENT_NOTES': 'JSON representation of Paperless notes.', 'DOCUMENT_CUSTOM_FIELDS': 'JSON representation of custom fields with resolved field names when available.', 'DOCUMENT_CUSTOM_FIELDS_RAW': 'Raw JSON representation of Paperless custom_fields.', 'DOCUMENT_PAGE_COUNT': 'Paperless page count.', 'DOCUMENT_MIME_TYPE': 'Paperless MIME type.', 'DOCUMENT_ROOT_DOCUMENT': 'Raw Paperless root_document value.', 'DOCUMENT_ROOT_DOCUMENT_ID': 'Paperless root document ID.', 'DOCUMENT_VERSIONS': 'JSON representation of Paperless document versions.', 'DOCUMENT_METADATA_JSON': 'JSON object containing the returned Paperless document metadata except full content.', 'DOCUMENT_RAW_JSON': 'Complete JSON object returned by the Paperless document API, including content.'}
 RAG_PLACEHOLDER_RE = re.compile(r"{{\s*([A-Z0-9_]+)\s*}}")
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -103,6 +112,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "embedding_model": "qwen3-embedding:4b-q4_K_M",
     "embedding_query_template": DEFAULT_EMBEDDING_QUERY_TEMPLATE,
     "document_embedding_template": DEFAULT_DOCUMENT_EMBEDDING_TEMPLATE,
+    "source_prompt_template": DEFAULT_SOURCE_PROMPT_TEMPLATE,
     "answer_prompt_template": DEFAULT_ANSWER_PROMPT_TEMPLATE,
     "embedding_dimensions": None,
     "query_truncate": True,
@@ -224,6 +234,7 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
             "embedding_model",
             "embedding_query_template",
             "document_embedding_template",
+            "source_prompt_template",
             "answer_prompt_template",
             "embedding_dimensions",
             "query_truncate",
@@ -261,6 +272,11 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
         "document_embedding_template",
         cfg["document_embedding_template"],
         set(DOCUMENT_EMBEDDING_PLACEHOLDERS),
+    )
+    cfg["source_prompt_template"] = _validate_template(
+        "source_prompt_template",
+        cfg["source_prompt_template"],
+        set(SOURCE_PROMPT_PLACEHOLDERS),
     )
     cfg["answer_prompt_template"] = _validate_template(
         "answer_prompt_template",
@@ -1476,6 +1492,242 @@ def expand_retrieved_neighbors(
     return enriched
 
 
+def _template_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (dict, list, tuple)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+    return str(value)
+
+
+def _relation_id(value: Any) -> int | None:
+    if isinstance(value, dict):
+        value = value.get("id")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _resolve_paperless_name(
+    session: requests.Session,
+    paperless_url: str,
+    endpoint: str,
+    value: Any,
+    cache: dict[tuple[str, int], str],
+    *,
+    keys: tuple[str, ...] = ("name", "username"),
+) -> str:
+    if isinstance(value, dict):
+        for key in keys:
+            candidate = value.get(key)
+            if candidate:
+                return str(candidate)
+    object_id = _relation_id(value)
+    if object_id is None:
+        return ""
+    cache_key = (endpoint, object_id)
+    if cache_key in cache:
+        return cache[cache_key]
+    result = str(object_id)
+    try:
+        payload = request_json(
+            session,
+            "GET",
+            f"{paperless_url}/api/{endpoint}/{object_id}/",
+        )
+        if isinstance(payload, dict):
+            for key in keys:
+                candidate = payload.get(key)
+                if candidate:
+                    result = str(candidate)
+                    break
+    except requests.RequestException:
+        pass
+    cache[cache_key] = result
+    return result
+
+
+def _document_source_values(
+    document: dict[str, Any],
+    item: dict[str, Any],
+    session: requests.Session,
+    paperless_url: str,
+    name_cache: dict[tuple[str, int], str],
+) -> dict[str, str]:
+    correspondent = document.get("correspondent")
+    document_type = document.get("document_type")
+    storage_path = document.get("storage_path")
+    owner = document.get("owner")
+    tags_raw = document.get("tags") if isinstance(document.get("tags"), list) else []
+    custom_fields_raw = (
+        document.get("custom_fields")
+        if isinstance(document.get("custom_fields"), list)
+        else []
+    )
+
+    tag_ids = [
+        tag_id
+        for tag_id in (_relation_id(tag) for tag in tags_raw)
+        if tag_id is not None
+    ]
+    tag_names = [
+        _resolve_paperless_name(session, paperless_url, "tags", tag_id, name_cache)
+        for tag_id in tag_ids
+    ]
+
+    resolved_custom_fields: list[dict[str, Any]] = []
+    for entry in custom_fields_raw:
+        if not isinstance(entry, dict):
+            resolved_custom_fields.append({"value": entry})
+            continue
+        field_id = _relation_id(entry.get("field"))
+        resolved = dict(entry)
+        if field_id is not None:
+            resolved["field_name"] = _resolve_paperless_name(
+                session,
+                paperless_url,
+                "custom_fields",
+                field_id,
+                name_cache,
+            )
+        resolved_custom_fields.append(resolved)
+
+    metadata = dict(document)
+    metadata.pop("content", None)
+    root_document = document.get("root_document")
+
+    return {
+        "DOCUMENT_ID": _template_value(document.get("id") or item.get("document_id")),
+        "DOCUMENT_TITLE": _template_value(document.get("title") or item.get("title") or ""),
+        "DOCUMENT_CONTENT": _template_value(document.get("content")),
+        "DOCUMENT_CORRESPONDENT": _resolve_paperless_name(
+            session, paperless_url, "correspondents", correspondent, name_cache
+        ),
+        "DOCUMENT_CORRESPONDENT_ID": _template_value(_relation_id(correspondent)),
+        "DOCUMENT_TYPE": _resolve_paperless_name(
+            session, paperless_url, "document_types", document_type, name_cache
+        ),
+        "DOCUMENT_TYPE_ID": _template_value(_relation_id(document_type)),
+        "DOCUMENT_STORAGE_PATH": _resolve_paperless_name(
+            session, paperless_url, "storage_paths", storage_path, name_cache
+        ),
+        "DOCUMENT_STORAGE_PATH_ID": _template_value(_relation_id(storage_path)),
+        "DOCUMENT_TAGS": ", ".join(name for name in tag_names if name),
+        "DOCUMENT_TAG_IDS": ", ".join(str(tag_id) for tag_id in tag_ids),
+        "DOCUMENT_CREATED": _template_value(document.get("created") or item.get("created")),
+        "DOCUMENT_CREATED_DATE": _template_value(document.get("created_date")),
+        "DOCUMENT_MODIFIED": _template_value(document.get("modified")),
+        "DOCUMENT_ADDED": _template_value(document.get("added")),
+        "DOCUMENT_DELETED_AT": _template_value(document.get("deleted_at")),
+        "DOCUMENT_ARCHIVE_SERIAL_NUMBER": _template_value(document.get("archive_serial_number")),
+        "DOCUMENT_ORIGINAL_FILE_NAME": _template_value(document.get("original_file_name")),
+        "DOCUMENT_ARCHIVED_FILE_NAME": _template_value(document.get("archived_file_name")),
+        "DOCUMENT_DUPLICATE_DOCUMENTS": _template_value(document.get("duplicate_documents")),
+        "DOCUMENT_OWNER": _resolve_paperless_name(
+            session,
+            paperless_url,
+            "users",
+            owner,
+            name_cache,
+            keys=("username", "name"),
+        ),
+        "DOCUMENT_OWNER_ID": _template_value(_relation_id(owner)),
+        "DOCUMENT_PERMISSIONS": _template_value(document.get("permissions")),
+        "DOCUMENT_USER_CAN_CHANGE": _template_value(document.get("user_can_change")),
+        "DOCUMENT_IS_SHARED_BY_REQUESTER": _template_value(
+            document.get("is_shared_by_requester")
+        ),
+        "DOCUMENT_NOTES": _template_value(document.get("notes")),
+        "DOCUMENT_CUSTOM_FIELDS": _template_value(resolved_custom_fields),
+        "DOCUMENT_CUSTOM_FIELDS_RAW": _template_value(custom_fields_raw),
+        "DOCUMENT_PAGE_COUNT": _template_value(document.get("page_count")),
+        "DOCUMENT_MIME_TYPE": _template_value(document.get("mime_type")),
+        "DOCUMENT_ROOT_DOCUMENT": _template_value(root_document),
+        "DOCUMENT_ROOT_DOCUMENT_ID": _template_value(_relation_id(root_document)),
+        "DOCUMENT_VERSIONS": _template_value(document.get("versions")),
+        "DOCUMENT_METADATA_JSON": _template_value(metadata),
+        "DOCUMENT_RAW_JSON": _template_value(document),
+    }
+
+
+def enrich_retrieved_metadata(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not items:
+        return []
+    paperless_url, _ = app_connections()
+    session = paperless_session()
+    name_cache: dict[tuple[str, int], str] = {}
+    document_cache: dict[int, dict[str, Any]] = {}
+    enriched: list[dict[str, Any]] = []
+
+    for item in items:
+        document_id = int(item["document_id"])
+        if document_id not in document_cache:
+            document: dict[str, Any] = {}
+            try:
+                payload = request_json(
+                    session,
+                    "GET",
+                    f"{paperless_url}/api/documents/{document_id}/",
+                )
+                if isinstance(payload, dict):
+                    document = payload
+            except requests.RequestException:
+                pass
+            if not document:
+                document = {
+                    "id": document_id,
+                    "title": item.get("title"),
+                    "created": item.get("created"),
+                }
+            document_cache[document_id] = document
+
+        copy = dict(item)
+        copy["document_values"] = _document_source_values(
+            document_cache[document_id],
+            item,
+            session,
+            paperless_url,
+            name_cache,
+        )
+        enriched.append(copy)
+    return enriched
+
+
+def render_source_prompt(
+    item: dict[str, Any],
+    source_number: int,
+    cfg: dict[str, Any],
+) -> str:
+    values = {name: "" for name in SOURCE_PROMPT_PLACEHOLDERS}
+    values.update(item.get("document_values") or {})
+    values.update(
+        {
+            "SOURCE_NUMBER": str(source_number),
+            "SIMILARITY_SCORE": _template_value(item.get("score")),
+            "CHUNK_ORDINAL": _template_value(item.get("ordinal")),
+            "NEIGHBOR_ORDINALS": ", ".join(
+                str(value) for value in item.get("neighbor_ordinals", [])
+            ),
+            "CHUNK": str(item.get("context_text") or item.get("text") or "").strip(),
+            "DOCUMENT_ID": values.get("DOCUMENT_ID")
+            or _template_value(item.get("document_id")),
+            "DOCUMENT_TITLE": values.get("DOCUMENT_TITLE")
+            or _template_value(item.get("title")),
+            "DOCUMENT_CREATED": values.get("DOCUMENT_CREATED")
+            or _template_value(item.get("created")),
+        }
+    )
+    return RAG_PLACEHOLDER_RE.sub(
+        lambda match: values.get(match.group(1), match.group(0)),
+        cfg["source_prompt_template"],
+    )
+
+
+
 def scope_document_ids(request: dict[str, Any]) -> set[int] | None:
     scope = request["scope"]
     if scope == "all":
@@ -1575,8 +1827,7 @@ def _bounded_prompt(
     excerpts: list[str] = []
     remaining_document_budget = document_budget
     for index, item in enumerate(retrieved, 1):
-        header = f"[Source {index}] Document {item['document_id']} — {item['title']}\n"
-        block = header + str(item.get("context_text") or item["text"]).strip()
+        block = render_source_prompt(item, index, cfg)
         rendered_cost = (len(block) + 100) * max(1, excerpt_occurrences)
         if rendered_cost > remaining_document_budget and selected:
             break
@@ -1734,6 +1985,7 @@ def chat(job_id: str, request_path: Path) -> None:
                 max_chunks_per_document=cfg["max_chunks_per_document"],
             )
             retrieved = expand_retrieved_neighbors(retrieved, cfg["adjacent_chunks"])
+            retrieved = enrich_retrieved_metadata(retrieved)
             messages, selected, prompt_stats = _bounded_prompt(request, retrieved, cfg)
             retrieval_seconds = time.monotonic() - retrieval_started
             sources: list[dict[str, Any]] = []
@@ -1776,9 +2028,9 @@ def chat(job_id: str, request_path: Path) -> None:
                             "ordinal": int(item["ordinal"]),
                             "score": item["score"],
                             "neighbor_ordinals": item.get("neighbor_ordinals", []),
-                            "excerpt_preview": str(
-                                item.get("context_text") or item["text"]
-                            )[:600],
+                            "excerpt_preview": render_source_prompt(
+                                item, source_number, cfg
+                            )[:1000],
                         }
                         for source_number, item in enumerate(selected, 1)
                     ],
