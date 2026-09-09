@@ -210,41 +210,6 @@
               <label>Temperature<input data-field="temperature" type="number" min="0" max="2" step="0.1"></label>
               <label>Max output tokens<input data-field="num_predict" type="number" min="64" max="4096" step="64"></label>
             </div>
-            <div class="index-box">
-              <div class="index-head"><strong>Index</strong><span data-part="index-state">Loading…</span></div>
-              <div class="progress"><span data-part="index-progress"></span></div>
-              <small data-part="index-detail"></small>
-              <div class="index-config">
-                <label>Embedding model
-                  <input data-field="embedding_model" list="plai-models" autocomplete="off">
-                </label>
-                <div class="index-config-grid">
-                  <label>Chunk target
-                    <input data-field="chunk_target_chars" type="number" min="1000" max="20000" step="100">
-                  </label>
-                  <label>Chunk overlap
-                    <input data-field="chunk_overlap_chars" type="number" min="0" max="19999" step="100">
-                  </label>
-                  <label>Embedding batch size
-                    <input data-field="embedding_batch_size" type="number" min="1" max="64" step="1">
-                  </label>
-                  <label>Embedding slice size
-                    <input data-field="embedding_slice_chunks" type="number" min="1" max="256" step="1">
-                  </label>
-                  <label>Sync interval (seconds)
-                    <input data-field="sync_interval_seconds" type="number" min="60" max="86400" step="60">
-                  </label>
-                </div>
-                <small data-part="index-config-detail"></small>
-                <button type="button" data-action="save-index-config">Save index settings</button>
-              </div>
-              <p class="index-help">Rebuild recreates the PLAI search index for all Paperless documents. It never modifies the documents themselves. An existing active index remains usable until the rebuilt index is activated.</p>
-              <div class="index-actions">
-                <button type="button" data-action="sync">Sync</button>
-                <button type="button" data-action="rebuild">Rebuild</button>
-                <button type="button" data-action="pause">Pause</button>
-              </div>
-            </div>
           </div>
           <main class="messages" data-part="messages"></main>
           <div class="phase" data-part="phase"></div>
@@ -283,10 +248,7 @@
       scope: q('[data-field="scope"]'), scope_query: q('[data-field="scope_query"]'), model: q('[data-field="model"]'),
       think: q('[data-field="think"]'), num_ctx: q('[data-field="num_ctx"]'), top_k: q('[data-field="top_k"]'),
       temperature: q('[data-field="temperature"]'), num_predict: q('[data-field="num_predict"]'),
-      embedding_model: q('[data-field="embedding_model"]'),
-      chunk_target_chars: q('[data-field="chunk_target_chars"]'), chunk_overlap_chars: q('[data-field="chunk_overlap_chars"]'),
-      embedding_batch_size: q('[data-field="embedding_batch_size"]'), embedding_slice_chunks: q('[data-field="embedding_slice_chunks"]'),
-      sync_interval_seconds: q('[data-field="sync_interval_seconds"]'), question: q('[data-field="question"]'),
+      question: q('[data-field="question"]'),
     };
 
     function normalizeSettings() {
@@ -304,18 +266,54 @@
       fields.top_k.value = state.settings.top_k || defaults.top_k || 5;
       fields.temperature.value = state.settings.temperature ?? defaults.temperature ?? 0.1;
       fields.num_predict.value = state.settings.num_predict || defaults.num_predict || 512;
-      fillIndexConfigFields();
       fields.scope.value = state.scope;
       updateScopeUi(false);
     }
 
-    function fillIndexConfigFields() {
-      fields.embedding_model.value = state.indexConfig.embedding_model || "";
-      fields.chunk_target_chars.value = state.indexConfig.chunk_target_chars ?? 4000;
-      fields.chunk_overlap_chars.value = state.indexConfig.chunk_overlap_chars ?? 800;
-      fields.embedding_batch_size.value = state.indexConfig.embedding_batch_size ?? 16;
-      fields.embedding_slice_chunks.value = state.indexConfig.embedding_slice_chunks ?? 64;
-      fields.sync_interval_seconds.value = state.indexConfig.sync_interval_seconds ?? 900;
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+      })[ch]);
+    }
+
+    function inlineMarkdown(value) {
+      let html = escapeHtml(value);
+      html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+      html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+      html = html.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+      html = html.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+      return html;
+    }
+
+    function renderMarkdown(node, value) {
+      const lines = String(value ?? "").replace(/\r\n/g, "\n").split("\n");
+      const parts = [];
+      let list = null;
+      const closeList = () => {
+        if (list) { parts.push(`</${list}>`); list = null; }
+      };
+      for (const raw of lines) {
+        const line = raw.trimEnd();
+        if (!line.trim()) { closeList(); continue; }
+        const unordered = line.match(/^\s*[-*]\s+(.+)$/);
+        const ordered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+        if (unordered || ordered) {
+          const type = ordered ? "ol" : "ul";
+          if (list !== type) { closeList(); list = type; parts.push(`<${type}>`); }
+          parts.push(`<li>${inlineMarkdown((unordered || ordered)[1])}</li>`);
+          continue;
+        }
+        closeList();
+        const heading = line.match(/^(#{1,3})\s+(.+)$/);
+        if (heading) {
+          const level = Math.min(4, heading[1].length + 2);
+          parts.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
+        } else {
+          parts.push(`<p>${inlineMarkdown(line)}</p>`);
+        }
+      }
+      closeList();
+      node.innerHTML = parts.join("\n");
     }
 
     function sourceNode(source) {
@@ -336,8 +334,24 @@
       for (const message of state.messages) {
         const wrapper = document.createElement("article"); wrapper.className = `message ${message.role}`;
         const label = document.createElement("div"); label.className = "message-label"; label.textContent = message.role === "user" ? "You" : "PLAI";
-        const body = document.createElement("div"); body.className = "message-body"; body.textContent = message.content || (message.pending ? "…" : "");
-        wrapper.append(label, body);
+        const body = document.createElement("div"); body.className = "message-body";
+        if (message.role === "assistant") {
+          renderMarkdown(body, message.content || (message.pending && !message.thinking ? "…" : ""));
+        } else {
+          body.textContent = message.content || "";
+        }
+        wrapper.appendChild(label);
+        if (message.role === "assistant" && message.thinking) {
+          const thought = document.createElement("details"); thought.className = "thinking";
+          thought.open = !!message.pending && !message.content;
+          const summary = document.createElement("summary");
+          summary.textContent = message.pending && !message.content ? "Thinking…" : "Thinking";
+          const thoughtBody = document.createElement("div"); thoughtBody.className = "thinking-body";
+          renderMarkdown(thoughtBody, message.thinking);
+          thought.append(summary, thoughtBody);
+          wrapper.appendChild(thought);
+        }
+        wrapper.appendChild(body);
         if (Array.isArray(message.sources) && message.sources.length) {
           const sources = document.createElement("div"); sources.className = "sources";
           for (const source of message.sources) sources.appendChild(sourceNode(source)); wrapper.appendChild(sources);
@@ -435,7 +449,12 @@
       try {
         const job = await api("chat/status", { method: "POST", body: JSON.stringify({ job_id: state.jobId }) });
         const assistant = [...state.messages].reverse().find((item) => item.role === "assistant" && item.pending);
-        if (assistant) { assistant.content = job.answer || ""; assistant.sources = job.sources || []; renderMessages(); }
+        if (assistant) {
+          assistant.content = job.answer || "";
+          assistant.thinking = job.thinking || "";
+          assistant.sources = job.sources || [];
+          renderMessages();
+        }
         setPhase(phaseLabel(job));
         if (["done", "error", "stopped"].includes(job.status)) {
           state.jobId = null; setRunning(false); await loadConversation(state.conversationId); await refreshConversations(); return;
@@ -634,78 +653,23 @@
     }
 
     function renderIndex(payload) {
-      const idx = payload.state || {}; state.indexState = idx; state.indexConfig = payload.config || state.indexConfig;
-      const stateNode = q('[data-part="index-state"]'); const detail = q('[data-part="index-detail"]'); const bar = q('[data-part="index-progress"]'); const pauseButton = q('[data-action="pause"]');
-      let label = idx.index_exists ? `${idx.indexed_documents || 0} docs · ${idx.indexed_chunks || 0} chunks` : "Not built";
-      if (idx.running) label = `${idx.operation || "index"}: ${idx.phase || "running"}`;
-      if (idx.paused) label = "Paused";
-      if (idx.rebuild_required && idx.index_exists) label += " · rebuild required";
-      if (idx.last_error) label = `Error: ${idx.last_error}`;
-      stateNode.textContent = label;
-      const total = Number(idx.total || 0); const current = Number(idx.current || 0); const percent = total > 0 ? Math.max(0, Math.min(100, (current / total) * 100)) : 0; bar.style.width = `${percent}%`;
-      let extra = "";
-      if (idx.running && idx.started_at && total > 0 && current > 0) {
-        const elapsed = Math.max(1, (Date.now() - Date.parse(idx.started_at)) / 1000); const eta = elapsed * Math.max(0, total - current) / current;
-        extra = ` · elapsed ${formatDurationSeconds(elapsed)} · ETA ~${formatDurationSeconds(eta)}`;
+      const idx = payload.state || {};
+      state.indexState = idx;
+      state.indexConfig = payload.config || state.indexConfig;
+      setRunning(!!state.jobId);
+      if (!idx.index_exists && !state.jobId) {
+        setPhase("RAG index unavailable. Open the paperless-local-ai Control Center.");
+      } else if (idx.rebuild_required && !state.jobId) {
+        setPhase("RAG index settings changed. Rebuild it in the paperless-local-ai Control Center.");
       }
-      detail.textContent = total > 0 ? `${current} / ${total} documents · ${idx.indexed_chunks || 0} chunks${extra}` : (idx.last_sync ? `Last sync ${idx.last_sync}` : "Initial rebuild is explicit.");
-      const active = idx.active_signature || null;
-      q('[data-part="index-config-detail"]').textContent = active
-        ? `Active: ${active.embedding_model} · chunk ${active.chunk_target_chars}/${active.chunk_overlap_chars}. Configured: ${state.indexConfig.embedding_model} · chunk ${state.indexConfig.chunk_target_chars}/${state.indexConfig.chunk_overlap_chars}, batch ${state.indexConfig.embedding_batch_size}, slice ${state.indexConfig.embedding_slice_chunks}, sync ${state.indexConfig.sync_interval_seconds}s.`
-        : `Next rebuild: ${state.indexConfig.embedding_model} · chunk ${state.indexConfig.chunk_target_chars}/${state.indexConfig.chunk_overlap_chars}, batch ${state.indexConfig.embedding_batch_size}, slice ${state.indexConfig.embedding_slice_chunks}, sync ${state.indexConfig.sync_interval_seconds}s.`;
-      pauseButton.textContent = idx.paused ? "Resume" : "Pause"; setRunning(!!state.jobId);
     }
 
     async function refreshIndex() {
       if (state.indexTimer) clearTimeout(state.indexTimer); state.indexTimer = null;
-      try { renderIndex(await api("status")); } catch (error) { q('[data-part="index-state"]').textContent = error.message; }
+      try { renderIndex(await api("status")); } catch (error) { setPhase(error.message); }
       if (state.open) state.indexTimer = setTimeout(refreshIndex, 3000);
     }
 
-    async function saveIndexConfig() {
-      const config = {
-        embedding_model: fields.embedding_model.value.trim(),
-        chunk_target_chars: Number(fields.chunk_target_chars.value),
-        chunk_overlap_chars: Number(fields.chunk_overlap_chars.value),
-        embedding_batch_size: Number(fields.embedding_batch_size.value),
-        embedding_slice_chunks: Number(fields.embedding_slice_chunks.value),
-        sync_interval_seconds: Number(fields.sync_interval_seconds.value),
-      };
-      if (!config.embedding_model) { setPhase("Embedding model is required."); return; }
-      const integerFields = [
-        "chunk_target_chars", "chunk_overlap_chars", "embedding_batch_size",
-        "embedding_slice_chunks", "sync_interval_seconds",
-      ];
-      if (integerFields.some((key) => !Number.isInteger(config[key]))) {
-        setPhase("Index numeric settings must be whole numbers.");
-        return;
-      }
-      try {
-        const payload = await api("config", { method: "POST", body: JSON.stringify(config) });
-        renderIndex(payload);
-        fillIndexConfigFields();
-        if (!state.indexState.index_exists) {
-          setPhase("Index settings saved.");
-        } else if (state.indexState.rebuild_required) {
-          setPhase("Index settings saved. The active index remains usable; model/chunk changes require Rebuild.");
-        } else {
-          setPhase("Index settings saved. Batch, slice and sync changes apply without rebuilding.");
-        }
-      } catch (error) { setPhase(error.message); }
-    }
-
-    async function indexAction(action) {
-      try {
-        if (action === "rebuild" && !window.confirm("Rebuild the complete PLAI RAG index? Paperless documents are not modified, and an existing active index stays usable until activation.")) return;
-        if (action === "pause") {
-          const resume = !!state.indexState.paused; const operation = state.indexState.operation;
-          await api("index/pause", { method: "POST", body: JSON.stringify({ paused: !resume }) });
-          if (resume && operation === "rebuild") await api("index/rebuild", { method: "POST", body: "{}" });
-          if (resume && operation === "sync") await api("index/sync", { method: "POST", body: "{}" });
-        } else { await api(`index/${action}`, { method: "POST", body: "{}" }); }
-        await refreshIndex();
-      } catch (error) { setPhase(error.message); }
-    }
 
     function newChat() {
       state.conversationId = null; state.messages = []; state.jobId = null; localStorage.removeItem(ACTIVE_CHAT_KEY);
@@ -725,7 +689,7 @@
       await refreshConversations().catch((error) => setPhase(error.message));
       if (state.conversationId && state.conversations.some((item) => item.id === state.conversationId)) await loadConversation(state.conversationId).catch(() => newChat());
       if (state.indexTimer) clearTimeout(state.indexTimer); refreshIndex();
-      if (!state.indexState?.index_exists) setPhase("RAG index not built yet. Open settings and run Rebuild.");
+      if (!state.indexState?.index_exists) setPhase("RAG index unavailable. Open the paperless-local-ai Control Center.");
       setTimeout(() => fields.question.focus(), 0);
     }
 
@@ -743,10 +707,6 @@
     q('[data-action="settings"]').addEventListener("click", () => q('[data-part="settings"]').classList.toggle("hidden"));
     q('[data-action="send"]').addEventListener("click", send);
     q('[data-action="stop"]').addEventListener("click", stop);
-    q('[data-action="sync"]').addEventListener("click", () => indexAction("sync"));
-    q('[data-action="rebuild"]').addEventListener("click", () => indexAction("rebuild"));
-    q('[data-action="pause"]').addEventListener("click", () => indexAction("pause"));
-    q('[data-action="save-index-config"]').addEventListener("click", saveIndexConfig);
     fields.scope.addEventListener("change", () => {
       state.scope = fields.scope.value;
       state.scopeId = null;

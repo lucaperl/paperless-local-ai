@@ -100,6 +100,17 @@ pub fn router(state: Arc<CoreState>) -> Router {
         .route("/api/rag/index/sync", post(rag::index_sync))
         .route("/api/rag/index/rebuild", post(rag::index_rebuild))
         .route("/api/rag/index/pause", post(rag::index_pause))
+        .route("/api/control/rag/bootstrap", get(rag::control_rag_bootstrap))
+        .route("/api/control/rag/config", post(rag::control_rag_config_save))
+        .route("/api/control/rag/index/sync", post(rag::control_rag_index_sync))
+        .route(
+            "/api/control/rag/index/rebuild",
+            post(rag::control_rag_index_rebuild),
+        )
+        .route(
+            "/api/control/rag/index/pause",
+            post(rag::control_rag_index_pause),
+        )
         .route("/api/state", get(prompt_state))
         .route("/api/health", get(health))
         .route("/api/history", get(prompt_history))

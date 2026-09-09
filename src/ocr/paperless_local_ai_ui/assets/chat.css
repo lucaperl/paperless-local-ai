@@ -90,3 +90,17 @@ button:disabled { opacity: .5; cursor: default; }
   .toolbar,.settings-grid,.index-config-grid { grid-template-columns:1fr; }
   .settings-grid label:last-child,.index-config-grid label:last-child,.toolbar .scope-value { grid-column:auto; }
 }
+
+
+/* Safe rendered model Markdown and optional reasoning trace. */
+.message.assistant .message-body,.thinking-body{white-space:normal}
+.message-body p,.thinking-body p{margin:.25rem 0 .55rem}
+.message-body p:first-child,.thinking-body p:first-child{margin-top:0}
+.message-body p:last-child,.thinking-body p:last-child{margin-bottom:0}
+.message-body ul,.message-body ol,.thinking-body ul,.thinking-body ol{margin:.35rem 0 .6rem;padding-left:1.35rem}
+.message-body li,.thinking-body li{margin:.2rem 0}
+.message-body code,.thinking-body code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;background:rgba(127,127,127,.12);padding:.08rem .24rem;border-radius:4px}
+.message-body h3,.message-body h4,.thinking-body h3,.thinking-body h4{font-size:1em;margin:.55rem 0 .3rem}
+.thinking{margin:.2rem 0 .45rem;border:1px solid rgba(127,127,127,.22);border-radius:7px;background:rgba(127,127,127,.06)}
+.thinking summary{cursor:pointer;padding:.38rem .55rem;font-size:.78rem;color:var(--muted,#64748b);user-select:none}
+.thinking-body{padding:0 .55rem .5rem;font-size:.82rem;color:var(--muted,#64748b)}

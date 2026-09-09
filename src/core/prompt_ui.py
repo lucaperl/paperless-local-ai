@@ -100,6 +100,7 @@ HTML = r'''<!doctype html>
     <button class="nav-btn active" data-page="overview">Overview</button>
     <button class="nav-btn" data-page="app-settings">App Settings</button>
     <button class="nav-btn" data-page="classification">Classification</button>
+    <button class="nav-btn" data-page="document-chat">Document Chat</button>
   </div>
   <div class="sidebar-footer"><div class="status-line"><span class="dot"></span><strong id="sidebarMode">Loading…</strong></div><div class="mini" style="margin-top:8px">App __APP_VERSION__</div><div id="sidebarAppVersion" class="mini">App settings …</div><div id="sidebarModel" class="mini">Classification …</div></div>
 </aside>
@@ -228,9 +229,56 @@ HTML = r'''<!doctype html>
   <div class="tab-page" id="app-history"><details class="section-help"><summary>Versioned app settings</summary><div class="help-body">Every save keeps the previous state in history. Restoring creates a new current version.</div></details><div class="card panel"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h3 style="margin:0">Saved versions</h3><button id="appHistoryRefresh" class="btn">Reload saved versions</button></div><div id="appHistoryList"></div></div></div>
 </section>
 
+
+<section class="page" id="page-document-chat">
+  <div class="page-head"><div><h1>Document Chat</h1><p>Global RAG prompt and index administration. Per-chat model and generation settings stay in the Paperless chat popup.</p></div><div id="ragConfigStatus" class="config-badge">Loading…</div></div>
+  <div class="toolbar"><button id="ragSaveBtn" class="btn primary">Save RAG settings</button><span id="ragSaveStatus" class="toolbar-status">Loading configuration…</span></div>
+
+  <div class="card panel">
+    <h2>System prompt</h2>
+    <p>This is the complete system prompt used by Document Chat. It is fully editable; no hidden immutable system prompt is added.</p>
+    <div class="field">
+      <label for="ragSystemPrompt">System prompt</label>
+      <textarea id="ragSystemPrompt" class="mono" style="min-height:300px"></textarea>
+      <div class="field-help">Variables are rendered fresh for every chat turn.</div>
+    </div>
+    <div class="form-grid" style="margin-top:14px">
+      <div class="field"><label for="ragTimezone">Timezone</label><input id="ragTimezone" class="mono" value="Europe/Berlin"><div class="field-help">IANA timezone used by date/time variables.</div></div>
+      <div class="field" style="display:flex;align-items:end"><button id="ragResetPromptBtn" class="btn" type="button">Reset prompt to default</button></div>
+    </div>
+    <details class="section-help" style="margin-top:14px">
+      <summary>Available system-prompt variables</summary>
+      <div class="help-body"><div id="ragPlaceholderGrid" class="placeholder-grid"></div></div>
+    </details>
+  </div>
+
+  <div class="card panel">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+      <div><h2 style="margin-bottom:4px">RAG index</h2><p style="margin-top:0">Index settings are global. Model or chunking changes require a rebuild; batch, slice and sync tuning do not invalidate the active index.</p></div>
+      <div id="ragIndexBadge" class="config-badge">Loading…</div>
+    </div>
+    <div id="ragIndexDetail" class="status-box">Loading index state…</div>
+    <div class="form-grid" style="margin-top:14px">
+      <div class="field"><label for="ragEmbeddingModel">Embedding model</label><input id="ragEmbeddingModel" class="mono"></div>
+      <div class="field"><label for="ragSyncInterval">Sync interval (seconds)</label><input id="ragSyncInterval" type="number" min="60" max="86400" step="60"></div>
+      <div class="field"><label for="ragChunkTarget">Chunk target (characters)</label><input id="ragChunkTarget" type="number" min="1000" max="20000" step="100"></div>
+      <div class="field"><label for="ragChunkOverlap">Chunk overlap (characters)</label><input id="ragChunkOverlap" type="number" min="0" max="19999" step="100"></div>
+      <div class="field"><label for="ragBatchSize">Embedding batch size</label><input id="ragBatchSize" type="number" min="1" max="64" step="1"></div>
+      <div class="field"><label for="ragSliceSize">Embedding slice size</label><input id="ragSliceSize" type="number" min="1" max="256" step="1"></div>
+    </div>
+    <div class="toolbar" style="margin-top:16px;margin-bottom:0">
+      <button id="ragSyncBtn" class="btn" type="button">Sync</button>
+      <button id="ragRebuildBtn" class="btn" type="button">Rebuild</button>
+      <button id="ragPauseBtn" class="btn" type="button">Pause</button>
+      <span id="ragActionStatus" class="toolbar-status"></span>
+    </div>
+  </div>
+</section>
+
 </div></main></div>
 <script>
 let currentConfig=null,currentAppConfig=null,currentTaxonomy=[],currentHistoryStatus=null,paperlessUiReady=false,paperlessUiSetup=null;let classPromptPresets={};
+let currentRagConfig=null,currentRagState=null,ragDefaultSystemPrompt="";
 const $=id=>document.getElementById(id);const esc=v=>String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 async function api(path,opts={}){const r=await fetch(path,{headers:{'Content-Type':'application/json'},...opts});const t=await r.text();let data;try{data=JSON.parse(t)}catch{data={error:t}}if(!r.ok)throw new Error(data.error||`${r.status} ${r.statusText}`);return data}
 function setStatus(id,msg,ok=true){const el=$(id);if(!el)return;el.textContent=msg;el.classList.toggle('good-text',ok);el.classList.toggle('bad-text',!ok);el.classList.toggle('good',ok&&el.classList.contains('status-box'));el.classList.toggle('bad',!ok&&el.classList.contains('status-box'))}
@@ -282,8 +330,112 @@ $('appValidateBtn').onclick=async()=>{try{await api('/api/app/validate',{method:
 $('appPaperlessUiToggleBtn').onclick=async()=>{const enabled=!!currentAppConfig?.paperless_ui?.enabled;if(!enabled&&paperlessUiSetup?.ok!==true){renderPaperlessUi(currentAppConfig);return}const url=window.location.href.split(/[?#]/,1)[0].replace(/\/+$/,'');setStatus('appPaperlessUiStatus',enabled?'Disabling Paperless UI…':'Enabling Paperless UI…');try{const r=await api('/api/app/paperless-ui',{method:'POST',body:JSON.stringify({enabled:!enabled,control_center_url:url})});appFill(r.config,r.token_configured,r.paperless_ui_integration_ready);renderAppHistory(r.history||[])}catch(e){setStatus('appPaperlessUiStatus',e.message,false)}};$('appPaperlessUiRecheckBtn').onclick=()=>checkPaperlessUiSetup();
 async function loadHistory(){try{const r=await api('/api/history');renderHistory(r.items||[],'historyList','restoreHistory')}catch(e){$('historyList').textContent=e.message}}window.restoreHistory=async file=>{if(!confirm('Restore this classification version as a new current version?'))return;const r=await api('/api/history/restore',{method:'POST',body:JSON.stringify({file})});fill(r.config);await loadHistory();await loadTagging();setStatus('saveStatus',`Restored and saved as v${r.config.version}`)};$('historyRefresh').onclick=loadHistory;
 async function refreshAppHistory(){const r=await api('/api/app/history');renderAppHistory(r.items||[])}window.restoreAppHistory=async file=>{if(!confirm('Restore these app settings as a new current version?'))return;const r=await api('/api/app/history/restore',{method:'POST',body:JSON.stringify({file})});appFill(r.config,r.token_configured);renderAppHistory(r.history||[]);await checkPaperlessUiSetup();await loadTagging()};$('appHistoryRefresh').onclick=()=>refreshAppHistory().catch(e=>setStatus('appSaveStatus',e.message,false));
-const pageMeta={overview:['Overview','System overview and current configuration'],classification:['Classification','Local metadata and tag automation'],'app-settings':['App Settings','Connections, workflow, matching, OCR and runtime']};function activatePage(page){if(!pageMeta[page])page='overview';document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.page===page));document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===`page-${page}`));$('topTitle').textContent=pageMeta[page][0];$('topSubtitle').textContent=pageMeta[page][1];try{localStorage.setItem('paperlessControlCenterPage',page)}catch{}}function activateTab(group,id){const nav=document.querySelector(`.tabs[data-tabs="${group}"]`),target=$(id);if(!nav||!target)return;nav.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));nav.closest('.page').querySelectorAll('.tab-page').forEach(x=>x.classList.toggle('active',x.id===id));try{localStorage.setItem(`paperlessControlCenterTab:${group}`,id)}catch{}}document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>activatePage(b.dataset.page));document.querySelectorAll('.tabs .tab').forEach(b=>b.onclick=()=>activateTab(b.closest('.tabs').dataset.tabs,b.dataset.tab));for(const [group,fallback] of [['classification','class-test'],['app','app-connections']]){let tab=fallback;try{tab=localStorage.getItem(`paperlessControlCenterTab:${group}`)||fallback}catch{}activateTab(group,tab)}let initialPage='overview';try{initialPage=localStorage.getItem('paperlessControlCenterPage')||initialPage}catch{}activatePage(initialPage);
-init();loadApp();refreshOcrRecovery();setInterval(refreshOcrRecovery,5000);
+
+function ragDraft(){
+  return {
+    embedding_model:$('ragEmbeddingModel').value.trim(),
+    chunk_target_chars:Number($('ragChunkTarget').value),
+    chunk_overlap_chars:Number($('ragChunkOverlap').value),
+    embedding_batch_size:Number($('ragBatchSize').value),
+    embedding_slice_chunks:Number($('ragSliceSize').value),
+    sync_interval_seconds:Number($('ragSyncInterval').value),
+    system_prompt:$('ragSystemPrompt').value,
+    timezone:$('ragTimezone').value.trim()
+  };
+}
+function renderRagPlaceholders(names){
+  const grid=$('ragPlaceholderGrid');if(!grid)return;grid.innerHTML='';
+  const descriptions={
+    CURRENT_DATE:'Current local date (YYYY-MM-DD)',CURRENT_TIME:'Current local time (HH:MM)',
+    CURRENT_DATETIME:'Current local date and time',CURRENT_WEEKDAY:'Current weekday name',
+    CURRENT_YEAR:'Current year',TIMEZONE:'Configured IANA timezone',
+    USERNAME:'Authenticated Paperless username',USER_ID:'Authenticated Paperless user ID',
+    CHAT_MODEL:'Selected chat model',CONTEXT_SIZE:'Selected context size',
+    RETRIEVAL_TOP_K:'Selected retrieval Top-K',SEARCH_SCOPE:'Current search scope and label',
+    CURRENT_DOCUMENT_ID:'Current document ID, otherwise empty'
+  };
+  for(const name of names||[]){
+    const item=document.createElement('div');item.className='placeholder-item';
+    const code=document.createElement('code');code.textContent=`{{${name}}}`;
+    const desc=document.createElement('span');desc.textContent=descriptions[name]||'Dynamic chat value.';
+    item.append(code,desc);grid.appendChild(item);
+  }
+}
+function renderRagState(state){
+  currentRagState=state||{};
+  const s=currentRagState;
+  let badge=s.index_exists?`${s.indexed_documents||0} docs · ${s.indexed_chunks||0} chunks`:'Not built';
+  if(s.running)badge=`${s.operation||'index'}: ${s.phase||'running'}`;
+  if(s.paused)badge='Paused';
+  if(s.rebuild_required)badge+=' · rebuild required';
+  $('ragIndexBadge').textContent=badge;
+  const parts=[
+    `State: ${s.phase||'unknown'}`,
+    `Documents: ${s.indexed_documents||0}/${s.total||s.indexed_documents||0}`,
+    `Chunks: ${s.indexed_chunks||0}`,
+    s.last_build?`Last build: ${s.last_build}`:null,
+    s.last_sync?`Last sync: ${s.last_sync}`:null,
+    s.last_error?`Error: ${s.last_error}`:null
+  ].filter(Boolean);
+  $('ragIndexDetail').textContent=parts.join(' · ');
+  $('ragIndexDetail').className=`status-box${s.last_error?' bad':(s.index_exists?' good':' warn')}`;
+  $('ragPauseBtn').textContent=s.paused?'Resume':'Pause';
+}
+function fillRag(config,state){
+  currentRagConfig=config||{};
+  $('ragSystemPrompt').value=currentRagConfig.system_prompt??'';
+  $('ragTimezone').value=currentRagConfig.timezone||'Europe/Berlin';
+  $('ragEmbeddingModel').value=currentRagConfig.embedding_model||'';
+  $('ragChunkTarget').value=currentRagConfig.chunk_target_chars??2000;
+  $('ragChunkOverlap').value=currentRagConfig.chunk_overlap_chars??400;
+  $('ragBatchSize').value=currentRagConfig.embedding_batch_size??1;
+  $('ragSliceSize').value=currentRagConfig.embedding_slice_chunks??16;
+  $('ragSyncInterval').value=currentRagConfig.sync_interval_seconds??900;
+  $('ragConfigStatus').textContent='RAG config loaded';
+  renderRagState(state);
+}
+async function loadRag(){
+  try{
+    const r=await api('/api/control/rag/bootstrap');
+    ragDefaultSystemPrompt=r.default_system_prompt||'';
+    renderRagPlaceholders(r.placeholders||[]);
+    fillRag(r.config,r.state);
+    setStatus('ragSaveStatus','Saved RAG configuration loaded.');
+  }catch(e){setStatus('ragSaveStatus',e.message,false)}
+}
+async function refreshRagStatus(){
+  try{
+    const r=await api('/api/control/rag/bootstrap');
+    currentRagConfig=r.config||currentRagConfig;
+    renderRagState(r.state);
+  }catch(e){setStatus('ragActionStatus',e.message,false)}
+}
+async function saveRag(){
+  try{
+    const r=await api('/api/control/rag/config',{method:'POST',body:JSON.stringify(ragDraft())});
+    fillRag(r.config,r.state);
+    setStatus('ragSaveStatus',r.state?.rebuild_required?'Saved · active index remains usable, rebuild required.':'Saved · active.');
+  }catch(e){setStatus('ragSaveStatus',e.message,false)}
+}
+async function ragIndexAction(action){
+  if(action==='rebuild'&&!confirm('Rebuild the complete PLAI RAG index? Paperless documents are not modified, and the active index remains usable until activation.'))return;
+  try{
+    setStatus('ragActionStatus',action==='pause'?(currentRagState?.paused?'Resuming…':'Pausing…'):`Starting ${action}…`);
+    await api(`/api/control/rag/index/${action}`,{method:'POST',body:'{}'});
+    await refreshRagStatus();
+  }catch(e){setStatus('ragActionStatus',e.message,false)}
+}
+$('ragSaveBtn').onclick=saveRag;
+$('ragResetPromptBtn').onclick=()=>{if(confirm('Reset the editable Document Chat system prompt to the built-in default? You still need to Save RAG settings.')){$('ragSystemPrompt').value=ragDefaultSystemPrompt;setStatus('ragSaveStatus','Default prompt loaded · not saved yet.')}};
+$('ragSyncBtn').onclick=()=>ragIndexAction('sync');
+$('ragRebuildBtn').onclick=()=>ragIndexAction('rebuild');
+$('ragPauseBtn').onclick=()=>ragIndexAction('pause');
+for(const id of ['ragSystemPrompt','ragTimezone','ragEmbeddingModel','ragChunkTarget','ragChunkOverlap','ragBatchSize','ragSliceSize','ragSyncInterval']){
+  $(id).addEventListener('input',()=>markUnsaved('ragSaveStatus'));
+}
+
+const pageMeta={overview:['Overview','System overview and current configuration'],classification:['Classification','Local metadata and tag automation'],'app-settings':['App Settings','Connections, workflow, matching, OCR and runtime'],'document-chat':['Document Chat','RAG prompt and index administration']};function activatePage(page){if(!pageMeta[page])page='overview';document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.page===page));document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id===`page-${page}`));$('topTitle').textContent=pageMeta[page][0];$('topSubtitle').textContent=pageMeta[page][1];try{localStorage.setItem('paperlessControlCenterPage',page)}catch{}}function activateTab(group,id){const nav=document.querySelector(`.tabs[data-tabs="${group}"]`),target=$(id);if(!nav||!target)return;nav.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));nav.closest('.page').querySelectorAll('.tab-page').forEach(x=>x.classList.toggle('active',x.id===id));try{localStorage.setItem(`paperlessControlCenterTab:${group}`,id)}catch{}}document.querySelectorAll('.nav-btn').forEach(b=>b.onclick=()=>activatePage(b.dataset.page));document.querySelectorAll('.tabs .tab').forEach(b=>b.onclick=()=>activateTab(b.closest('.tabs').dataset.tabs,b.dataset.tab));for(const [group,fallback] of [['classification','class-test'],['app','app-connections']]){let tab=fallback;try{tab=localStorage.getItem(`paperlessControlCenterTab:${group}`)||fallback}catch{}activateTab(group,tab)}let initialPage='overview';try{initialPage=localStorage.getItem('paperlessControlCenterPage')||initialPage}catch{}activatePage(initialPage);
+init();loadApp();loadRag();refreshOcrRecovery();setInterval(refreshOcrRecovery,5000);setInterval(refreshRagStatus,5000);
 </script>
 </body></html>'''.replace("__TAGGING_DOCS_URL__", TAGGING_DOCS_URL).replace("__PAPERLESS_SETUP_DOCS_URL__", PAPERLESS_SETUP_DOCS_URL).replace("__APP_VERSION__", APP_VERSION)
 

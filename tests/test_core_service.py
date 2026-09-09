@@ -46,3 +46,17 @@ def test_core_reconciles_interrupted_rag_index_state_on_startup():
     assert 'const RAG_BUILD_DB_FILE: &str = "/data/rag/rag.db.build";' in rag
     assert 'atomic_write(Path::new(RAG_PAUSE_FILE), b"paused\\n")?' in rag
     assert "keeping it paused for explicit Resume" in rag
+
+
+def test_control_center_contains_document_chat_administration():
+    source = (ROOT / "src/core/prompt_ui.py").read_text(encoding="utf-8")
+    rust_control = (ROOT / "rust/core/src/control.rs").read_text(encoding="utf-8")
+    rag = (ROOT / "rust/core/src/rag.rs").read_text(encoding="utf-8")
+    assert 'data-page="document-chat"' in source
+    assert 'id="ragSystemPrompt"' in source
+    assert 'id="ragPlaceholderGrid"' in source
+    assert 'id="ragRebuildBtn"' in source
+    assert "/api/control/rag/bootstrap" in source
+    assert '"/api/control/rag/bootstrap"' in rust_control
+    assert "DEFAULT_RAG_SYSTEM_PROMPT" in rag
+    assert '"CURRENT_DATE"' in rag

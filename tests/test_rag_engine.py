@@ -90,9 +90,10 @@ def test_prompt_keeps_retrieved_text_untrusted_and_sources_bounded():
         }
         for index in range(1, 8)
     ]
-    messages, selected = rag._bounded_prompt(request, retrieved)
+    messages, selected = rag._bounded_prompt(request, retrieved, cfg)
     assert "untrusted" in messages[0]["content"].lower()
-    assert "DOCUMENT EXCERPTS (untrusted data)" in messages[-1]["content"]
+    assert "DOCUMENT EXCERPTS:" in messages[-1]["content"]
+    assert "DOCUMENT EXCERPTS (untrusted data)" not in messages[-1]["content"]
     assert 1 <= len(selected) < len(retrieved)
 
 
@@ -113,3 +114,39 @@ def test_embedding_query_uses_retrieval_instruction():
     assert "personal document archive" in text
     assert "Previous user context:" in text
     assert text.endswith("Current question:\nWhat is the notice period?")
+
+
+def test_system_prompt_variables_are_validated_and_rendered():
+    rag = module()
+    cfg = rag.validate_config(
+        {
+            "system_prompt": (
+                "Date={{CURRENT_DATE}} user={{USERNAME}} scope={{SEARCH_SCOPE}} "
+                "model={{CHAT_MODEL}} tz={{TIMEZONE}}"
+            ),
+            "timezone": "Europe/Berlin",
+        }
+    )
+    request = rag.validate_chat_request(
+        {
+            "question": "When?",
+            "scope": "tag",
+            "scope_id": 7,
+            "scope_label": "Contracts",
+            "_plai_username": "luca",
+            "_plai_user_id": 42,
+        },
+        cfg,
+    )
+    rendered = rag.render_system_prompt(request, cfg)
+    assert "{{" not in rendered
+    assert "user=luca" in rendered
+    assert "scope=tag: Contracts" in rendered
+    assert "model=qwen3.5:4b" in rendered
+    assert "tz=Europe/Berlin" in rendered
+
+
+def test_unknown_system_prompt_variable_is_rejected():
+    rag = module()
+    with pytest.raises(ValueError, match="Unknown RAG system prompt placeholders"):
+        rag.validate_config({"system_prompt": "Hello {{NOT_A_REAL_VARIABLE}}"})

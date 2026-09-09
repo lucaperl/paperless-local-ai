@@ -269,6 +269,7 @@ pub fn begin_turn(
         "content": "",
         "pending": true,
         "job_id": job_id,
+        "thinking": "",
         "sources": [],
         "metrics": {},
         "created_at_ms": now_ms()
@@ -296,6 +297,12 @@ pub fn finish_turn(
         message["pending"] = Value::Bool(false);
         message["content"] = Value::String(
             job.get("answer")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+        );
+        message["thinking"] = Value::String(
+            job.get("thinking")
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .to_owned(),
