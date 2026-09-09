@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.0 - 2026-09-09
+
 ### Added
 
 - add an optional multi-turn RAG chat directly inside the Paperless web UI, with persistent per-Paperless-user chat history, current-document/all-document/tag/correspondent/document-type scopes, follow-up questions, Paperless source links, Ollama model selection, Thinking/context/Top-K/temperature/output controls, explicit AI-slot waiting reasons, Stop, and index Sync/Rebuild/Pause controls.
