@@ -52,6 +52,7 @@ def test_control_center_contains_document_chat_administration():
     source = (ROOT / "src/core/prompt_ui.py").read_text(encoding="utf-8")
     rust_control = (ROOT / "rust/core/src/control.rs").read_text(encoding="utf-8")
     rag = (ROOT / "rust/core/src/rag.rs").read_text(encoding="utf-8")
+    chat_history = (ROOT / "rust/core/src/chat_history.rs").read_text(encoding="utf-8")
     assert 'data-page="document-chat"' in source
     assert 'id="ragSystemPrompt"' in source
     assert 'id="ragPlaceholderGrid"' in source
@@ -61,9 +62,16 @@ def test_control_center_contains_document_chat_administration():
     assert 'id="ragEmbeddingDimensions"' in source
     assert 'id="ragHistoryMode"' in source
     assert 'id="ragHistoryTurns"' in source
+    assert 'id="ragAnswerTemplate"' in source
+    assert 'id="ragConversationHistory"' in source
+    assert 'id="ragAdjacentChunks"' in source
+    assert 'id="ragRetrievalContextPercent"' in source
+    assert 'id="ragRetrievalDiagnostics"' in source
     assert 'id="ragSamplerTopK"' in source
     assert "Qwen3-Embedding" in source
     assert "/api/control/rag/bootstrap" in source
     assert '"/api/control/rag/bootstrap"' in rust_control
     assert "DEFAULT_RAG_SYSTEM_PROMPT" in rag
+    assert "DEFAULT_ANSWER_PROMPT_TEMPLATE" in rag
     assert '"CURRENT_DATE"' in rag
+    assert 'message["diagnostics"]' in chat_history

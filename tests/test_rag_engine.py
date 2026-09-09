@@ -39,10 +39,16 @@ def test_chat_settings_are_bounded():
         }
     )
     assert valid["top_k"] == 5
+    assert valid["conversation_history_messages"] == 8
+    assert valid["show_retrieval_diagnostics"] is False
     with pytest.raises(ValueError):
         rag._validate_chat_settings({**valid, "top_k": 99})
     with pytest.raises(ValueError):
         rag._validate_chat_settings({**valid, "think": "sometimes"})
+    with pytest.raises(ValueError):
+        rag._validate_chat_settings({**valid, "conversation_history_messages": 25})
+    with pytest.raises(ValueError):
+        rag._validate_chat_settings({**valid, "show_retrieval_diagnostics": "yes"})
 
 
 def test_request_scope_requires_document_id():
@@ -90,11 +96,13 @@ def test_prompt_keeps_retrieved_text_untrusted_and_sources_bounded():
         }
         for index in range(1, 8)
     ]
-    messages, selected = rag._bounded_prompt(request, retrieved, cfg)
+    messages, selected, prompt_stats = rag._bounded_prompt(request, retrieved, cfg)
     assert "untrusted" in messages[0]["content"].lower()
     assert "DOCUMENT EXCERPTS:" in messages[-1]["content"]
     assert "DOCUMENT EXCERPTS (untrusted data)" not in messages[-1]["content"]
     assert 1 <= len(selected) < len(retrieved)
+    assert prompt_stats["conversation_history_messages_used"] == 2
+    assert prompt_stats["selected_primary_chunks"] == len(selected)
 
 
 def test_job_ids_reject_path_traversal():
@@ -227,6 +235,9 @@ def test_default_structural_signature_remains_backward_compatible():
     cfg = rag.validate_config({})
     assert cfg["retrieval_history_mode"] == "user_only"
     assert cfg["retrieval_history_turns"] == 3
+    assert cfg["adjacent_chunks"] == 0
+    assert cfg["retrieval_context_percent"] is None
+    assert cfg["answer_prompt_template"] == rag.DEFAULT_ANSWER_PROMPT_TEMPLATE
     assert rag.config_signature(cfg) == {
         "chunking_version": rag.CHUNKING_VERSION,
         "embedding_model": "qwen3-embedding:4b-q4_K_M",
@@ -254,3 +265,98 @@ def test_advanced_generation_settings_are_optional_and_validated():
         rag._validate_chat_settings({**settings, "top_p": 2.0})
     with pytest.raises(ValueError, match="retrieval_history_mode"):
         rag.validate_config({"retrieval_history_mode": "unsupported"})
+def test_answer_prompt_history_limit_and_document_budget_are_configurable():
+    rag = module()
+    cfg = rag.validate_config(
+        {
+            "answer_prompt_template": (
+                "Scope={{SEARCH_SCOPE}}\nSources={{SOURCE_COUNT}}\n"
+                "{{DOCUMENT_EXCERPTS}}\nQuestion={{QUESTION}}"
+            ),
+            "retrieval_context_percent": 25,
+        }
+    )
+    request = rag.validate_chat_request(
+        {
+            "question": "What does the sample record say?",
+            "scope": "all",
+            "settings": {
+                "num_ctx": 4096,
+                "num_predict": 512,
+                "conversation_history_messages": 1,
+            },
+            "history": [
+                {"role": "user", "content": "Earlier user message"},
+                {"role": "assistant", "content": "Earlier assistant message"},
+            ],
+        },
+        cfg,
+    )
+    retrieved = [
+        {
+            "document_id": 42,
+            "ordinal": 1,
+            "title": "Sample Record",
+            "created": None,
+            "score": 0.91,
+            "text": "Synthetic passage. " * 300,
+            "context_text": "Synthetic passage. " * 300,
+            "neighbor_ordinals": [],
+        }
+    ]
+    messages, selected, stats = rag._bounded_prompt(request, retrieved, cfg)
+    assert len(messages) == 3
+    assert messages[1]["content"] == "Earlier assistant message"
+    assert "Scope=all" in messages[-1]["content"]
+    assert "Question=What does the sample record say?" in messages[-1]["content"]
+    assert len(selected) == 1
+    assert stats["conversation_history_messages_limit"] == 1
+    assert stats["document_context_percent"] == 25
+    assert stats["document_budget_chars"] <= stats["input_budget_chars"] // 4
+
+
+def test_adjacent_chunks_expand_context_without_changing_primary_hit(tmp_path, monkeypatch):
+    rag = module()
+    db_file = tmp_path / "rag.db"
+    lock_file = tmp_path / "index.lock"
+    monkeypatch.setattr(rag, "DB_FILE", db_file)
+    monkeypatch.setattr(rag, "INDEX_LOCK_FILE", lock_file)
+
+    connection = rag.db_connect(db_file)
+    with connection:
+        connection.execute(
+            "INSERT INTO documents(id,modified,title,created,chunk_count) VALUES(?,?,?,?,?)",
+            (42, "now", "Sample Record", None, 3),
+        )
+        for ordinal, text in enumerate(("Before.", "Primary.", "After.")):
+            connection.execute(
+                "INSERT INTO chunks(document_id,ordinal,text,embedding) VALUES(?,?,?,?)",
+                (42, ordinal, text, b"x"),
+            )
+    connection.close()
+
+    primary = [
+        {
+            "document_id": 42,
+            "ordinal": 1,
+            "title": "Sample Record",
+            "created": None,
+            "score": 0.9,
+            "text": "Primary.",
+        }
+    ]
+    expanded = rag.expand_retrieved_neighbors(primary, 1)
+    assert len(expanded) == 1
+    assert expanded[0]["ordinal"] == 1
+    assert expanded[0]["neighbor_ordinals"] == [0, 2]
+    assert expanded[0]["context_text"] == "Before.\n\nPrimary.\n\nAfter."
+
+
+def test_new_retrieval_controls_are_validated():
+    rag = module()
+    with pytest.raises(ValueError, match="adjacent_chunks"):
+        rag.validate_config({"adjacent_chunks": 4})
+    with pytest.raises(ValueError, match="retrieval_context_percent"):
+        rag.validate_config({"retrieval_context_percent": 5})
+    with pytest.raises(ValueError, match="answer_prompt_template"):
+        rag.validate_config({"answer_prompt_template": "{{UNKNOWN}}"})

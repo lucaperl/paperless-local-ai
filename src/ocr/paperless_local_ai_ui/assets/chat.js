@@ -211,6 +211,10 @@
               <label>Temperature<input data-field="temperature" type="number" min="0" max="2" step="0.1"></label>
               <label>Max output tokens<input data-field="num_predict" type="number" min="64" max="4096" step="64"><span class="settings-help">Thinking uses the same output-token budget.</span></label>
             </div>
+            <details class="expert-settings"><summary>Expert context & retrieval</summary><div class="settings-grid expert-grid">
+              <label>Conversation history <span class="info-dot" title="Previous user and assistant messages sent to the answer model. Retrieval history is configured separately in the Control Center.">i</span><input data-field="conversation_history_messages" type="number" min="0" max="24" step="1"></label>
+              <label>Retrieval diagnostics <span class="info-dot" title="Shows the effective embedding query, similarity scores, selected chunk ordinals and prompt-budget details. No extra model request is made.">i</span><select data-field="show_retrieval_diagnostics"><option value="false">Off</option><option value="true">On</option></select></label>
+            </div></details>
             <details class="expert-settings"><summary>Expert generation</summary><div class="settings-grid expert-grid">
               <label>Sampler Top-K <span class="info-dot" title="Generation sampler, not Retrieval Top-K. Model-specific; blank uses model default.">i</span><input data-field="sampler_top_k" type="number" min="0" max="1000" step="1" placeholder="Model default"></label>
               <label>Top-P <span class="info-dot" title="Model-specific; blank uses model default.">i</span><input data-field="top_p" type="number" min="0" max="1" step="0.01" placeholder="Model default"></label>
@@ -259,6 +263,8 @@
     const fields = {
       scope: q('[data-field="scope"]'), scope_query: q('[data-field="scope_query"]'), model: q('[data-field="model"]'),
       think: q('[data-field="think"]'), num_ctx: q('[data-field="num_ctx"]'), top_k: q('[data-field="top_k"]'),
+      conversation_history_messages: q('[data-field="conversation_history_messages"]'),
+      show_retrieval_diagnostics: q('[data-field="show_retrieval_diagnostics"]'),
       temperature: q('[data-field="temperature"]'), num_predict: q('[data-field="num_predict"]'),
       sampler_top_k: q('[data-field="sampler_top_k"]'), top_p: q('[data-field="top_p"]'), min_p: q('[data-field="min_p"]'),
       repeat_penalty: q('[data-field="repeat_penalty"]'), repeat_last_n: q('[data-field="repeat_last_n"]'),
@@ -274,6 +280,8 @@
       return {
         model: String(fields.model.value || defaults.model || "").trim(), think: String(fields.think.value || "off"),
         num_ctx: Number(fields.num_ctx.value || 8192), top_k: Number(fields.top_k.value || 5),
+        conversation_history_messages: Number(fields.conversation_history_messages.value || 0),
+        show_retrieval_diagnostics: fields.show_retrieval_diagnostics.value === "true",
         temperature: Number(fields.temperature.value || 0.1), num_predict: Number(fields.num_predict.value || 512),
         sampler_top_k: optionalSettingNumber(fields.sampler_top_k), top_p: optionalSettingNumber(fields.top_p),
         min_p: optionalSettingNumber(fields.min_p), repeat_penalty: optionalSettingNumber(fields.repeat_penalty),
@@ -287,6 +295,8 @@
       fields.think.value = state.settings.think || defaults.think || "off";
       fields.num_ctx.value = state.settings.num_ctx || defaults.num_ctx || 8192;
       fields.top_k.value = state.settings.top_k || defaults.top_k || 5;
+      fields.conversation_history_messages.value = state.settings.conversation_history_messages ?? defaults.conversation_history_messages ?? 8;
+      fields.show_retrieval_diagnostics.value = String(state.settings.show_retrieval_diagnostics ?? defaults.show_retrieval_diagnostics ?? false);
       fields.temperature.value = state.settings.temperature ?? defaults.temperature ?? 0.1;
       fields.num_predict.value = state.settings.num_predict || defaults.num_predict || 512;
       for (const name of ["sampler_top_k", "top_p", "min_p", "repeat_penalty", "repeat_last_n", "seed"]) {
@@ -368,6 +378,55 @@
       updateJumpBottom();
     }
 
+    function retrievalDiagnosticsNode(diagnostics) {
+      const details = document.createElement("details"); details.className = "retrieval-details";
+      const summary = document.createElement("summary"); summary.textContent = "Retrieval details";
+      details.appendChild(summary);
+
+      const body = document.createElement("div"); body.className = "retrieval-details-body";
+      const settings = diagnostics.settings || {};
+      const prompt = diagnostics.prompt || {};
+      const meta = document.createElement("div"); meta.className = "retrieval-meta";
+      meta.textContent = [
+        `Top-K ${settings.retrieval_top_k ?? "—"}`,
+        `retrieval history ${settings.retrieval_history_turns ?? "—"} turn(s)`,
+        `answer history ${prompt.conversation_history_messages_used ?? 0}/${prompt.conversation_history_messages_limit ?? 0} messages`,
+        `adjacent ±${settings.adjacent_chunks ?? 0}`,
+        `document budget ${settings.retrieval_context_percent == null ? "Auto" : `${settings.retrieval_context_percent}%`}`,
+        `used ${prompt.selected_primary_chunks ?? 0}/${prompt.retrieved_primary_chunks ?? 0} primary hit(s)`,
+      ].join(" · ");
+      body.appendChild(meta);
+
+      const queryLabel = document.createElement("strong"); queryLabel.textContent = "Effective embedding query";
+      const query = document.createElement("pre"); query.className = "retrieval-query"; query.textContent = diagnostics.embedding_query || "";
+      body.append(queryLabel, query);
+
+      const promptLabel = document.createElement("strong"); promptLabel.textContent = "Prompt budget";
+      const promptMeta = document.createElement("div"); promptMeta.className = "retrieval-meta";
+      promptMeta.textContent = `input ≈ ${prompt.input_budget_chars ?? 0} chars · document cap ${prompt.document_budget_chars ?? 0} · document used ${prompt.document_context_chars ?? 0} · conversation used ${prompt.conversation_history_chars ?? 0}`;
+      body.append(promptLabel, promptMeta);
+
+      const hits = Array.isArray(diagnostics.selected_chunks) ? diagnostics.selected_chunks : [];
+      const hitsLabel = document.createElement("strong"); hitsLabel.textContent = "Selected chunks";
+      body.appendChild(hitsLabel);
+      if (!hits.length) {
+        const empty = document.createElement("div"); empty.className = "retrieval-meta";
+        empty.textContent = "No document chunk reached the final prompt.";
+        body.appendChild(empty);
+      } else {
+        for (const hit of hits) {
+          const item = document.createElement("details"); item.className = "retrieval-hit";
+          const hitSummary = document.createElement("summary");
+          const neighbors = Array.isArray(hit.neighbor_ordinals) && hit.neighbor_ordinals.length ? ` · neighbors ${hit.neighbor_ordinals.join(", ")}` : "";
+          hitSummary.textContent = `[${hit.source_number}] ${hit.title || `Document ${hit.document_id}`} · score ${Number(hit.score || 0).toFixed(4)} · chunk ${hit.ordinal}${neighbors}`;
+          const preview = document.createElement("pre"); preview.textContent = hit.excerpt_preview || "";
+          item.append(hitSummary, preview); body.appendChild(item);
+        }
+      }
+      details.appendChild(body);
+      return details;
+    }
+
     function renderMessages() {
       const container = q('[data-part="messages"]');
       const previousScrollTop = container.scrollTop;
@@ -421,6 +480,9 @@
         if (Array.isArray(message.sources) && message.sources.length) {
           const sources = document.createElement("div"); sources.className = "sources";
           for (const source of message.sources) sources.appendChild(sourceNode(source)); wrapper.appendChild(sources);
+        }
+        if (message.role === "assistant" && message.diagnostics && Object.keys(message.diagnostics).length) {
+          wrapper.appendChild(retrievalDiagnosticsNode(message.diagnostics));
         }
         if (message.metrics?.total_seconds) {
           const metrics = document.createElement("small"); metrics.className = "metrics";
@@ -619,6 +681,7 @@
           assistant.job_id = state.jobId;
           assistant.thinking = job.thinking || "";
           assistant.sources = job.sources || [];
+          assistant.diagnostics = job.diagnostics || assistant.diagnostics || {};
           assistant.metrics = job.metrics || assistant.metrics || {};
           renderMessages();
         }
@@ -650,7 +713,7 @@
       const conversationId = await ensureConversation();
       state.settings = normalizeSettings(); state.scope = scope.type; state.scopeId = scope.id; state.scopeLabel = scope.label;
       state.messages.push({ role: "user", content: question });
-      state.messages.push({ role: "assistant", content: "", pending: true, sources: [], metrics: {} });
+      state.messages.push({ role: "assistant", content: "", pending: true, sources: [], diagnostics: {}, metrics: {} });
       state.autoScroll = true; state.hasNewContent = false;
       fields.question.value = ""; renderMessages(); setRunning(true); setPhase("Submitting…");
       try {

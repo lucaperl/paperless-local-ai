@@ -143,6 +143,10 @@ def test_runtime_assets_do_not_embed_a_control_center_origin():
     assert 'data-field="repeat_last_n"' in script
     assert 'data-field="seed"' in script
     assert 'data-field="stop"' in script
+    assert 'data-field="conversation_history_messages"' in script
+    assert 'data-field="show_retrieval_diagnostics"' in script
+    assert "Retrieval details" in script
+    assert "assistant.diagnostics = job.diagnostics" in script
     assert '<option value="medium">Medium</option>' in script
     assert 'data-action="jump-bottom"' in script
     assert "state.autoScroll = isNearBottom(container)" in script

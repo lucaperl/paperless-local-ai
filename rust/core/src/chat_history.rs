@@ -271,6 +271,7 @@ pub fn begin_turn(
         "job_id": job_id,
         "thinking": "",
         "sources": [],
+        "diagnostics": {},
         "metrics": {},
         "created_at_ms": now_ms()
     }));
@@ -308,6 +309,7 @@ pub fn finish_turn(
                 .to_owned(),
         );
         message["sources"] = job.get("sources").cloned().unwrap_or_else(|| json!([]));
+        message["diagnostics"] = job.get("diagnostics").cloned().unwrap_or_else(|| json!({}));
         message["metrics"] = job.get("metrics").cloned().unwrap_or_else(|| json!({}));
         message["status"] = job
             .get("status")

@@ -130,3 +130,12 @@ button:disabled { opacity: .5; cursor: default; }
 .expert-grid .wide{grid-column:1/-1}
 .expert-grid textarea{min-height:64px;resize:vertical}
 .info-dot{display:inline-grid;place-items:center;width:14px;height:14px;border:1px solid currentColor;border-radius:50%;font-size:9px;font-weight:700;cursor:help;opacity:.7;vertical-align:middle}
+.retrieval-details{margin:.42rem 0 0;border:1px solid rgba(127,127,127,.22);border-radius:7px;background:rgba(127,127,127,.04)}
+.retrieval-details>summary{cursor:pointer;padding:.4rem .55rem;color:#64748b;font-size:11px;font-weight:650}
+.retrieval-details-body{display:grid;gap:.45rem;padding:0 .55rem .55rem;font-size:11px;color:#64748b}
+.retrieval-details-body strong{color:inherit;font-size:11px}
+.retrieval-meta{line-height:1.45;overflow-wrap:anywhere}
+.retrieval-query,.retrieval-hit pre{margin:0;max-height:160px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid rgba(127,127,127,.18);border-radius:5px;background:rgba(127,127,127,.06);padding:.42rem .48rem;font:10px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace}
+.retrieval-hit{border-top:1px solid rgba(127,127,127,.15);padding-top:.25rem}
+.retrieval-hit summary{cursor:pointer;overflow-wrap:anywhere}
+.retrieval-hit pre{margin-top:.35rem}

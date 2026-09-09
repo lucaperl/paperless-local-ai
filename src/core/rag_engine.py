@@ -54,6 +54,12 @@ Answer in the user's language and keep answers concise unless the user asks for 
 DEFAULT_EMBEDDING_QUERY_TEMPLATE = """Instruct: Given a user question about a personal document archive, retrieve relevant document passages that answer the question
 Query: {{RETRIEVAL_QUERY}}"""
 DEFAULT_DOCUMENT_EMBEDDING_TEMPLATE = "{{CHUNK}}"
+DEFAULT_ANSWER_PROMPT_TEMPLATE = """DOCUMENT EXCERPTS:
+
+{{DOCUMENT_EXCERPTS}}
+
+USER QUESTION:
+{{QUESTION}}"""
 
 RAG_PROMPT_PLACEHOLDERS: dict[str, str] = {
     "CURRENT_DATE": "Current local date in YYYY-MM-DD format.",
@@ -83,6 +89,13 @@ DOCUMENT_EMBEDDING_PLACEHOLDERS: dict[str, str] = {
     "DOCUMENT_CREATED": "Paperless document created date when available.",
     "DOCUMENT_ID": "Paperless document ID.",
 }
+ANSWER_PROMPT_PLACEHOLDERS: dict[str, str] = {
+    "DOCUMENT_EXCERPTS": "Retrieved document excerpts selected for the answer.",
+    "QUESTION": "Current user question.",
+    "SEARCH_SCOPE": "Current search scope and selected label when available.",
+    "SOURCE_COUNT": "Number of source blocks included in the prompt.",
+    "CURRENT_DOCUMENT_ID": "Current Paperless document ID when document scope is active.",
+}
 RAG_PLACEHOLDER_RE = re.compile(r"{{\s*([A-Z0-9_]+)\s*}}")
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -90,6 +103,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "embedding_model": "qwen3-embedding:4b-q4_K_M",
     "embedding_query_template": DEFAULT_EMBEDDING_QUERY_TEMPLATE,
     "document_embedding_template": DEFAULT_DOCUMENT_EMBEDDING_TEMPLATE,
+    "answer_prompt_template": DEFAULT_ANSWER_PROMPT_TEMPLATE,
     "embedding_dimensions": None,
     "query_truncate": True,
     "document_truncate": True,
@@ -103,6 +117,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "retrieval_history_turns": 3,
     "retrieval_min_similarity": None,
     "max_chunks_per_document": None,
+    "adjacent_chunks": 0,
+    "retrieval_context_percent": None,
     "system_prompt": DEFAULT_RAG_SYSTEM_PROMPT,
     "timezone": "Europe/Berlin",
     "chat_defaults": {
@@ -112,6 +128,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "top_k": 5,
         "temperature": 0.1,
         "num_predict": 512,
+        "conversation_history_messages": 8,
+        "show_retrieval_diagnostics": False,
         "sampler_top_k": None,
         "top_p": None,
         "min_p": None,
@@ -206,6 +224,7 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
             "embedding_model",
             "embedding_query_template",
             "document_embedding_template",
+            "answer_prompt_template",
             "embedding_dimensions",
             "query_truncate",
             "document_truncate",
@@ -219,6 +238,8 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
             "retrieval_history_turns",
             "retrieval_min_similarity",
             "max_chunks_per_document",
+            "adjacent_chunks",
+            "retrieval_context_percent",
             "system_prompt",
             "timezone",
         ):
@@ -240,6 +261,11 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
         "document_embedding_template",
         cfg["document_embedding_template"],
         set(DOCUMENT_EMBEDDING_PLACEHOLDERS),
+    )
+    cfg["answer_prompt_template"] = _validate_template(
+        "answer_prompt_template",
+        cfg["answer_prompt_template"],
+        set(ANSWER_PROMPT_PLACEHOLDERS),
     )
     cfg["embedding_dimensions"] = _optional_int(
         cfg.get("embedding_dimensions"), "embedding_dimensions", 1, 65536
@@ -266,6 +292,12 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
     )
     cfg["max_chunks_per_document"] = _optional_int(
         cfg.get("max_chunks_per_document"), "max_chunks_per_document", 1, 64
+    )
+    cfg["adjacent_chunks"] = int(cfg.get("adjacent_chunks", 0))
+    if not 0 <= cfg["adjacent_chunks"] <= 3:
+        raise ValueError("adjacent_chunks must be between 0 and 3")
+    cfg["retrieval_context_percent"] = _optional_int(
+        cfg.get("retrieval_context_percent"), "retrieval_context_percent", 10, 100
     )
 
     cfg["system_prompt"] = _validate_template(
@@ -1116,6 +1148,8 @@ def _validate_chat_settings(raw: dict[str, Any]) -> dict[str, Any]:
     top_k = int(raw.get("top_k", 5))
     temperature = float(raw.get("temperature", 0.1))
     num_predict = int(raw.get("num_predict", 512))
+    conversation_history_messages = int(raw.get("conversation_history_messages", 8))
+    show_retrieval_diagnostics = raw.get("show_retrieval_diagnostics", False)
     if not 2048 <= num_ctx <= 131072:
         raise ValueError("num_ctx must be between 2048 and 131072")
     if not 1 <= top_k <= 12:
@@ -1124,6 +1158,10 @@ def _validate_chat_settings(raw: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("temperature must be between 0 and 2")
     if not 64 <= num_predict <= 4096:
         raise ValueError("num_predict must be between 64 and 4096")
+    if not 0 <= conversation_history_messages <= 24:
+        raise ValueError("conversation_history_messages must be between 0 and 24")
+    if not isinstance(show_retrieval_diagnostics, bool):
+        raise ValueError("show_retrieval_diagnostics must be true or false")
 
     sampler_top_k = _optional_int(raw.get("sampler_top_k"), "sampler_top_k", 0, 1000)
     top_p = _optional_float(raw.get("top_p"), "top_p", 0.0, 1.0)
@@ -1154,6 +1192,8 @@ def _validate_chat_settings(raw: dict[str, Any]) -> dict[str, Any]:
         "top_k": top_k,
         "temperature": temperature,
         "num_predict": num_predict,
+        "conversation_history_messages": conversation_history_messages,
+        "show_retrieval_diagnostics": show_retrieval_diagnostics,
         "sampler_top_k": sampler_top_k,
         "top_p": top_p,
         "min_p": min_p,
@@ -1220,7 +1260,7 @@ def validate_chat_request(payload: dict[str, Any], cfg: dict[str, Any]) -> dict[
     history: list[dict[str, str]] = []
     raw_history = payload.get("history")
     if isinstance(raw_history, list):
-        for item in raw_history[-12:]:
+        for item in raw_history[-24:]:
             if not isinstance(item, dict):
                 continue
             role = str(item.get("role") or "").strip().lower()
@@ -1389,6 +1429,53 @@ def retrieve(
             break
     return result
 
+
+def expand_retrieved_neighbors(
+    items: list[dict[str, Any]], radius: int
+) -> list[dict[str, Any]]:
+    if not items:
+        return []
+    radius = max(0, min(int(radius), 3))
+    if radius == 0:
+        return [
+            {**item, "context_text": item["text"], "neighbor_ordinals": []}
+            for item in items
+        ]
+
+    enriched: list[dict[str, Any]] = []
+    with file_lock(INDEX_LOCK_FILE):
+        connection = db_connect(DB_FILE)
+        try:
+            for item in items:
+                doc_id = int(item["document_id"])
+                ordinal = int(item["ordinal"])
+                rows = connection.execute(
+                    "SELECT ordinal,text FROM chunks "
+                    "WHERE document_id=? AND ordinal BETWEEN ? AND ? ORDER BY ordinal",
+                    (doc_id, max(0, ordinal - radius), ordinal + radius),
+                ).fetchall()
+                texts = [
+                    str(text).strip()
+                    for _chunk_ordinal, text in rows
+                    if str(text).strip()
+                ]
+                neighbor_ordinals = [
+                    int(chunk_ordinal)
+                    for chunk_ordinal, _text in rows
+                    if int(chunk_ordinal) != ordinal
+                ]
+                enriched.append(
+                    {
+                        **item,
+                        "context_text": "\n\n".join(texts) if texts else item["text"],
+                        "neighbor_ordinals": neighbor_ordinals,
+                    }
+                )
+        finally:
+            connection.close()
+    return enriched
+
+
 def scope_document_ids(request: dict[str, Any]) -> set[int] | None:
     scope = request["scope"]
     if scope == "all":
@@ -1432,53 +1519,107 @@ def render_system_prompt(request: dict[str, Any], cfg: dict[str, Any]) -> str:
     )
 
 
+
+def render_answer_prompt(
+    request: dict[str, Any],
+    document_excerpts: str,
+    cfg: dict[str, Any],
+    source_count: int,
+) -> str:
+    values = {
+        "DOCUMENT_EXCERPTS": document_excerpts,
+        "QUESTION": request["question"],
+        "SEARCH_SCOPE": _search_scope_text(request),
+        "SOURCE_COUNT": str(source_count),
+        "CURRENT_DOCUMENT_ID": str(request.get("document_id") or ""),
+    }
+    return RAG_PLACEHOLDER_RE.sub(
+        lambda match: values.get(match.group(1), match.group(0)),
+        cfg["answer_prompt_template"],
+    )
+
+
 def _bounded_prompt(
     request: dict[str, Any], retrieved: list[dict[str, Any]], cfg: dict[str, Any]
-) -> tuple[list[dict[str, str]], list[dict[str, Any]]]:
+) -> tuple[list[dict[str, str]], list[dict[str, Any]], dict[str, Any]]:
     settings = request["settings"]
     # Conservative character budget to avoid depending on a model tokenizer in PLAI.
-    # The current question has already been bounded against the selected context.
     available_chars = max(2000, (settings["num_ctx"] - settings["num_predict"] - 512) * 3)
     system = render_system_prompt(request, cfg)
-    budget = available_chars - len(system) - len(request["question"]) - 1000
+    empty_answer_prompt = render_answer_prompt(request, "", cfg, 0)
+    budget = max(0, available_chars - len(system) - len(empty_answer_prompt) - 500)
 
     history: list[dict[str, str]] = []
+    history_limit = settings["conversation_history_messages"]
     for item in reversed(request["history"]):
+        if len(history) >= history_limit:
+            break
         cost = len(item["content"]) + 64
-        if cost > budget or len(history) >= 8:
+        if cost > budget:
             break
         history.append(item)
         budget -= cost
     history.reverse()
 
+    remaining_for_documents = max(0, budget)
+    percent = cfg["retrieval_context_percent"]
+    excerpt_occurrences = cfg["answer_prompt_template"].count("{{DOCUMENT_EXCERPTS}}")
+    document_budget = remaining_for_documents if excerpt_occurrences else 0
+    if percent is not None:
+        document_budget = min(
+            document_budget,
+            max(0, int(available_chars * int(percent) / 100)),
+        )
+
     selected: list[dict[str, Any]] = []
     excerpts: list[str] = []
+    remaining_document_budget = document_budget
     for index, item in enumerate(retrieved, 1):
         header = f"[Source {index}] Document {item['document_id']} — {item['title']}\n"
-        block = header + item["text"].strip()
-        cost = len(block) + 100
-        if cost > budget and selected:
+        block = header + str(item.get("context_text") or item["text"]).strip()
+        rendered_cost = (len(block) + 100) * max(1, excerpt_occurrences)
+        if rendered_cost > remaining_document_budget and selected:
             break
-        if cost > budget:
-            if budget <= 0:
+        if rendered_cost > remaining_document_budget:
+            if remaining_document_budget <= 0:
                 break
-            block = block[:budget]
+            allowed_block_chars = max(
+                0,
+                remaining_document_budget // max(1, excerpt_occurrences) - 100,
+            )
+            if allowed_block_chars <= 0:
+                break
+            block = block[:allowed_block_chars]
+            rendered_cost = len(block) * max(1, excerpt_occurrences)
         excerpts.append(block)
         selected.append(item)
-        budget -= min(cost, len(block) + 100)
-        if budget <= 500:
+        remaining_document_budget -= min(
+            rendered_cost,
+            (len(block) + 100) * max(1, excerpt_occurrences),
+        )
+        if remaining_document_budget <= 500:
             break
 
     context = "\n\n".join(excerpts) if excerpts else "No relevant indexed excerpt was found."
-    user_content = (
-        "DOCUMENT EXCERPTS:\n\n"
-        + context
-        + "\n\nUSER QUESTION:\n"
-        + request["question"]
-    )
-    messages = [{"role": "system", "content": system}, *history, {"role": "user", "content": user_content}]
-    return messages, selected
-
+    user_content = render_answer_prompt(request, context, cfg, len(selected))
+    messages = [
+        {"role": "system", "content": system},
+        *history,
+        {"role": "user", "content": user_content},
+    ]
+    prompt_stats = {
+        "input_budget_chars": available_chars,
+        "conversation_history_messages_limit": history_limit,
+        "conversation_history_messages_used": len(history),
+        "conversation_history_chars": sum(len(item["content"]) for item in history),
+        "document_context_percent": percent,
+        "document_budget_chars": document_budget,
+        "document_context_chars": sum(len(item) for item in excerpts),
+        "retrieved_primary_chunks": len(retrieved),
+        "selected_primary_chunks": len(selected),
+        "answer_prompt_chars": len(user_content),
+    }
+    return messages, selected, prompt_stats
 
 def _job_path(job_id: str) -> Path:
     if not job_id or len(job_id) > 80 or not all(ch.isalnum() or ch in "-_" for ch in job_id):
@@ -1538,6 +1679,7 @@ def chat(job_id: str, request_path: Path) -> None:
         answer="",
         thinking="",
         sources=[],
+        diagnostics={},
         error=None,
         metrics={},
         user_id=payload.get("_plai_user_id"),
@@ -1568,8 +1710,9 @@ def chat(job_id: str, request_path: Path) -> None:
         ):
             update_job(job_id, phase="embedding", waiting_for=None)
             active_dimensions, active_num_ctx = active_embedding_runtime()
+            query_text = embedding_query_text(request, cfg)
             query_embedding = embed_inputs(
-                [embedding_query_text(request, cfg)],
+                [query_text],
                 active_embedding_model(),
                 keep_alive=0,
                 truncate=cfg["query_truncate"],
@@ -1590,7 +1733,8 @@ def chat(job_id: str, request_path: Path) -> None:
                 min_similarity=cfg["retrieval_min_similarity"],
                 max_chunks_per_document=cfg["max_chunks_per_document"],
             )
-            messages, selected = _bounded_prompt(request, retrieved, cfg)
+            retrieved = expand_retrieved_neighbors(retrieved, cfg["adjacent_chunks"])
+            messages, selected, prompt_stats = _bounded_prompt(request, retrieved, cfg)
             retrieval_seconds = time.monotonic() - retrieval_started
             sources: list[dict[str, Any]] = []
             source_by_document: dict[int, dict[str, Any]] = {}
@@ -1609,7 +1753,42 @@ def chat(job_id: str, request_path: Path) -> None:
                 }
                 source_by_document[doc_id] = source
                 sources.append(source)
-            update_job(job_id, phase="generation", sources=sources)
+            diagnostics: dict[str, Any] = {}
+            if settings["show_retrieval_diagnostics"]:
+                diagnostics = {
+                    "embedding_query": query_text,
+                    "settings": {
+                        "retrieval_top_k": settings["top_k"],
+                        "minimum_similarity": cfg["retrieval_min_similarity"],
+                        "max_chunks_per_document": cfg["max_chunks_per_document"],
+                        "adjacent_chunks": cfg["adjacent_chunks"],
+                        "retrieval_context_percent": cfg["retrieval_context_percent"],
+                        "retrieval_history_mode": cfg["retrieval_history_mode"],
+                        "retrieval_history_turns": cfg["retrieval_history_turns"],
+                        "conversation_history_messages": settings["conversation_history_messages"],
+                    },
+                    "prompt": prompt_stats,
+                    "selected_chunks": [
+                        {
+                            "source_number": source_number,
+                            "document_id": int(item["document_id"]),
+                            "title": item["title"],
+                            "ordinal": int(item["ordinal"]),
+                            "score": item["score"],
+                            "neighbor_ordinals": item.get("neighbor_ordinals", []),
+                            "excerpt_preview": str(
+                                item.get("context_text") or item["text"]
+                            )[:600],
+                        }
+                        for source_number, item in enumerate(selected, 1)
+                    ],
+                }
+            update_job(
+                job_id,
+                phase="generation",
+                sources=sources,
+                diagnostics=diagnostics,
+            )
 
             ollama_payload: dict[str, Any] = {
                 "model": settings["model"],
