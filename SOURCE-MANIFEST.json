@@ -41,7 +41,7 @@
     "src/core/history_engine.py": "5f6adcf959028dd9a233e03bca56c1fb475b8ef45c7593e13e3bec7a6079bd03",
     "src/core/history_runtime.py": "d89e5ee15e481dfa73e9cac412c61f88c6c6c8d8b0c2768c0bcec27e99c57aff",
     "src/core/prompt_runtime.py": "7470ed5481813902fe7cc23b385b479755e3d5eaab7ed51cde586898cce706ec",
-    "src/core/prompt_ui.py": "db047fec4f2d0c9826a4c2c628a8346ba743c16089645146f02f8b2985dd5e34",
+    "src/core/prompt_ui.py": "6b148b91a0fc5ac19f30ebd9c8bfcd5b1de893c2b77a2e0e2c79460cb1ff60dc",
     "src/core/rag_engine.py": "8980279abc01a04968b31565904a93fb48fc83a6b7824e86a4decce861884fa5",
     "src/core/review_store.py": "208c4ba12d25f4a53a4353d1c84ff086cf30752ee2007b4dc4b764527ae51e95",
     "src/core/suggestion_bridge.py": "1a8bbd59495c940a4548550a3ee813f619d20425f4c161d06c87b7a6516364a3",

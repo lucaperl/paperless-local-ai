@@ -231,62 +231,117 @@ HTML = r'''<!doctype html>
 
 
 <section class="page" id="page-document-chat">
-  <div class="page-head"><div><h1>Document Chat</h1><p>Global defaults, retrieval, embedding and index controls.</p></div><div id="ragConfigStatus" class="config-badge">Loading…</div></div>
+  <div class="page-head"><div><h1>Document Chat</h1><p>Configure how Document Chat generates answers, retrieves relevant passages and maintains its local search index.</p></div><div id="ragConfigStatus" class="config-badge">Loading…</div></div>
   <div class="toolbar"><button id="ragSaveBtn" class="btn primary">Save RAG settings</button><span id="ragSaveStatus" class="toolbar-status">Loading configuration…</span></div>
 
   <div class="card panel">
     <h2>Chat defaults</h2>
+    <p class="mini">Defaults for new chats. Per-chat controls in Paperless can override the supported generation settings without changing these saved defaults.</p>
     <div class="form-grid">
-      <div class="field"><label for="ragChatModel">Chat model</label><input id="ragChatModel" class="mono"></div>
-      <div class="field"><label for="ragTimezone">Timezone</label><input id="ragTimezone" class="mono" value="Europe/Berlin"></div>
+      <div class="field"><label for="ragChatModel">Chat model</label><input id="ragChatModel" class="mono"><div class="field-help">Ollama model used to generate the final answer.</div></div>
+      <div class="field"><label for="ragTimezone">Timezone</label><input id="ragTimezone" class="mono" value="Europe/Berlin"><div class="field-help">Used for date and time variables in the system prompt.</div></div>
     </div>
-    <div class="field" style="margin-top:14px"><label for="ragSystemPrompt">System prompt <span class="info-dot" title="The complete Document Chat system prompt. It is fully editable; PLAI does not add a hidden immutable system prompt.">i</span></label><textarea id="ragSystemPrompt" class="mono compact-textarea"></textarea><div class="template-actions"><button id="ragResetPromptBtn" class="btn" type="button">Reset</button></div><details class="mini-details"><summary>Variables</summary><div class="help-body"><div id="ragPlaceholderGrid" class="placeholder-grid"></div></div></details></div>
-    <details class="advanced-panel"><summary>Advanced chat & generation settings</summary><div class="advanced-body">
-      <div class="form-grid three">
-        <div class="field"><label for="ragThink">Thinking <span class="info-dot" title="Model-specific. Low, medium, high and max are only supported by compatible Ollama models.">i</span></label><select id="ragThink"><option value="auto">Auto</option><option value="off">Off</option><option value="on">On</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="max">Max</option></select></div>
-        <div class="field"><label for="ragNumCtx">Context size</label><input id="ragNumCtx" type="number" min="2048" max="131072" step="1024"></div>
-        <div class="field"><label for="ragTemperature">Temperature</label><input id="ragTemperature" type="number" min="0" max="2" step="0.1"></div>
-        <div class="field"><label for="ragNumPredict">Max output tokens</label><input id="ragNumPredict" type="number" min="64" max="4096" step="64"></div>
-        <div class="field"><label for="ragSamplerTopK">Sampler Top-K <span class="info-dot" title="Generation sampler Top-K, not Retrieval Top-K. Model-specific behavior. Leave blank to use the model default.">i</span></label><input id="ragSamplerTopK" type="number" min="0" max="1000" step="1" placeholder="Model default"></div>
-        <div class="field"><label for="ragTopP">Top-P <span class="info-dot" title="Model-specific generation sampler. Leave blank to use the model default.">i</span></label><input id="ragTopP" type="number" min="0" max="1" step="0.01" placeholder="Model default"></div>
-        <div class="field"><label for="ragMinP">Min-P <span class="info-dot" title="Model-specific generation sampler. Leave blank to use the model default.">i</span></label><input id="ragMinP" type="number" min="0" max="1" step="0.01" placeholder="Model default"></div>
-        <div class="field"><label for="ragRepeatPenalty">Repeat penalty <span class="info-dot" title="Model-specific generation option. Leave blank to use the model default.">i</span></label><input id="ragRepeatPenalty" type="number" min="0" max="10" step="0.01" placeholder="Model default"></div>
-        <div class="field"><label for="ragRepeatLastN">Repeat last N <span class="info-dot" title="Model-specific generation option. -1 means the context size in Ollama. Leave blank for the model default.">i</span></label><input id="ragRepeatLastN" type="number" min="-1" max="131072" step="1" placeholder="Model default"></div>
-        <div class="field"><label for="ragSeed">Seed <span class="info-dot" title="Generation seed. Leave blank to use the model default.">i</span></label><input id="ragSeed" type="number" min="0" max="2147483647" step="1" placeholder="Model default"></div>
+    <div class="field" style="margin-top:14px">
+      <label for="ragSystemPrompt">System prompt <span class="info-dot" title="PLAI sends this as the complete system message. No hidden immutable system prompt is added.">i</span></label>
+      <textarea id="ragSystemPrompt" class="mono compact-textarea"></textarea>
+      <div class="field-help">Sent on every chat turn. Variables are resolved at request time.</div>
+      <div class="template-actions"><button id="ragResetPromptBtn" class="btn" type="button">Reset</button></div>
+      <details class="mini-details"><summary>Variables</summary><div class="help-body"><div id="ragPlaceholderGrid" class="placeholder-grid"></div></div></details>
+    </div>
+
+    <details class="advanced-panel">
+      <summary>Advanced chat & generation settings</summary>
+      <div class="advanced-body">
+        <p class="mini" style="margin-top:0">Optional generation controls. Model support and useful values can vary; blank expert fields use the model/Ollama default.</p>
+        <div class="form-grid three">
+          <div class="field"><label for="ragThink">Thinking <span class="info-dot" title="Model-specific. Low, medium, high and max are only supported by compatible Ollama models.">i</span></label><select id="ragThink"><option value="auto">Auto</option><option value="off">Off</option><option value="on">On</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="max">Max</option></select><div class="field-help">Controls whether the chat model uses its reasoning mode.</div></div>
+          <div class="field"><label for="ragNumCtx">Context size</label><input id="ragNumCtx" type="number" min="2048" max="131072" step="1024"><div class="field-help">Maximum context window available to the chat request. Larger values can use more memory.</div></div>
+          <div class="field"><label for="ragTemperature">Temperature</label><input id="ragTemperature" type="number" min="0" max="2" step="0.1"><div class="field-help">Lower values are more deterministic; higher values allow more variation.</div></div>
+          <div class="field"><label for="ragNumPredict">Max output tokens</label><input id="ragNumPredict" type="number" min="64" max="4096" step="64"><div class="field-help">Maximum generated tokens. Thinking and the final answer share this budget.</div></div>
+          <div class="field"><label for="ragSamplerTopK">Sampler Top-K <span class="info-dot" title="Generation sampler Top-K, not Retrieval Top-K. Model-specific behavior.">i</span></label><input id="ragSamplerTopK" type="number" min="0" max="1000" step="1" placeholder="Model default"><div class="field-help">Limits how many likely next tokens remain available to the sampler.</div></div>
+          <div class="field"><label for="ragTopP">Top-P <span class="info-dot" title="Model-specific generation sampler. Leave blank to use the model default.">i</span></label><input id="ragTopP" type="number" min="0" max="1" step="0.01" placeholder="Model default"><div class="field-help">Keeps the smallest token set whose cumulative probability reaches this value.</div></div>
+          <div class="field"><label for="ragMinP">Min-P <span class="info-dot" title="Model-specific generation sampler. Leave blank to use the model default.">i</span></label><input id="ragMinP" type="number" min="0" max="1" step="0.01" placeholder="Model default"><div class="field-help">Filters unlikely tokens relative to the most likely next token.</div></div>
+          <div class="field"><label for="ragRepeatPenalty">Repeat penalty <span class="info-dot" title="Model-specific generation option. Leave blank to use the model default.">i</span></label><input id="ragRepeatPenalty" type="number" min="0" max="10" step="0.01" placeholder="Model default"><div class="field-help">Penalizes recently used tokens to reduce repetitive output.</div></div>
+          <div class="field"><label for="ragRepeatLastN">Repeat last N <span class="info-dot" title="Model-specific. In Ollama, -1 means the complete configured context window.">i</span></label><input id="ragRepeatLastN" type="number" min="-1" max="131072" step="1" placeholder="Model default"><div class="field-help">How much recent context the repetition penalty considers.</div></div>
+          <div class="field"><label for="ragSeed">Seed <span class="info-dot" title="Model-specific behavior can still affect reproducibility. Leave blank to use the model default.">i</span></label><input id="ragSeed" type="number" min="0" max="2147483647" step="1" placeholder="Model default"><div class="field-help">A fixed seed can make repeated runs more reproducible.</div></div>
+        </div>
+        <div class="field" style="margin-top:14px"><label for="ragStop">Stop sequences <span class="info-dot" title="Model-specific. One stop sequence per line; leave empty to use the model's own defaults.">i</span></label><textarea id="ragStop" class="mono tiny-textarea" placeholder="One sequence per line"></textarea><div class="field-help">Generation stops when any listed sequence is emitted.</div></div>
       </div>
-      <div class="field" style="margin-top:14px"><label for="ragStop">Stop sequences <span class="info-dot" title="Model-specific. One stop sequence per line; leave empty to use the model's own defaults.">i</span></label><textarea id="ragStop" class="mono tiny-textarea" placeholder="One sequence per line"></textarea></div>
-    </div></details>
+    </details>
   </div>
 
-  <div class="card panel"><h2>Retrieval</h2><div class="form-grid"><div class="field"><label for="ragRetrievalTopK">Retrieval Top-K <span class="info-dot" title="Maximum number of retrieved chunks passed to the chat model. This is separate from generation Sampler Top-K.">i</span></label><input id="ragRetrievalTopK" type="number" min="1" max="12" step="1"></div></div>
-    <details class="advanced-panel"><summary>Advanced retrieval settings</summary><div class="advanced-body"><div class="form-grid three">
-      <div class="field"><label for="ragHistoryTurns">Previous user turns</label><input id="ragHistoryTurns" type="number" min="0" max="8" step="1"></div>
-      <div class="field"><label for="ragMinSimilarity">Minimum similarity <span class="info-dot" title="Embedding-model-specific cosine threshold. Leave blank to disable filtering.">i</span></label><input id="ragMinSimilarity" type="number" min="-1" max="1" step="0.01" placeholder="Disabled"></div>
-      <div class="field"><label for="ragMaxChunksPerDoc">Max chunks per document</label><input id="ragMaxChunksPerDoc" type="number" min="1" max="64" step="1" placeholder="Unlimited"></div>
-    </div></div></details>
+  <div class="card panel">
+    <h2>Retrieval</h2>
+    <p class="mini">Controls which indexed document chunks are selected before the chat model sees them.</p>
+    <div class="form-grid">
+      <div class="field"><label for="ragRetrievalTopK">Retrieval Top-K</label><input id="ragRetrievalTopK" type="number" min="1" max="12" step="1"><div class="field-help">Maximum number of the most similar chunks passed to the chat model. Higher values can improve recall but use more context.</div></div>
+    </div>
+    <details class="advanced-panel">
+      <summary>Advanced retrieval settings</summary>
+      <div class="advanced-body">
+        <p class="mini" style="margin-top:0">Tune how multi-turn questions become retrieval queries and how matching chunks are filtered.</p>
+        <div class="form-grid three">
+          <div class="field"><label for="ragHistoryTurns">Previous user turns</label><input id="ragHistoryTurns" type="number" min="0" max="8" step="1"><div class="field-help">Number of earlier user messages added to the embedding query for follow-up context. Assistant replies are not included. <strong>0</strong> uses only the current question.</div></div>
+          <div class="field"><label for="ragMinSimilarity">Minimum similarity <span class="info-dot" title="Embedding-model-specific cosine similarity threshold. Scores are not directly comparable across different embedding models.">i</span></label><input id="ragMinSimilarity" type="number" min="-1" max="1" step="0.01" placeholder="Disabled"><div class="field-help">Discards retrieved chunks below this cosine score. Leave blank to accept the best matches regardless of score.</div></div>
+          <div class="field"><label for="ragMaxChunksPerDoc">Max chunks per document</label><input id="ragMaxChunksPerDoc" type="number" min="1" max="64" step="1" placeholder="Unlimited"><div class="field-help">Limits how many retrieved chunks may come from one document. Leave blank for no limit; lower values encourage source diversity.</div></div>
+        </div>
+      </div>
+    </details>
   </div>
 
-  <div class="card panel"><h2>Embedding & index</h2><div class="form-grid three">
-    <div class="field"><label for="ragEmbeddingModel">Embedding model <span class="info-dot" title="Model-specific. Changing the model requires an index rebuild.">i</span></label><input id="ragEmbeddingModel" class="mono"></div>
-    <div class="field"><label for="ragChunkTarget">Chunk target (characters)</label><input id="ragChunkTarget" type="number" min="1000" max="20000" step="100"></div>
-    <div class="field"><label for="ragChunkOverlap">Chunk overlap (characters)</label><input id="ragChunkOverlap" type="number" min="0" max="19999" step="100"></div>
-  </div>
-    <details class="advanced-panel"><summary>Advanced embedding settings</summary><div class="advanced-body">
-      <div class="field"><label for="ragQueryTemplate">Embedding query template <span class="info-dot" title="Model-specific. The built-in default is designed for Qwen3-Embedding and follows its recommended query-side instruction format. Other embedding models may require a different prefix, template, or no instruction.">i</span></label><textarea id="ragQueryTemplate" class="mono compact-textarea"></textarea><div class="template-actions"><button id="ragQueryPreviewBtn" class="btn" type="button">Preview</button><button id="ragResetQueryTemplateBtn" class="btn" type="button">Reset</button></div><details class="mini-details"><summary>Variables</summary><div class="help-body"><div id="ragQueryPlaceholderGrid" class="placeholder-grid"></div></div></details><pre id="ragQueryPreview" class="preview compact-preview" style="display:none"></pre></div>
-      <div class="field" style="margin-top:16px"><label for="ragDocumentTemplate">Document embedding template <span class="info-dot" title="Model-specific. Qwen3-Embedding uses the plain chunk by default. Other embedding models may recommend prefixes or metadata. This changes corpus vectors and requires a rebuild.">i</span></label><textarea id="ragDocumentTemplate" class="mono compact-textarea"></textarea><div class="template-actions"><button id="ragDocumentPreviewBtn" class="btn" type="button">Preview</button><button id="ragResetDocumentTemplateBtn" class="btn" type="button">Reset</button></div><details class="mini-details"><summary>Variables</summary><div class="help-body"><div id="ragDocumentPlaceholderGrid" class="placeholder-grid"></div></div></details><pre id="ragDocumentPreview" class="preview compact-preview" style="display:none"></pre></div>
-      <div class="form-grid three" style="margin-top:16px">
-        <div class="field"><label for="ragEmbeddingDimensions">Embedding dimensions <span class="info-dot" title="Model-specific. Leave blank for the model's native dimension. Custom dimensions require model support, such as MRL/Matryoshka support, and an index rebuild.">i</span></label><input id="ragEmbeddingDimensions" type="number" min="1" max="65536" step="1" placeholder="Native"></div>
-        <div class="field"><label for="ragQueryTruncate">Query truncate <span class="info-dot" title="If enabled, Ollama truncates query inputs that exceed the embedding context. If disabled, Ollama returns an error instead.">i</span></label><select id="ragQueryTruncate"><option value="true">On</option><option value="false">Off</option></select></div>
-        <div class="field"><label for="ragDocumentTruncate">Document truncate <span class="info-dot" title="If changed, corpus embedding behavior changes and the index must be rebuilt.">i</span></label><select id="ragDocumentTruncate"><option value="true">On</option><option value="false">Off</option></select></div>
-        <div class="field"><label for="ragEmbeddingNumCtx">Embedding context <span class="info-dot" title="Model-specific Ollama num_ctx override for embeddings. Leave blank for automatic/model default. Changing it requires a rebuild.">i</span></label><input id="ragEmbeddingNumCtx" type="number" min="512" max="131072" step="512" placeholder="Auto"></div>
-        <div class="field"><label for="ragBatchSize">Embedding batch size</label><input id="ragBatchSize" type="number" min="1" max="64" step="1"></div>
-        <div class="field"><label for="ragSliceSize">Embedding slice size</label><input id="ragSliceSize" type="number" min="1" max="256" step="1"></div>
-        <div class="field"><label for="ragSyncInterval">Sync interval (seconds)</label><input id="ragSyncInterval" type="number" min="60" max="86400" step="60"></div>
-      </div><div class="rebuild-note">Structural embedding changes are saved immediately but only become active after a rebuild.</div>
-    </div></details>
+  <div class="card panel">
+    <h2>Embedding & index</h2>
+    <p class="mini">Controls how Paperless text is split and embedded. Changes that alter stored document vectors require a rebuild; runtime-only tuning does not.</p>
+    <div class="form-grid three">
+      <div class="field"><label for="ragEmbeddingModel">Embedding model <span class="info-dot" title="Model-specific. Query/document formatting and supported dimensions can differ between embedding models.">i</span></label><input id="ragEmbeddingModel" class="mono"><div class="field-help">Ollama model used for both document and query embeddings. Changing it requires a full index rebuild.</div></div>
+      <div class="field"><label for="ragChunkTarget">Chunk target (characters)</label><input id="ragChunkTarget" type="number" min="1000" max="20000" step="100"><div class="field-help">Approximate target size of each searchable text chunk. Smaller chunks are more focused but create more index entries. Requires rebuild.</div></div>
+      <div class="field"><label for="ragChunkOverlap">Chunk overlap (characters)</label><input id="ragChunkOverlap" type="number" min="0" max="19999" step="100"><div class="field-help">Text repeated between neighboring chunks so context is not lost at boundaries. Requires rebuild.</div></div>
+    </div>
+
+    <details class="advanced-panel">
+      <summary>Advanced embedding settings</summary>
+      <div class="advanced-body">
+        <p class="mini" style="margin-top:0"><strong>Model-specific.</strong> The built-in templates are configured for Qwen3-Embedding. Other embedding models may expect different prefixes, templates, dimensions or context behavior.</p>
+
+        <div class="field">
+          <label for="ragQueryTemplate">Embedding query template <span class="info-dot" title="Other embedding models may require a different query prefix or no instruction at all.">i</span></label>
+          <textarea id="ragQueryTemplate" class="mono compact-textarea"></textarea>
+          <div class="field-help">Exact text embedded for each search. The built-in default follows the recommended Qwen3-Embedding query instruction format. Changes affect new searches immediately and do not require a rebuild.</div>
+          <div class="template-actions"><button id="ragQueryPreviewBtn" class="btn" type="button">Preview</button><button id="ragResetQueryTemplateBtn" class="btn" type="button">Reset</button></div>
+          <details class="mini-details"><summary>Variables</summary><div class="help-body"><div id="ragQueryPlaceholderGrid" class="placeholder-grid"></div></div></details>
+          <pre id="ragQueryPreview" class="preview compact-preview" style="display:none"></pre>
+        </div>
+
+        <div class="field" style="margin-top:16px">
+          <label for="ragDocumentTemplate">Document embedding template <span class="info-dot" title="Changing corpus-side formatting changes stored vectors, so the new setting becomes active only after a rebuild.">i</span></label>
+          <textarea id="ragDocumentTemplate" class="mono compact-textarea"></textarea>
+          <div class="field-help">Exact text embedded for every indexed chunk. The Qwen3-Embedding default is plain <code>{{CHUNK}}</code>. Changes require a rebuild.</div>
+          <div class="template-actions"><button id="ragDocumentPreviewBtn" class="btn" type="button">Preview</button><button id="ragResetDocumentTemplateBtn" class="btn" type="button">Reset</button></div>
+          <details class="mini-details"><summary>Variables</summary><div class="help-body"><div id="ragDocumentPlaceholderGrid" class="placeholder-grid"></div></div></details>
+          <pre id="ragDocumentPreview" class="preview compact-preview" style="display:none"></pre>
+        </div>
+
+        <div class="form-grid three" style="margin-top:16px">
+          <div class="field"><label for="ragEmbeddingDimensions">Embedding dimensions <span class="info-dot" title="Model-specific. Custom dimensions require support such as MRL/Matryoshka embeddings.">i</span></label><input id="ragEmbeddingDimensions" type="number" min="1" max="65536" step="1" placeholder="Native"><div class="field-help">Leave blank for the model's native vector size. A custom value changes stored vectors and requires a rebuild.</div></div>
+          <div class="field"><label for="ragQueryTruncate">Query truncate</label><select id="ragQueryTruncate"><option value="true">On</option><option value="false">Off</option></select><div class="field-help">On truncates an oversized query to the embedding context; Off makes Ollama return an error instead. No rebuild required.</div></div>
+          <div class="field"><label for="ragDocumentTruncate">Document truncate</label><select id="ragDocumentTruncate"><option value="true">On</option><option value="false">Off</option></select><div class="field-help">Controls the same behavior for indexed document inputs. Changing it affects corpus embeddings and requires a rebuild.</div></div>
+          <div class="field"><label for="ragEmbeddingNumCtx">Embedding context <span class="info-dot" title="Model-specific Ollama num_ctx override. Some embedding models may ignore or constrain usable values.">i</span></label><input id="ragEmbeddingNumCtx" type="number" min="512" max="131072" step="512" placeholder="Auto"><div class="field-help">Optional embedding <code>num_ctx</code> override. Leave blank for Ollama/model default. Changing it requires a rebuild.</div></div>
+          <div class="field"><label for="ragBatchSize">Embedding batch size</label><input id="ragBatchSize" type="number" min="1" max="64" step="1"><div class="field-help">Chunks sent in one embedding request. Affects speed and memory use, not index semantics; no rebuild required.</div></div>
+          <div class="field"><label for="ragSliceSize">Embedding slice size</label><input id="ragSliceSize" type="number" min="1" max="256" step="1"><div class="field-help">Chunks processed before PLAI releases the shared AI slot. Larger slices improve continuity but can make OCR/metadata wait longer. No rebuild required.</div></div>
+          <div class="field"><label for="ragSyncInterval">Sync interval (seconds)</label><input id="ragSyncInterval" type="number" min="60" max="86400" step="60"><div class="field-help">How often PLAI checks for changed Paperless documents for incremental index sync. No rebuild required.</div></div>
+        </div>
+        <div class="rebuild-note">Structural embedding changes are saved immediately, but the active index remains in use until a rebuild finishes and activates the new index.</div>
+      </div>
+    </details>
   </div>
 
-  <div class="card panel"><div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start"><h2 style="margin:0">Index status</h2><div id="ragIndexBadge" class="config-badge">Loading…</div></div><div id="ragIndexDetail" class="status-box" style="margin-top:14px">Loading index state…</div><div class="toolbar" style="margin-top:16px;margin-bottom:0"><button id="ragSyncBtn" class="btn" type="button">Sync</button><button id="ragRebuildBtn" class="btn" type="button">Rebuild</button><button id="ragPauseBtn" class="btn" type="button">Pause</button><span id="ragActionStatus" class="toolbar-status"></span></div></div>
+  <div class="card panel">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start"><h2 style="margin:0">Index status</h2><div id="ragIndexBadge" class="config-badge">Loading…</div></div>
+    <div id="ragIndexDetail" class="status-box" style="margin-top:14px">Loading index state…</div>
+    <p class="mini" style="margin:10px 0 0"><strong>Sync</strong> updates changed documents. <strong>Rebuild</strong> creates a complete replacement index and activates it atomically when finished. <strong>Pause</strong> stops ongoing index work; the current active index stays available.</p>
+    <div class="toolbar" style="margin-top:16px;margin-bottom:0"><button id="ragSyncBtn" class="btn" type="button">Sync</button><button id="ragRebuildBtn" class="btn" type="button">Rebuild</button><button id="ragPauseBtn" class="btn" type="button">Pause</button><span id="ragActionStatus" class="toolbar-status"></span></div>
+  </div>
+
 </section>
 
 </div></main></div>
