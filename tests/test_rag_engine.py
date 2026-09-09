@@ -183,9 +183,13 @@ def test_embedding_templates_and_retrieval_history_are_configurable():
     rag = module()
     cfg = rag.validate_config(
         {
-            "embedding_query_template": "scope={{SEARCH_SCOPE}}\n{{CURRENT_QUESTION}}\n{{PREVIOUS_USER_CONTEXT}}",
+            "embedding_query_template": (
+                "scope={{SEARCH_SCOPE}}\n{{CURRENT_QUESTION}}\n"
+                "{{PREVIOUS_USER_CONTEXT}}\n{{PREVIOUS_HISTORY_CONTEXT}}"
+            ),
             "document_embedding_template": "Title: {{DOCUMENT_TITLE}}\n{{CHUNK}}",
             "retrieval_history_turns": 1,
+            "retrieval_history_mode": "user_only",
         }
     )
     request = rag.validate_chat_request(
@@ -194,8 +198,9 @@ def test_embedding_templates_and_retrieval_history_are_configurable():
             "scope": "all",
             "history": [
                 {"role": "user", "content": "Old context that should be dropped"},
-                {"role": "assistant", "content": "Assistant text is never retrieval context"},
+                {"role": "assistant", "content": "Old assistant context that should be dropped"},
                 {"role": "user", "content": "Use the most recent service agreement"},
+                {"role": "assistant", "content": "Recent assistant context"},
             ],
         },
         cfg,
@@ -204,7 +209,15 @@ def test_embedding_templates_and_retrieval_history_are_configurable():
     assert "What does the agreement say?" in rendered
     assert "Use the most recent service agreement" in rendered
     assert "Old context that should be dropped" not in rendered
-    assert "Assistant text is never retrieval context" not in rendered
+    assert "Old assistant context that should be dropped" not in rendered
+    assert "Recent assistant context" not in rendered
+
+    cfg["retrieval_history_mode"] = "user_and_assistant"
+    rendered_with_assistant = rag.embedding_query_text(request, cfg)
+    assert "User: Use the most recent service agreement" in rendered_with_assistant
+    assert "Assistant: Recent assistant context" in rendered_with_assistant
+    assert "Old assistant context that should be dropped" not in rendered_with_assistant
+
     prepared = {"id": 42, "title": "Sample Agreement", "created": "2026-01-15"}
     assert rag.render_document_embedding_text(prepared, "Synthetic chunk text.", cfg) == "Title: Sample Agreement\nSynthetic chunk text."
 
@@ -212,6 +225,8 @@ def test_embedding_templates_and_retrieval_history_are_configurable():
 def test_default_structural_signature_remains_backward_compatible():
     rag = module()
     cfg = rag.validate_config({})
+    assert cfg["retrieval_history_mode"] == "user_only"
+    assert cfg["retrieval_history_turns"] == 3
     assert rag.config_signature(cfg) == {
         "chunking_version": rag.CHUNKING_VERSION,
         "embedding_model": "qwen3-embedding:4b-q4_K_M",
@@ -237,3 +252,5 @@ def test_advanced_generation_settings_are_optional_and_validated():
     assert settings["stop"] == ["END"]
     with pytest.raises(ValueError):
         rag._validate_chat_settings({**settings, "top_p": 2.0})
+    with pytest.raises(ValueError, match="retrieval_history_mode"):
+        rag.validate_config({"retrieval_history_mode": "unsupported"})

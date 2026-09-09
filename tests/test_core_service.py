@@ -59,6 +59,7 @@ def test_control_center_contains_document_chat_administration():
     assert 'id="ragQueryTemplate"' in source
     assert 'id="ragDocumentTemplate"' in source
     assert 'id="ragEmbeddingDimensions"' in source
+    assert 'id="ragHistoryMode"' in source
     assert 'id="ragHistoryTurns"' in source
     assert 'id="ragSamplerTopK"' in source
     assert "Qwen3-Embedding" in source

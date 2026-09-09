@@ -71,9 +71,10 @@ RAG_PROMPT_PLACEHOLDERS: dict[str, str] = {
     "CURRENT_DOCUMENT_ID": "Current Paperless document ID for Current document scope, otherwise empty.",
 }
 EMBEDDING_QUERY_PLACEHOLDERS: dict[str, str] = {
-    "RETRIEVAL_QUERY": "Current question plus the configured number of previous user turns.",
+    "RETRIEVAL_QUERY": "Current question plus the configured retrieval history.",
     "CURRENT_QUESTION": "Current user question only.",
-    "PREVIOUS_USER_CONTEXT": "Previous user turns used for retrieval, without assistant messages.",
+    "PREVIOUS_USER_CONTEXT": "Previous user turns in the selected retrieval window.",
+    "PREVIOUS_HISTORY_CONTEXT": "Effective previous retrieval context using the configured history mode.",
     "SEARCH_SCOPE": "Current search scope and selected label when available.",
 }
 DOCUMENT_EMBEDDING_PLACEHOLDERS: dict[str, str] = {
@@ -98,7 +99,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "embedding_batch_size": 1,
     "embedding_slice_chunks": 16,
     "sync_interval_seconds": 900,
-    "retrieval_history_turns": 2,
+    "retrieval_history_mode": "user_only",
+    "retrieval_history_turns": 3,
     "retrieval_min_similarity": None,
     "max_chunks_per_document": None,
     "system_prompt": DEFAULT_RAG_SYSTEM_PROMPT,
@@ -213,6 +215,7 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
             "embedding_batch_size",
             "embedding_slice_chunks",
             "sync_interval_seconds",
+            "retrieval_history_mode",
             "retrieval_history_turns",
             "retrieval_min_similarity",
             "max_chunks_per_document",
@@ -254,6 +257,9 @@ def validate_config(raw: dict[str, Any]) -> dict[str, Any]:
     cfg["embedding_batch_size"] = int(cfg["embedding_batch_size"])
     cfg["embedding_slice_chunks"] = int(cfg["embedding_slice_chunks"])
     cfg["sync_interval_seconds"] = int(cfg["sync_interval_seconds"])
+    cfg["retrieval_history_mode"] = str(cfg.get("retrieval_history_mode") or "").strip().lower()
+    if cfg["retrieval_history_mode"] not in {"user_only", "user_and_assistant"}:
+        raise ValueError("retrieval_history_mode must be user_only or user_and_assistant")
     cfg["retrieval_history_turns"] = int(cfg["retrieval_history_turns"])
     cfg["retrieval_min_similarity"] = _optional_float(
         cfg.get("retrieval_min_similarity"), "retrieval_min_similarity", -1.0, 1.0
@@ -1245,30 +1251,65 @@ def _search_scope_text(request: dict[str, Any]) -> str:
     return scope.replace("_", " ")
 
 
+def _retrieval_history_window(
+    history: list[dict[str, str]], history_turns: int
+) -> list[dict[str, str]]:
+    if history_turns <= 0:
+        return []
+    user_indexes = [index for index, item in enumerate(history) if item["role"] == "user"]
+    if not user_indexes:
+        return []
+    start = user_indexes[max(0, len(user_indexes) - history_turns)]
+    return history[start:]
+
+
+def _retrieval_history_context(
+    window: list[dict[str, str]], history_mode: str
+) -> str:
+    if history_mode == "user_only":
+        return "\n".join(item["content"] for item in window if item["role"] == "user")
+    return "\n".join(
+        f"{'User' if item['role'] == 'user' else 'Assistant'}: {item['content']}"
+        for item in window
+    )
+
+
 def retrieval_query(
     question: str,
     history: list[dict[str, str]],
-    history_turns: int = 2,
+    history_turns: int = 3,
+    history_mode: str = "user_only",
 ) -> str:
-    if history_turns <= 0:
+    window = _retrieval_history_window(history, history_turns)
+    context = _retrieval_history_context(window, history_mode)
+    if not context:
         return question
-    prior = [item["content"] for item in history if item["role"] == "user"][-history_turns:]
-    if not prior:
-        return question
-    return "Previous user context:\n" + "\n".join(prior) + "\nCurrent question:\n" + question
+    label = (
+        "Previous user context:"
+        if history_mode == "user_only"
+        else "Previous conversation context:"
+    )
+    return f"{label}\n{context}\nCurrent question:\n{question}"
 
 
 def embedding_query_text(request: dict[str, Any], cfg: dict[str, Any]) -> str:
     history_turns = cfg["retrieval_history_turns"]
-    prior = (
-        [item["content"] for item in request["history"] if item["role"] == "user"][-history_turns:]
-        if history_turns > 0
-        else []
+    history_mode = cfg["retrieval_history_mode"]
+    window = _retrieval_history_window(request["history"], history_turns)
+    previous_user_context = "\n".join(
+        item["content"] for item in window if item["role"] == "user"
     )
+    previous_history_context = _retrieval_history_context(window, history_mode)
     values = {
-        "RETRIEVAL_QUERY": retrieval_query(request["question"], request["history"], history_turns),
+        "RETRIEVAL_QUERY": retrieval_query(
+            request["question"],
+            request["history"],
+            history_turns,
+            history_mode,
+        ),
         "CURRENT_QUESTION": request["question"],
-        "PREVIOUS_USER_CONTEXT": "\n".join(prior),
+        "PREVIOUS_USER_CONTEXT": previous_user_context,
+        "PREVIOUS_HISTORY_CONTEXT": previous_history_context,
         "SEARCH_SCOPE": _search_scope_text(request),
     }
     return RAG_PLACEHOLDER_RE.sub(
