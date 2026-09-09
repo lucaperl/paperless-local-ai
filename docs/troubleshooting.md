@@ -184,6 +184,51 @@ Runtime settings are loaded from `APP_DATA_DIR/config/app-config.json`.
 
 Deployment-owned values such as ports, mounts, HPI enablement, CPU/RAM/shared-memory limits and Paperless-side plugin environment require recreating/redeploying the affected containers.
 
+## Document chat button is missing
+
+Check the Paperless-side UI integration:
+
+- the shared integration directory is mounted read-only into Paperless;
+- `PYTHONPATH` includes `/opt/paperless-local-ai`;
+- `PAPERLESS_APPS` includes `paperless_local_ai_ui.apps.PaperlessLocalAiUiConfig`;
+- Paperless was restarted after changing the integration;
+- the Control Center reports the Paperless UI integration as ready/enabled;
+- the current Paperless user is a superuser.
+
+After a deployment/update, use a hard browser reload once to avoid testing an old cached asset. The integration fails open: if PLAI bootstrap cannot initialize, Paperless' own UI remains available instead of leaving a broken replacement.
+
+## Document chat is waiting for AI resources
+
+This is expected when OCR, metadata classification, another chat or an index slice currently owns the shared AI slot.
+
+The chat status reports the current owner/reason/elapsed time when available. `paperless-local-ai` deliberately serializes heavyweight work on modest hardware rather than loading multiple models or PaddleOCR concurrently.
+
+Do not delete `/coordination/ai.lock` while a real workload is running. The file lock is the synchronization primitive; `ai-status.json` is informational only.
+
+## RAG index build is slow
+
+A full embedding build is intentionally CPU-friendly rather than throughput-maximized. Current defaults are embedding batch `1` and slice `16`. On CPU-only hardware a non-trivial archive can take hours.
+
+The first build and every structural rebuild are explicit. Later rebuilds use `rag.db.build` while the old active index remains available. Pause/Resume is supported, and an interrupted staging build is retained.
+
+Increasing batch size is not guaranteed to make a limited CPU faster and can increase memory pressure. Benchmark before changing it.
+
+## RAG says rebuild required
+
+Structural corpus-embedding settings changed, but the active index is intentionally still serving its old compatible vectors.
+
+Typical rebuild-triggering changes include the embedding model, document embedding template, embedding dimensions/context behavior or chunk target/overlap. Start **Rebuild** under **Control Center → Document Chat → Index status** when you want those configured values to become active.
+
+Query-side/runtime settings such as retrieval history, source/answer prompt templates, adjacent chunks, diagnostics, batch/slice size or sync interval do not by themselves require a corpus rebuild.
+
+## RAG source metadata is empty or shows an ID
+
+Source metadata is read live from Paperless at chat time. A document can legitimately have no correspondent/document type/tags, in which case those template variables are empty.
+
+Related-object names are resolved from Paperless IDs. If a supplementary lookup fails, the RAG turn falls back rather than adding another AI dependency; some relation variables may therefore show an ID instead of a resolved name.
+
+The default source template does not use large fields such as full document content or raw JSON. Those variables exist for expert templates and can consume substantial context.
+
 ## Hybrid tagging does not reuse history
 
 A historical tag is reused only when the strict confidence gate passes. Check:
@@ -192,8 +237,8 @@ A historical tag is reused only when the strict confidence gate passes. Check:
 - human review is complete and the document used as history has had the configured review tag removed;
 - the document is not still in the classification queue/error state;
 - at least two reviewed neighbors support the same winning tag;
-- the nearest reviewed document has exactly one leaf content tag;
-- nearest similarity is at least 0.60 and weighted winner share is at least 0.50;
+- the winning complete reviewed leaf-tag set fits the configured maximum tag count;
+- nearest similarity reaches the configured gate (default 0.62), minimum support is met (default 2) and weighted winner share reaches the configured gate (default 0.50);
 - **Classification → Tagging → History health** is not reporting a refresh error.
 
 Use **Refresh reviewed history** after correcting historical tags if you want an immediate rebuild. The persistent UI/worker do not keep the scientific index in RAM; a Hybrid request starts the history helper on demand and a stale/invalid local cache is rebuilt automatically. If the Control Center reports that the history broker is unavailable, check the `core-service` container because it owns the lightweight broker. A fallback to the LLM is expected when the archive does not provide a sufficiently strong and internally consistent historical match.

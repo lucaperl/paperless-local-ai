@@ -1,6 +1,8 @@
 # Configuration
 
-The **Control Center** is the main interface for `paperless-local-ai` configuration, testing and configuration history.
+The **Control Center** is the main interface for `paperless-local-ai` configuration, testing and configuration history. It covers both the import/metadata pipeline and global document-chat/RAG administration.
+
+Defaults are intentionally conservative for modest CPU-only hardware. The project serializes heavyweight OCR/history/embedding/chat/model work through one shared AI slot; increasing context, batch or image-size settings should be treated as a resource trade-off rather than a free speed increase.
 
 ## Recommended first-time setup order
 
@@ -11,10 +13,11 @@ The **Control Center** is the main interface for `paperless-local-ai` configurat
 5. Complete the matching [Paperless setup](paperless-setup.md), including the review-tag lifecycle, Paperless matching settings, metadata workflow and OCRmyPDF integration.
 6. **App Settings → Runtime** — leave metadata writes enabled or temporarily use Dry Run for read-only metadata testing.
 7. **Classification → Tagging** — choose Hybrid tagging or LLM direct and optionally describe ambiguous tags.
-8. **Classification → Prompt** — review the editable System, Base classification and Tagging prompts.
+8. **Classification → Prompt / Settings** — review prompts, model and context/document limits.
 9. **Classification → Test** — run a safe preview/model test against an existing document.
+10. **Document Chat** — if document chat is wanted, review the chat/retrieval/embedding defaults, enable the Paperless UI integration and start the first RAG index build explicitly.
 
-Saved app/classification configurations are versioned and can be restored from the UI.
+Saved app/classification configurations are versioned and can be restored from the UI. RAG configuration is stored separately from classification settings so chat/index tuning cannot silently change metadata behavior.
 
 ## Connections
 
@@ -82,7 +85,7 @@ Additional memory reference points:
 | Metadata | qwen3.5:4b Q4_K_M · 8k context | ~3.8 GiB |
 | Metadata | qwen3.5:4b Q4_K_M · 16k context | ~4.2 GiB |
 
-PaddleOCR, on-demand Hybrid-history work and Ollama inference are serialized through the shared AI resource lock. The scientific history helper is released before automatic/model-test Ollama inference, so its temporary memory does not remain resident through the LLM phase.
+PaddleOCR, on-demand Hybrid-history work, metadata Ollama inference, RAG query/chat inference and RAG index slices are serialized through the shared AI resource lock. The scientific history helper is released before automatic/model-test Ollama inference, so its temporary memory does not remain resident through the LLM phase.
 
 If RAM is limited, lower **Maximum OCR image side** first when OCR is the problem and reduce the Classification **Context window** when the LLM is the problem. `OCR_MEMORY_LIMIT` is a deployment safety ceiling; raising it does not reduce memory use.
 
@@ -194,6 +197,57 @@ New correspondents are never auto-created. The optional Paperless Suggestions in
 ## Ollama lifecycle
 
 The metadata worker uses the configured model for the structured request and unloads it before releasing the shared AI transaction. `keep_alive` is still available as an Ollama request parameter, while explicit unload is the standard end-of-document behavior.
+
+## Document chat and RAG
+
+Document-chat administration lives under **Document Chat** in the Control Center. The actual conversations live inside Paperless.
+
+### Chat and prompt assembly
+
+Global defaults include the chat model, Thinking mode, context size, temperature, output limit and the number of previous user/assistant messages sent to the answer model. The default answer-history depth is **8 messages**.
+
+The RAG System prompt, **Retrieved source template** and **Answer prompt template** are editable. Source-template metadata is read live from Paperless for each chat turn. The default source block includes title, created date, correspondent, document type and document ID plus the retrieved chunk. Additional variables expose tags, storage path, page count, custom fields and other Paperless document metadata; very large values such as full content/raw JSON are available for expert use but are not part of the default template.
+
+Changing source/answer prompts or other non-structural chat settings does **not** require an index rebuild.
+
+### Retrieval
+
+The default retrieval-history mode uses **user messages only** with **3 previous user turns**. This affects the embedding query and is separate from the answer model's 8-message conversation-history window.
+
+Other supported controls include:
+
+- minimum cosine similarity (disabled by default);
+- maximum primary chunks per document (unlimited by default);
+- adjacent chunk expansion (`Off`, `±1`, `±2`, `±3`; default `Off`);
+- optional document-context budget percentage (default `Auto`);
+- retrieval diagnostics (default `Off`).
+
+Adjacent chunk expansion is local and does not add another model call. Diagnostics can show the effective retrieval query, selected scores/ordinals/neighbors and prompt-budget information without adding model inference.
+
+### Embedding and index
+
+Current defaults:
+
+| Setting | Default |
+|---|---|
+| Embedding model | `qwen3-embedding:4b-q4_K_M` |
+| Document embedding template | `{{CHUNK}}` |
+| Chunk target | `2000` characters |
+| Chunk overlap | `400` characters |
+| Embedding batch size | `1` |
+| Embedding slice size | `16` chunks |
+| Sync interval | `900` seconds |
+| Embedding dimensions | model native |
+| Query/document truncation | enabled |
+| Embedding context override | Auto |
+
+The small batch default is intentional for the CPU-only reference design. Larger batches can increase memory pressure or perform worse on limited CPUs; benchmark before changing them.
+
+Structural changes such as the embedding model, document embedding template, dimensions, document truncation/context behavior or chunk geometry do not replace the active index immediately. They mark the configured state as **rebuild required**. The active index remains usable until an explicit rebuild finishes and is atomically activated.
+
+Runtime-only/query-side settings can change without invalidating the active index. Full rebuilds are sliced and release the shared AI lock between slices. On CPU-only hardware, a complete initial build can take hours; it is therefore never started automatically just because the app was installed or updated.
+
+See [RAG chat](rag-chat.md) for the end-to-end behavior.
 
 ## Language
 

@@ -4,12 +4,15 @@ This file describes project invariants for coding agents and contributors.
 
 ## Project scope
 
-`paperless-local-ai` is a small companion stack for Paperless-ngx. It improves scan OCR through Paperless/OCRmyPDF plus a local PaddleOCR service, applies text-only metadata classification through an external Ollama server, and optionally provides a deliberately lightweight local RAG chat inside the Paperless UI.
+`paperless-local-ai` is a small **CPU-first local-AI companion stack** for Paperless-ngx. It improves scan OCR through Paperless/OCRmyPDF plus a local PaddleOCR service, applies text-only metadata classification through an external Ollama server, and provides a deliberately lightweight local document-chat/RAG path inside the Paperless UI.
 
-The lightweight RAG/document-chat scope is an explicit project decision. Keep it bounded: do not turn the project into a bundled Paperless/Ollama distribution, a dedicated vector-database stack, an agent framework, or an uncontrolled multi-call RAG pipeline.
+OCR, metadata automation and document chat are all explicit supported project capabilities. The hardware philosophy is also an invariant: useful operation on modest CPU-only home-server hardware must remain a primary design target. Features may become more capable, but they must not quietly turn the default architecture into a GPU-required or high-concurrency AI stack.
+
+Keep the scope bounded: do not turn the project into a bundled Paperless/Ollama distribution, a dedicated vector-database stack, an agent framework, or an uncontrolled multi-call RAG pipeline.
 
 ## Architecture invariants
 
+- Modest CPU-only hardware is a first-class target. New default behavior must not require a GPU, assume multiple heavyweight models can stay resident concurrently, or bypass the shared resource-serialization design without an explicit project decision.
 - One Compose application, two long-running services: `ocr-service` and `core-service`. The core service hosts metadata polling, the Control Center, the optional suggestion bridge and the lightweight History broker in one persistent Rust process.
 - Two images only: OCR image and core image.
 - Ollama stays external.

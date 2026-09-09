@@ -1,18 +1,23 @@
 # Roadmap
 
-Near-term ideas after the first external installations:
+`paperless-local-ai` now covers three first-class local-AI workflows around Paperless: scan OCR, metadata automation and lightweight document chat/RAG. Future work should keep the same **CPU-first, resource-bounded** design rather than expanding into a general AI platform.
 
-- system/status page in the Control Center (Paperless, Ollama, OCR, queue/tag readiness);
+Near-term ideas:
+
 - guided setup/check flow for first-time users;
-- compatibility CI against additional Paperless 3.x releases;
+- broader compatibility CI against additional Paperless 3.x releases;
+- permission-aware document-chat retrieval beyond the current superuser-only UI path;
 - validated ARM64 OCR image if Paddle support is practical;
-- optional OpenAI-compatible text inference backend without changing the CPU-first scope;
-- richer metrics without adding a database.
+- optional OpenAI-compatible text inference backend without changing the local/CPU-first scope;
+- better RAG quality/performance diagnostics that do not add hidden LLM calls to the normal one-embed + one-chat path;
+- richer metrics without adding another database/service.
 
 Out of scope for now:
 
-- bundled Ollama;
-- RAG/document chat;
+- bundling Paperless or Ollama;
+- requiring a dedicated vector database;
+- agent frameworks, autonomous tool loops or multi-stage LLM pipelines on the normal RAG path;
 - automatic creation of new correspondents;
 - cloud OCR/LLM dependencies by default;
-- vision-LLM OCR as the primary path.
+- vision-LLM OCR as the primary OCR path;
+- designs that require a GPU or assume multiple heavyweight models can stay resident concurrently.

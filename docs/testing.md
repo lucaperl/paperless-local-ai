@@ -39,6 +39,27 @@ For the OCR service, verify:
 - PP-OCRv6 Tiny is rejected with Japanese;
 - no unexpected model download occurs after a populated persistent cache.
 
+## RAG regression contract
+
+For meaningful document-chat/RAG changes, verify:
+
+- the normal answer path performs exactly one Ollama `/api/embed` request and one `/api/chat` request;
+- query history and answer-model conversation history remain separately bounded;
+- scope validation covers current document, all documents, tag, correspondent and document type;
+- Current-document scope follows Paperless SPA navigation;
+- source links point to the expected Paperless documents;
+- retrieved document content remains framed as untrusted data;
+- live source metadata resolution cannot turn a missing relation into a second AI dependency;
+- adjacent chunks and retrieval diagnostics add no model calls;
+- structural embedding changes set rebuild-required while the old active index remains queryable;
+- batch/slice/runtime-only changes do not invalidate compatible corpus vectors;
+- full rebuild uses staging + atomic activation and an interrupted staging rebuild resumes only after explicit Resume;
+- OCR, metadata, RAG chat and index slices continue to serialize through the shared `ai.lock`;
+- Paperless UI injection fails open and browser writes remain same-origin, authenticated and CSRF-protected;
+- chat history stays server-side and tests/examples use synthetic document content only.
+
+For a release candidate that changes the Paperless UI integration or RAG runtime, also run one short real deployment smoke test: open a current-document chat, retrieve at least one source, verify source navigation, and confirm the Control Center index state remains healthy.
+
 ## Paperless end-to-end checklist
 
 Use this checklist for a new Paperless/OCRmyPDF version or meaningful pipeline change:

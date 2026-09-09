@@ -1,19 +1,26 @@
 # Architecture
 
-`paperless-local-ai` is a companion stack for Paperless-ngx. It improves scanned-page OCR through Paperless/OCRmyPDF plus a local PaddleOCR service and applies local metadata automation while keeping Paperless as the document system of record.
+`paperless-local-ai` is a CPU-first local-AI companion stack for Paperless-ngx. It adds three bounded capabilities around an existing Paperless installation: PaddleOCR-based scan OCR, structured metadata automation, and a lightweight document-chat/RAG path. Paperless stays the document system of record and Ollama stays external.
+
+The architecture intentionally targets modest CPU-only home-server hardware. Heavy OCR, scientific-history work, metadata inference, query embedding, chat generation and index embedding are coordinated instead of competing for memory and CPU.
 
 ## Design goals
 
-- **OCR quality before classification:** PP-OCRv6 Medium is the quality-focused default, with Small and Tiny profiles for lower inference cost.
-- **One structured LLM request per document:** title, document type, date and sender/issuer are extracted together; tags join that request only when the selected tag route needs an LLM decision.
-- **Hybrid tagging:** recurring reviewed patterns can reuse a complete known leaf-tag set behind a strict evidence gate; cases without a confident observed-set match use an LLM fallback with Tag Guidance and relevant reviewed examples.
-- **Local correspondent resolution:** the LLM extracts one free-text sender/issuer; Rust resolves safe existing matches or exposes a plausible new name through Paperless Document Suggestions.
-- **Bounded resource usage:** PaddleOCR/OpenVINO, Hybrid-history work and Ollama share one AI resource lock; heavyweight OCR/history subprocesses and the Ollama model are released after use.
-- **Lightweight RAG chat:** a disposable helper maintains a separate SQLite index and the normal chat path stays fixed at one query embedding plus one chat generation.
+- **Modest hardware is a first-class target:** no GPU is required; heavy AI work is serialized and heavyweight runtimes/models are released after use.
+- **OCR quality before downstream AI:** PP-OCRv6 Medium is the quality-focused default, with Small and Tiny profiles for lower inference cost.
+- **One structured metadata request per document:** title, document type, date and sender/issuer are extracted together; tags join that request only when the selected tag route needs an LLM decision.
+- **Hybrid tagging for compact models:** recurring reviewed patterns can reuse a complete known leaf-tag set behind a strict evidence gate; uncertain cases use an LLM fallback with Tag Guidance and relevant reviewed examples.
+- **Conservative correspondent resolution:** the LLM extracts one free-text sender/issuer; local Rust logic resolves safe existing matches or exposes a plausible new name through Paperless Document Suggestions.
+- **Lightweight RAG instead of an AI platform:** the chat uses a regenerable SQLite index, exact cosine retrieval, one embed + one chat call per normal turn, and no vector database, reranker LLM, refine chain or agent framework.
+- **Paperless remains authoritative:** originals, searchable archives, document content and metadata live in Paperless; PLAI caches/indexes are disposable application state.
 
 ## Pipeline
 
+The import/automation and interactive-chat paths share the same Paperless archive but have different lifecycles.
+
 ```text
+IMPORT / AUTOMATION
+
 Paperless import
       ↓
 Paperless parser / OCRmyPDF
@@ -23,45 +30,46 @@ OCR needed for a page?
   yes → OCRmyPDF rasterizes page
           ↓
         paperless-local-ai OCR plugin
-          ↓ authenticated HTTP
-        ocr-service
+          ↓
         PaddleOCR / PP-OCRv6
           ↓
         native OcrElement tree
           ↓
 OCRmyPDF searchable archive / PDF-A
+      ↓
 Paperless extracted content
       ↓
-Paperless Document Added workflow
+Document Added workflow
       ↓
-classification queue tag
+metadata queue
       ↓
-core-service metadata worker
-      ↓
-Tagging strategy
-  Hybrid tagging:
-    confident reviewed match → complete reviewed leaf-tag set fixed locally
-    otherwise                → LLM tag fallback + reviewed examples
-  LLM direct:
-    LLM decides tags directly
+Hybrid tagging or LLM direct
       ↓
 one structured LLM request
-  title · type · date · sender
-  + tags only when the LLM is responsible
       ↓
-local correspondent resolver
-  existing safe match → apply
-  plausible new name  → optional Paperless Suggestions integration
-  unreliable/empty    → leave empty
+local correspondent resolution
       ↓
-Paperless metadata + review
+Paperless metadata + human review
+
+
+INTERACTIVE DOCUMENT CHAT
+
+Paperless chat panel
       ↓
-human review removes configured review tag
+scope + current question + bounded prior context
       ↓
-eligible for trusted Hybrid history
+one Ollama query embedding
+      ↓
+exact cosine retrieval from /data/rag/rag.db
+      ↓
+optional adjacent chunks + live Paperless source metadata
+      ↓
+one Ollama chat generation
+      ↓
+answer + deterministic Paperless source links
 ```
 
-The uploaded PDF stays Paperless' original. OCR happens while Paperless consumes the document; `paperless-local-ai` does not maintain a separate OCR queue.
+The uploaded PDF stays Paperless' original. OCR happens while Paperless consumes the document. RAG indexing is independent, explicit/regenerable background work and never becomes a second authoritative archive.
 
 ## Services
 
@@ -78,11 +86,19 @@ The core image defaults to `/usr/local/bin/plai-core`. It retains `/app/core_ser
 
 ## RAG chat
 
-The optional RAG chat does not use Paperless' internal LLM index. `core-service` exposes secret-protected `/api/rag/*` job endpoints and launches `/app/rag_engine.py` only for an index/chat operation. The helper uses Paperless REST API v10, stores its regenerable SQLite index under `/data/rag`, performs exact cosine retrieval locally and exits after the job. The first rebuild uses a separate build database and atomically swaps it into place when complete, so an existing index remains available while rebuilding.
+Document chat is a supported project capability, but its implementation is intentionally small enough for resource-constrained CPU-only servers.
 
-The Paperless-side Django integration is same-origin and superuser-only. It is inserted after Paperless Authentication middleware, performs explicit CSRF validation for writes and forwards only a fixed path allow-list using an internal secret generated in the shared integration mount. The browser never receives that secret or the Paperless API token.
+`core-service` exposes secret-protected `/api/rag/*` job endpoints and launches `/app/rag_engine.py` only for index/chat work. The helper uses Paperless REST API v10, stores a regenerable SQLite index under `/data/rag`, performs exact cosine retrieval locally and exits after the job. No additional long-running RAG service or vector database is used.
 
-For a normal chat turn, the helper holds the existing AI lock across one `/api/embed` call, exact retrieval and one streaming `/api/chat` call. Query-side embeddings use the Qwen3-Embedding retrieval instruction while indexed document chunks remain unprefixed. Both interactive Ollama requests use `keep_alive=0`. Index rebuilds embed in bounded slices, keep the embedding model warm only within a slice and release the AI lock between slices. See [RAG chat](rag-chat.md).
+For a normal turn, the helper uses the shared AI lock across one Ollama `/api/embed` request, local retrieval/prompt assembly and one streaming `/api/chat` request. Query-side embeddings use the configured query template; indexed chunks use the configured document template. Both interactive requests use `keep_alive=0`. This fixed path deliberately excludes query-rewrite, reranker, refine, summarizer and agent LLM calls.
+
+Retrieved chunks can be expanded with adjacent chunks without another model call. Before prompt assembly, source metadata is refreshed from Paperless. The default source template supplies source number, title, created date, correspondent, document type, document ID and retrieved text; the Control Center exposes additional Paperless document fields as optional template variables. Live metadata lookup adds Paperless HTTP requests, not extra Ollama requests.
+
+The first full index build is explicit. `rag.db.build` keeps completed rebuild work separate from the active `rag.db`, and activation is atomic. Structural embedding changes mark the configured index as requiring a rebuild while the active index continues serving queries. Rebuild embedding is split into bounded slices and releases the shared AI slot between slices so OCR and metadata are not starved. Interrupted rebuild staging is retained and reconciled to a paused state for explicit resume.
+
+The Paperless-side integration is same-origin and currently superuser-only. It performs CSRF validation for writes and forwards only a fixed allow-list using an internal relay secret. The browser never receives that secret or the Paperless API token.
+
+See [RAG chat](rag-chat.md).
 
 ## OCRmyPDF integration
 
@@ -100,7 +116,7 @@ Transient worker/service failures use bounded automatic retries. Deterministic c
 
 ## Shared AI resource lock
 
-OCR, Hybrid-history work and metadata inference share one exclusive file lock at `/coordination/ai.lock`. This prevents Paddle/OpenVINO, the scientific history helper and Ollama from performing heavy work concurrently. Automatic metadata routing shuts the history helper down before the Ollama request starts, and the core metadata worker unloads the configured Ollama model before leaving the AI transaction. Heavy resources are therefore released immediately when their work completes, independently of the lightweight unified core lifecycle. After a complete metadata batch or explicit History refresh, the core schedules a clean container recycle only after a fixed five-minute quiet period. New metadata work cancels the pending recycle, and Suggestion Bridge classification activity during the grace period postpones it. This keeps the Control Center and Suggestion Bridge available for normal follow-up requests while still allowing the existing `restart: unless-stopped` policy to start a fresh core cgroup after genuine inactivity, clearing file cache accumulated by the on-demand scientific helper and heavy Rust code paths while preserving all persistent state on mounted storage.
+OCR, Hybrid-history work, metadata inference, RAG query/chat inference and RAG index slices share one exclusive file lock at `/coordination/ai.lock`. This prevents Paddle/OpenVINO, the scientific history helper and Ollama from performing heavy work concurrently. Automatic metadata routing shuts the history helper down before the Ollama request starts, and the core metadata worker unloads the configured Ollama model before leaving the AI transaction. Heavy resources are therefore released immediately when their work completes, independently of the lightweight unified core lifecycle. After a complete metadata batch or explicit History refresh, the core schedules a clean container recycle only after a fixed five-minute quiet period. New metadata work cancels the pending recycle, and Suggestion Bridge classification activity during the grace period postpones it. This keeps the Control Center and Suggestion Bridge available for normal follow-up requests while still allowing the existing `restart: unless-stopped` policy to start a fresh core cgroup after genuine inactivity, clearing file cache accumulated by the on-demand scientific helper and heavy Rust code paths while preserving all persistent state on mounted storage.
 
 ## Structured metadata request
 
@@ -186,7 +202,7 @@ Persistent state lives below one `APP_DATA_DIR`:
 
 ```text
 config/        app and classification configuration/history
-core/          results, review records, history cache and regenerable RAG index
+core/          results, review records, history cache, server-side chats and regenerable RAG index
 ocr/           PaddleX/OpenVINO cache and OCR runtime state
 coordination/  shared ai.lock + OCR recovery + history broker socket
 integration/   generated OCRmyPDF plugin consumed by Paperless
