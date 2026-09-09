@@ -973,6 +973,17 @@ def _validate_chat_settings(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _generation_finish_metadata(
+    final_raw: dict[str, Any], settings: dict[str, Any]
+) -> dict[str, Any]:
+    done_reason = str(final_raw.get("done_reason") or "")
+    return {
+        "done_reason": done_reason,
+        "output_limit_reached": done_reason == "length",
+        "num_predict": int(settings["num_predict"]),
+    }
+
+
 def validate_chat_request(payload: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
     question = str(payload.get("question") or "").strip()
     if not question:
@@ -1418,6 +1429,7 @@ def chat(job_id: str, request_path: Path) -> None:
         "total_seconds": round(embedding_seconds + retrieval_seconds + generation_seconds, 3),
         "prompt_tokens": int(final_raw.get("prompt_eval_count") or 0),
         "output_tokens": int(final_raw.get("eval_count") or 0),
+        **_generation_finish_metadata(final_raw, settings),
     }
     update_job(
         job_id,

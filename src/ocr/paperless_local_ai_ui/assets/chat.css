@@ -104,3 +104,23 @@ button:disabled { opacity: .5; cursor: default; }
 .thinking{margin:.2rem 0 .45rem;border:1px solid rgba(127,127,127,.22);border-radius:7px;background:rgba(127,127,127,.06)}
 .thinking summary{cursor:pointer;padding:.38rem .55rem;font-size:.78rem;color:var(--muted,#64748b);user-select:none}
 .thinking-body{padding:0 .55rem .5rem;font-size:.82rem;color:var(--muted,#64748b)}
+.settings-help{color:#94a3b8;font-size:10px;line-height:1.3}
+.chat-area{position:relative}
+.jump-bottom{position:absolute;right:1rem;bottom:5.9rem;z-index:5;border:1px solid #cbd5e1;border-radius:999px;background:#fff;color:#334155;padding:.34rem .62rem;box-shadow:0 4px 14px rgba(0,0,0,.14);cursor:pointer;font-size:11px}
+.limit-warning{margin:.38rem 0 0;padding:.42rem .55rem;border:1px solid #f59e0b;border-radius:7px;background:#fffbeb;color:#92400e;font-size:11px;line-height:1.4}
+.history-menu-wrap{position:relative}
+.history-popover{position:absolute;z-index:12;right:.15rem;top:calc(100% + 2px);min-width:112px;padding:.25rem;border:1px solid #cbd5e1;border-radius:7px;background:#fff;box-shadow:0 8px 20px rgba(0,0,0,.16)}
+.history-popover>button{display:block;width:100%;border:0;border-radius:5px;background:transparent;color:#111827;padding:.4rem .5rem;text-align:left;cursor:pointer;font-size:12px}
+.history-popover>button:hover{background:#eef2f7}
+.history-popover .danger,.history-delete-actions .danger{color:#b91c1c}
+.history-rename{min-width:0;margin:.18rem .2rem;padding:.32rem .42rem;font-size:12px}
+.history-delete-question{padding:.35rem .45rem;color:#475569;font-size:11px;white-space:nowrap}
+.history-delete-actions{display:flex;gap:.25rem;padding:.2rem .25rem .25rem}
+.history-delete-actions button{flex:1;border:1px solid #cbd5e1;border-radius:5px;background:#fff;padding:.3rem .4rem;cursor:pointer;font-size:11px}
+@media (prefers-color-scheme: dark){
+  .jump-bottom,.history-popover,.history-delete-actions button{background:#111827;color:#e5e7eb;border-color:#475569}
+  .history-popover>button{color:#e5e7eb}
+  .history-popover>button:hover{background:#243047}
+  .history-delete-question{color:#cbd5e1}
+  .limit-warning{background:#3b2f12;color:#fcd34d;border-color:#d97706}
+}

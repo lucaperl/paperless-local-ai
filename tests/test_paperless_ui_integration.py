@@ -114,7 +114,9 @@ def test_runtime_assets_do_not_embed_a_control_center_origin():
     assert "_plai/" in script
     assert "#chatDropdown" not in script  # selector uses getElementById, avoiding CSS coupling
     assert 'getElementById("chatDropdown")' in script
-    assert "sessionStorage" not in script
+    assert 'const CHAT_OPEN_KEY = "paperless-local-ai-chat-open-v1"' in script
+    assert "sessionStorage.setItem(CHAT_OPEN_KEY" in script
+    assert "sessionStorage.getItem(CHAT_OPEN_KEY)" in script
     assert "conversations/create" in script
     assert "aria-expanded" in script
     assert 'role="combobox"' in script
@@ -134,3 +136,12 @@ def test_runtime_assets_do_not_embed_a_control_center_origin():
     assert "function renderMarkdown" in script
     assert "message.thinking" in script
     assert 'assistant.thinking = job.thinking || ""' in script
+    assert 'data-action="jump-bottom"' in script
+    assert "state.autoScroll = isNearBottom(container)" in script
+    assert "state.hasNewContent = true" in script
+    assert "thinkingOpenByJob" in script
+    assert "output_limit_reached" in script
+    assert "Thinking uses the same output-token budget." in script
+    assert "window.prompt(" not in script
+    assert 'className = "history-popover hidden"' in script
+    assert 'className = "history-rename"' in script

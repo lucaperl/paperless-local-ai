@@ -150,3 +150,25 @@ def test_unknown_system_prompt_variable_is_rejected():
     rag = module()
     with pytest.raises(ValueError, match="Unknown RAG system prompt placeholders"):
         rag.validate_config({"system_prompt": "Hello {{NOT_A_REAL_VARIABLE}}"})
+
+
+def test_generation_finish_metadata_marks_output_limit():
+    rag = module()
+    settings = rag._validate_chat_settings(
+        {
+            "model": "example:latest",
+            "think": "on",
+            "num_ctx": 8192,
+            "top_k": 5,
+            "temperature": 0.1,
+            "num_predict": 512,
+        }
+    )
+    limited = rag._generation_finish_metadata({"done_reason": "length"}, settings)
+    assert limited == {
+        "done_reason": "length",
+        "output_limit_reached": True,
+        "num_predict": 512,
+    }
+    stopped = rag._generation_finish_metadata({"done_reason": "stop"}, settings)
+    assert stopped["output_limit_reached"] is False

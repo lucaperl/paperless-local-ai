@@ -6,6 +6,7 @@
   const BUTTON_STYLE_ID = "paperless-local-ai-chat-button-style";
   const SETTINGS_LINK_ID = "paperless-local-ai-settings-link";
   const ACTIVE_CHAT_KEY = "paperless-local-ai-active-chat-v2";
+  const CHAT_OPEN_KEY = "paperless-local-ai-chat-open-v1";
 
   const baseHref = document.querySelector("base")?.getAttribute("href") || "/";
   const appBase = new URL(baseHref, window.location.origin);
@@ -208,10 +209,11 @@
               <label>Context<input data-field="num_ctx" type="number" min="2048" max="131072" step="1024"></label>
               <label>Retrieval Top-K<input data-field="top_k" type="number" min="1" max="12" step="1"></label>
               <label>Temperature<input data-field="temperature" type="number" min="0" max="2" step="0.1"></label>
-              <label>Max output tokens<input data-field="num_predict" type="number" min="64" max="4096" step="64"></label>
+              <label>Max output tokens<input data-field="num_predict" type="number" min="64" max="4096" step="64"><span class="settings-help">Thinking uses the same output-token budget.</span></label>
             </div>
           </div>
           <main class="messages" data-part="messages"></main>
+          <button type="button" class="jump-bottom hidden" data-action="jump-bottom">↓ New content</button>
           <div class="phase" data-part="phase"></div>
           <footer class="composer">
             <textarea data-field="question" rows="2" placeholder="Ask about your Paperless documents…"></textarea>
@@ -241,6 +243,7 @@
       conversations: [], controlCenterUrl: boot.control_center_url,
       scopeOptionsByType: {}, scopeOptions: [], scopeOptionType: null,
       scopeActiveIndex: -1, scopeLoadToken: 0, observedDocumentId: currentDocumentId(),
+      autoScroll: true, hasNewContent: false, thinkingOpenByJob: {},
     };
 
     const q = (selector) => root.querySelector(selector);
@@ -324,12 +327,35 @@
       return link;
     }
 
+    function isNearBottom(container) {
+      return container.scrollHeight - container.scrollTop - container.clientHeight <= 72;
+    }
+
+    function updateJumpBottom() {
+      q('[data-action="jump-bottom"]').classList.toggle("hidden", !state.hasNewContent);
+    }
+
+    function jumpToBottom() {
+      const container = q('[data-part="messages"]');
+      state.autoScroll = true;
+      state.hasNewContent = false;
+      container.scrollTop = container.scrollHeight;
+      updateJumpBottom();
+    }
+
     function renderMessages() {
-      const container = q('[data-part="messages"]'); container.replaceChildren();
+      const container = q('[data-part="messages"]');
+      const previousScrollTop = container.scrollTop;
+      const previousScrollHeight = container.scrollHeight;
+      const follow = state.autoScroll;
+      container.replaceChildren();
       if (!state.messages.length) {
         const empty = document.createElement("div"); empty.className = "empty";
         empty.innerHTML = "<strong>Ask your archive.</strong><span>Choose all documents, the current document, a tag, correspondent or document type.</span>";
-        container.appendChild(empty); return;
+        container.appendChild(empty);
+        state.hasNewContent = false;
+        updateJumpBottom();
+        return;
       }
       for (const message of state.messages) {
         const wrapper = document.createElement("article"); wrapper.className = `message ${message.role}`;
@@ -343,15 +369,30 @@
         wrapper.appendChild(label);
         if (message.role === "assistant" && message.thinking) {
           const thought = document.createElement("details"); thought.className = "thinking";
-          thought.open = !!message.pending && !message.content;
+          const thoughtKey = message.job_id || (message.pending ? state.jobId : null);
+          const explicitOpen = thoughtKey ? state.thinkingOpenByJob[thoughtKey] : undefined;
+          thought.open = explicitOpen === undefined ? !!message.pending && !message.content : explicitOpen;
           const summary = document.createElement("summary");
           summary.textContent = message.pending && !message.content ? "Thinking…" : "Thinking";
+          summary.addEventListener("click", () => {
+            if (thoughtKey) state.thinkingOpenByJob[thoughtKey] = !thought.open;
+          });
           const thoughtBody = document.createElement("div"); thoughtBody.className = "thinking-body";
           renderMarkdown(thoughtBody, message.thinking);
           thought.append(summary, thoughtBody);
           wrapper.appendChild(thought);
         }
         wrapper.appendChild(body);
+        if (message.metrics?.output_limit_reached) {
+          const warning = document.createElement("div"); warning.className = "limit-warning";
+          const limit = Number(message.metrics.num_predict || state.settings.num_predict || 0);
+          if (!message.content && message.thinking) {
+            warning.textContent = `Thinking reached the ${limit || "configured"}-token output limit before a final answer was produced.`;
+          } else {
+            warning.textContent = `Output limit of ${limit || "the configured number of"} tokens reached. The answer may be incomplete.`;
+          }
+          wrapper.appendChild(warning);
+        }
         if (Array.isArray(message.sources) && message.sources.length) {
           const sources = document.createElement("div"); sources.className = "sources";
           for (const source of message.sources) sources.appendChild(sourceNode(source)); wrapper.appendChild(sources);
@@ -363,7 +404,19 @@
         }
         container.appendChild(wrapper);
       }
-      container.scrollTop = container.scrollHeight;
+
+      const grew = container.scrollHeight > previousScrollHeight + 1;
+      if (follow) {
+        container.scrollTop = container.scrollHeight;
+        state.hasNewContent = false;
+      } else {
+        container.scrollTop = Math.min(
+          previousScrollTop,
+          Math.max(0, container.scrollHeight - container.clientHeight),
+        );
+        if (grew && state.jobId) state.hasNewContent = true;
+      }
+      updateJumpBottom();
     }
 
     function setPhase(text = "") { q('[data-part="phase"]').textContent = text; }
@@ -394,6 +447,52 @@
       renderHistory();
     }
 
+    function closeHistoryMenus(except = null) {
+      for (const popover of root.querySelectorAll(".history-popover")) {
+        if (popover === except) continue;
+        popover.classList.add("hidden");
+        popover.parentElement?.querySelector(".history-menu")?.setAttribute("aria-expanded", "false");
+      }
+    }
+
+    function startHistoryRename(row, openButton, item) {
+      const input = document.createElement("input");
+      input.className = "history-rename";
+      input.value = item.title || "New chat";
+      input.maxLength = 120;
+      let settled = false;
+
+      const finish = async (cancel = false) => {
+        if (settled) return;
+        settled = true;
+        const title = input.value.trim();
+        if (cancel || !title || title === (item.title || "New chat")) {
+          renderHistory();
+          return;
+        }
+        try {
+          await api("conversations/rename", {
+            method: "POST",
+            body: JSON.stringify({ conversation_id: item.id, title }),
+          });
+          await refreshConversations();
+        } catch (error) {
+          setPhase(error.message);
+          renderHistory();
+        }
+      };
+
+      input.addEventListener("click", (event) => event.stopPropagation());
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") { event.preventDefault(); finish(false); }
+        if (event.key === "Escape") { event.preventDefault(); finish(true); }
+      });
+      input.addEventListener("blur", () => finish(false));
+      row.replaceChild(input, openButton);
+      input.focus();
+      input.select();
+    }
+
     function renderHistory() {
       const list = q('[data-part="history-list"]'); list.replaceChildren();
       for (const item of state.conversations) {
@@ -401,22 +500,63 @@
         const open = document.createElement("button"); open.type = "button"; open.className = "history-open";
         open.textContent = `${item.active_job_id ? "● " : ""}${item.title || "New chat"}`; open.title = item.title || "New chat";
         open.addEventListener("click", () => loadConversation(item.id));
+
+        const menuWrap = document.createElement("div"); menuWrap.className = "history-menu-wrap";
         const menu = document.createElement("button"); menu.type = "button"; menu.className = "history-menu"; menu.textContent = "⋯";
-        menu.addEventListener("click", async () => {
-          const action = window.prompt("Type rename or delete", "rename");
-          if (action === "rename") {
-            const title = window.prompt("Chat title", item.title || ""); if (!title) return;
-            await api("conversations/rename", { method: "POST", body: JSON.stringify({ conversation_id: item.id, title }) });
-            await refreshConversations();
-          } else if (action === "delete") {
-            if (!window.confirm(`Delete “${item.title || "this chat"}”?`)) return;
-            try { await api("conversations/delete", { method: "POST", body: JSON.stringify({ conversation_id: item.id }) }); }
-            catch (error) { setPhase(error.message); return; }
+        menu.setAttribute("aria-label", `Actions for ${item.title || "chat"}`);
+        menu.setAttribute("aria-expanded", "false");
+
+        const popover = document.createElement("div"); popover.className = "history-popover hidden"; popover.setAttribute("role", "menu");
+        const rename = document.createElement("button"); rename.type = "button"; rename.textContent = "Rename"; rename.setAttribute("role", "menuitem");
+        const remove = document.createElement("button"); remove.type = "button"; remove.className = "danger"; remove.textContent = "Delete"; remove.setAttribute("role", "menuitem");
+        popover.append(rename, remove);
+
+        menu.addEventListener("click", (event) => {
+          event.stopPropagation();
+          const opening = popover.classList.contains("hidden");
+          closeHistoryMenus(opening ? popover : null);
+          popover.classList.toggle("hidden", !opening);
+          menu.setAttribute("aria-expanded", opening ? "true" : "false");
+        });
+
+        rename.addEventListener("click", (event) => {
+          event.stopPropagation();
+          closeHistoryMenus();
+          startHistoryRename(row, open, item);
+        });
+
+        remove.addEventListener("click", (event) => {
+          event.stopPropagation();
+          popover.replaceChildren();
+          const question = document.createElement("div"); question.className = "history-delete-question"; question.textContent = "Delete this chat?";
+          const actions = document.createElement("div"); actions.className = "history-delete-actions";
+          const cancel = document.createElement("button"); cancel.type = "button"; cancel.textContent = "Cancel";
+          const confirm = document.createElement("button"); confirm.type = "button"; confirm.className = "danger"; confirm.textContent = "Delete";
+          cancel.addEventListener("click", (cancelEvent) => {
+            cancelEvent.stopPropagation();
+            popover.classList.add("hidden");
+            menu.setAttribute("aria-expanded", "false");
+          });
+          confirm.addEventListener("click", async (confirmEvent) => {
+            confirmEvent.stopPropagation();
+            confirm.disabled = true;
+            try {
+              await api("conversations/delete", { method: "POST", body: JSON.stringify({ conversation_id: item.id }) });
+            } catch (error) {
+              setPhase(error.message);
+              await refreshConversations();
+              return;
+            }
             if (state.conversationId === item.id) newChat();
             await refreshConversations();
-          }
+          });
+          actions.append(cancel, confirm);
+          popover.append(question, actions);
         });
-        row.append(open, menu); list.appendChild(row);
+
+        menuWrap.append(menu, popover);
+        row.append(open, menuWrap);
+        list.appendChild(row);
       }
     }
 
@@ -451,8 +591,10 @@
         const assistant = [...state.messages].reverse().find((item) => item.role === "assistant" && item.pending);
         if (assistant) {
           assistant.content = job.answer || "";
+          assistant.job_id = state.jobId;
           assistant.thinking = job.thinking || "";
           assistant.sources = job.sources || [];
+          assistant.metrics = job.metrics || assistant.metrics || {};
           renderMessages();
         }
         setPhase(phaseLabel(job));
@@ -483,14 +625,18 @@
       const conversationId = await ensureConversation();
       state.settings = normalizeSettings(); state.scope = scope.type; state.scopeId = scope.id; state.scopeLabel = scope.label;
       state.messages.push({ role: "user", content: question });
-      state.messages.push({ role: "assistant", content: "", pending: true, sources: [] });
+      state.messages.push({ role: "assistant", content: "", pending: true, sources: [], metrics: {} });
+      state.autoScroll = true; state.hasNewContent = false;
       fields.question.value = ""; renderMessages(); setRunning(true); setPhase("Submitting…");
       try {
         const started = await api("chat/start", { method: "POST", body: JSON.stringify({
           conversation_id: conversationId, question, scope: scope.type, scope_id: scope.id,
           scope_label: scope.label, document_id: scope.document_id, settings: state.settings,
         }) });
-        state.jobId = started.job_id; await refreshConversations(); pollJob();
+        state.jobId = started.job_id;
+        const assistant = [...state.messages].reverse().find((item) => item.role === "assistant" && item.pending);
+        if (assistant) assistant.job_id = started.job_id;
+        await refreshConversations(); pollJob();
       } catch (error) {
         state.messages = state.messages.slice(0, -2); renderMessages(); setRunning(false); setPhase(error.message);
         await loadConversation(conversationId).catch(() => {});
@@ -674,6 +820,7 @@
     function newChat() {
       state.conversationId = null; state.messages = []; state.jobId = null; localStorage.removeItem(ACTIVE_CHAT_KEY);
       state.settings = { ...defaults }; state.scope = currentDocumentId() ? "document" : "all"; state.scopeId = null; state.scopeLabel = null;
+      state.autoScroll = true; state.hasNewContent = false; state.thinkingOpenByJob = {};
       fillSettings(); renderMessages(); renderHistory(); setRunning(false); setPhase(""); fields.question.focus();
     }
 
@@ -683,6 +830,7 @@
 
     async function open() {
       state.open = true; shell.classList.remove("hidden");
+      try { sessionStorage.setItem(CHAT_OPEN_KEY, "1"); } catch (_error) {}
       document.getElementById(BUTTON_ID)?.setAttribute("aria-expanded", "true");
       fillSettings(); renderMessages(); refreshModels();
       syncDocumentContext();
@@ -695,6 +843,7 @@
 
     function close() {
       state.open = false; shell.classList.add("hidden"); document.getElementById(BUTTON_ID)?.setAttribute("aria-expanded", "false");
+      try { sessionStorage.removeItem(CHAT_OPEN_KEY); } catch (_error) {}
       if (state.indexTimer) clearTimeout(state.indexTimer); state.indexTimer = null;
     }
 
@@ -707,6 +856,14 @@
     q('[data-action="settings"]').addEventListener("click", () => q('[data-part="settings"]').classList.toggle("hidden"));
     q('[data-action="send"]').addEventListener("click", send);
     q('[data-action="stop"]').addEventListener("click", stop);
+    q('[data-action="jump-bottom"]').addEventListener("click", jumpToBottom);
+    q('[data-part="messages"]').addEventListener("scroll", () => {
+      const container = q('[data-part="messages"]');
+      state.autoScroll = isNearBottom(container);
+      if (state.autoScroll) state.hasNewContent = false;
+      updateJumpBottom();
+    });
+    root.addEventListener("click", () => closeHistoryMenus());
     fields.scope.addEventListener("change", () => {
       state.scope = fields.scope.value;
       state.scopeId = null;
@@ -768,6 +925,9 @@
     new MutationObserver(sync).observe(document.documentElement, { childList: true, subtree: true });
     window.addEventListener("popstate", sync); window.addEventListener("hashchange", sync);
     sync();
+    let reopen = false;
+    try { reopen = sessionStorage.getItem(CHAT_OPEN_KEY) === "1"; } catch (_error) {}
+    if (reopen) panel.open().catch(() => {});
   }
 
   start();
