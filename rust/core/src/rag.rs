@@ -142,16 +142,22 @@ fn rag_config() -> Value {
         (current.as_object_mut(), defaults.as_object())
     {
         for (key, value) in default_object {
-            current_object.entry(key.clone()).or_insert_with(|| value.clone());
+            current_object
+                .entry(key.clone())
+                .or_insert_with(|| value.clone());
         }
         if let (Some(current_chat), Some(default_chat)) = (
             current_object
                 .get_mut("chat_defaults")
                 .and_then(Value::as_object_mut),
-            default_object.get("chat_defaults").and_then(Value::as_object),
+            default_object
+                .get("chat_defaults")
+                .and_then(Value::as_object),
         ) {
             for (key, value) in default_chat {
-                current_chat.entry(key.clone()).or_insert_with(|| value.clone());
+                current_chat
+                    .entry(key.clone())
+                    .or_insert_with(|| value.clone());
             }
         }
     }
@@ -1165,7 +1171,6 @@ pub async fn sync_loop(state: Arc<CoreState>, mut shutdown: watch::Receiver<bool
         }
     }
 }
-
 
 pub async fn control_rag_bootstrap(State(_state): State<Arc<CoreState>>) -> Response {
     let placeholders = RAG_PROMPT_PLACEHOLDERS
