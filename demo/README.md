@@ -2,7 +2,8 @@
 
 The public Control Center demo is a static, browser-only build of the same UI source that ships in `core-service`.
 
-- All Paperless documents, taxonomy values, correspondents, History entries, OCR state and model results are synthetic fixtures.
+- All Paperless documents, taxonomy values, correspondents, History entries, OCR state, model results and RAG index state are synthetic fixtures.
+- Document Chat administration uses the public project RAG defaults plus index state derived only from the synthetic demo documents. Save, Sync, Rebuild and Pause/Resume affect browser-local demo state only.
 - `/api/...` calls are intercepted in the browser by `demo/mock-api.js`; no Paperless, Ollama or OCR backend is contacted.
 - The generated page sets `connect-src 'none'` so browser network requests from the demo are blocked.
 - Configuration changes and restore actions use browser `localStorage` only and can be cleared with **Reset demo**.

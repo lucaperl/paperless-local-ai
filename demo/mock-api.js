@@ -5,8 +5,14 @@ const PROMPT_DEFAULT = __PROMPT_CONFIG_DEFAULT_JSON__;
 const PROMPT_PRESETS = __PROMPT_PRESETS_JSON__;
 const PLACEHOLDERS = __PLACEHOLDERS_JSON__;
 const APP_DEFAULT = __APP_CONFIG_DEFAULT_JSON__;
+const RAG_DEFAULT = __RAG_CONFIG_DEFAULT_JSON__;
+const RAG_PROMPT_PLACEHOLDERS = __RAG_PROMPT_PLACEHOLDERS_JSON__;
+const RAG_QUERY_PLACEHOLDERS = __RAG_QUERY_PLACEHOLDERS_JSON__;
+const RAG_DOCUMENT_PLACEHOLDERS = __RAG_DOCUMENT_PLACEHOLDERS_JSON__;
+const RAG_SOURCE_PLACEHOLDERS = __RAG_SOURCE_PLACEHOLDERS_JSON__;
+const RAG_ANSWER_PLACEHOLDERS = __RAG_ANSWER_PLACEHOLDERS_JSON__;
 
-const STORAGE_KEY = "paperless-local-ai-demo-v2";
+const STORAGE_KEY = "paperless-local-ai-demo-v3";
 
 const TAGS = [
   {id: 101, name: "Home", parent: null},
@@ -139,6 +145,161 @@ const clone = value => JSON.parse(JSON.stringify(value));
 const nowIso = () => new Date().toISOString();
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+const RAG_SIGNATURE_KEYS = [
+  "embedding_model",
+  "chunk_target_chars",
+  "chunk_overlap_chars",
+  "document_embedding_template",
+  "embedding_dimensions",
+  "document_truncate",
+  "embedding_num_ctx"
+];
+
+function ragIndexSignature(config) {
+  const signature = {};
+  for (const key of RAG_SIGNATURE_KEYS) signature[key] = clone(config[key] ?? null);
+  return signature;
+}
+
+function normalizeRagConfig(raw) {
+  if (!raw || typeof raw !== "object") throw new Error("RAG configuration must be a JSON object.");
+  const incoming = clone(raw);
+  const candidate = {...clone(RAG_DEFAULT), ...incoming};
+  candidate.chat_defaults = {
+    ...clone(RAG_DEFAULT.chat_defaults || {}),
+    ...(incoming.chat_defaults || {})
+  };
+
+  if (!String(candidate.embedding_model || "").trim()) {
+    throw new Error("embedding_model must not be empty");
+  }
+  if (!String(candidate.chat_defaults.model || "").trim()) {
+    throw new Error("chat_defaults.model must not be empty");
+  }
+
+  return candidate;
+}
+
+function initialRagState(config) {
+  // This state is intentionally derived only from the synthetic DOCUMENTS
+  // fixture above. It must never mirror counts or timings from a real archive.
+  const documentCount = Object.keys(DOCUMENTS).length;
+  const stamp = nowIso();
+  return {
+    version: 1,
+    demo: true,
+    running: false,
+    paused: false,
+    operation: null,
+    phase: "idle",
+    current: documentCount,
+    total: documentCount,
+    indexed_documents: documentCount,
+    indexed_chunks: documentCount * 3,
+    last_sync: stamp,
+    last_build: stamp,
+    last_error: null,
+    rebuild_required: false,
+    index_exists: true,
+    active_signature: ragIndexSignature(config)
+  };
+}
+
+function saveRagConfig(raw) {
+  const candidate = normalizeRagConfig(raw);
+  state.ragConfig = candidate;
+
+  if (state.ragState?.index_exists) {
+    state.ragState.rebuild_required =
+      JSON.stringify(ragIndexSignature(candidate)) !==
+      JSON.stringify(state.ragState.active_signature || {});
+  }
+
+  persist();
+  return clone(candidate);
+}
+
+function ragBootstrap() {
+  return {
+    config: clone(state.ragConfig),
+    state: clone(state.ragState),
+    default_system_prompt: RAG_DEFAULT.system_prompt || "",
+    default_embedding_query_template: RAG_DEFAULT.embedding_query_template || "",
+    default_document_embedding_template: RAG_DEFAULT.document_embedding_template || "",
+    default_source_prompt_template: RAG_DEFAULT.source_prompt_template || "",
+    default_answer_prompt_template: RAG_DEFAULT.answer_prompt_template || "",
+    placeholders: clone(RAG_PROMPT_PLACEHOLDERS),
+    query_placeholders: clone(RAG_QUERY_PLACEHOLDERS),
+    document_placeholders: clone(RAG_DOCUMENT_PLACEHOLDERS),
+    source_placeholders: clone(RAG_SOURCE_PLACEHOLDERS),
+    answer_placeholders: clone(RAG_ANSWER_PLACEHOLDERS)
+  };
+}
+
+async function runDemoRagIndexAction(action) {
+  if (!["sync", "rebuild", "pause"].includes(action)) {
+    throw new Error("Unsupported demo RAG index action");
+  }
+
+  if (action === "pause") {
+    if (!state.ragState.paused) {
+      state.ragState.paused = true;
+      state.ragState.running = false;
+      persist();
+      return {paused: true, state: clone(state.ragState), simulated: true};
+    }
+
+    state.ragState.paused = false;
+    state.ragState.running = false;
+    state.ragState.operation = null;
+    state.ragState.phase = "idle";
+    state.ragState.last_sync = nowIso();
+    persist();
+    return {
+      paused: false,
+      started: true,
+      operation: "sync",
+      simulated: true
+    };
+  }
+
+  if (action === "sync" && state.ragState.rebuild_required) {
+    throw new Error("index settings changed; rebuild required before sync");
+  }
+
+  if (state.ragState.paused) {
+    throw new Error("demo RAG index is paused");
+  }
+
+  state.ragState.running = true;
+  state.ragState.operation = action;
+  state.ragState.phase = action === "rebuild" ? "rebuilding" : "syncing";
+  persist();
+
+  await sleep(250);
+
+  const documentCount = Object.keys(DOCUMENTS).length;
+  state.ragState.running = false;
+  state.ragState.operation = null;
+  state.ragState.phase = "idle";
+  state.ragState.current = documentCount;
+  state.ragState.total = documentCount;
+  state.ragState.index_exists = true;
+  state.ragState.indexed_documents = documentCount;
+  state.ragState.indexed_chunks = documentCount * 3;
+  state.ragState.last_sync = nowIso();
+  state.ragState.last_error = null;
+
+  if (action === "rebuild") {
+    state.ragState.last_build = nowIso();
+    state.ragState.active_signature = ragIndexSignature(state.ragConfig);
+    state.ragState.rebuild_required = false;
+  }
+
+  persist();
+  return {started: true, simulated: true};
+}
+
 function initialState() {
   const promptConfig = clone(PROMPT_DEFAULT);
   promptConfig.version = 3;
@@ -157,9 +318,14 @@ function initialState() {
   appConfig.ocr.language = "en";
   appConfig.ocr.model_profile = "medium";
 
+  const ragConfig = normalizeRagConfig(RAG_DEFAULT);
+  const ragState = initialRagState(ragConfig);
+
   return {
     promptConfig,
     appConfig,
+    ragConfig,
+    ragState,
     promptHistory: [
       {
         file: "prompt-config-v0002-demo.json",
@@ -672,6 +838,24 @@ async function api(path, opts = {}) {
   if (path === "/api/app/ocr/recovery" && method === "GET") return ocrRecovery();
   if (path === "/api/app/ocr/failures/dismiss" && method === "POST") return {ok: true, removed: false};
   if (path === "/api/app/ocr/retry-now" && method === "POST") return {ok: true, trigger: {request_id: body.request_id || "", simulated: true}};
+
+  if (path === "/api/control/rag/bootstrap" && method === "GET") {
+    return ragBootstrap();
+  }
+  if (path === "/api/control/rag/config" && method === "POST") {
+    const config = saveRagConfig(body);
+    return {config, state: clone(state.ragState), simulated: true};
+  }
+  if (path === "/api/control/rag/index/sync" && method === "POST") {
+    return runDemoRagIndexAction("sync");
+  }
+  if (path === "/api/control/rag/index/rebuild" && method === "POST") {
+    return runDemoRagIndexAction("rebuild");
+  }
+  if (path === "/api/control/rag/index/pause" && method === "POST") {
+    return runDemoRagIndexAction("pause");
+  }
+
   if (path === "/api/health" && method === "GET") return {ok: true, demo: true};
 
   throw new Error(`Demo endpoint is not implemented: ${method} ${path}`);
