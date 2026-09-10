@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import re
 from pathlib import Path
 
 HTML_START = "HTML = r'''"
@@ -91,6 +92,34 @@ def js_json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
 
 
+def rust_raw_json_const(source: str, name: str) -> object:
+    match = re.search(
+        rf'const\s+{re.escape(name)}\s*:\s*&str\s*=\s*r#"(.*?)"#;',
+        source,
+        re.DOTALL,
+    )
+    if not match:
+        raise SystemExit(f"Could not read Rust raw JSON constant: {name}")
+    try:
+        return json.loads(match.group(1))
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Rust JSON constant {name} is invalid JSON: {exc}") from exc
+
+
+def rust_string_array_const(source: str, name: str) -> list[str]:
+    match = re.search(
+        rf'const\s+{re.escape(name)}\s*:\s*&\s*\[&str\]\s*=\s*&\s*\[(.*?)\]\s*;',
+        source,
+        re.DOTALL,
+    )
+    if not match:
+        raise SystemExit(f"Could not read Rust string-array constant: {name}")
+    values = re.findall(r'"([^"]+)"', match.group(1))
+    if not values:
+        raise SystemExit(f"Rust string-array constant is empty: {name}")
+    return values
+
+
 def extract_control_center(source: Path) -> str:
     text = source.read_text(encoding="utf-8")
     start = text.find(HTML_START)
@@ -121,6 +150,7 @@ def render_mock_source(repo: Path) -> str:
 
     prompt_constants = source_constants(repo / "src" / "core" / "prompt_runtime.py")
     app_constants = source_constants(repo / "src" / "common" / "app_config.py")
+    rag_source = (repo / "rust" / "core" / "src" / "rag.rs").read_text(encoding="utf-8")
 
     required_prompt = ["DEFAULT_CONFIG", "PROMPT_PRESETS", "PLACEHOLDERS"]
     missing_prompt = [name for name in required_prompt if name not in prompt_constants]
@@ -129,11 +159,24 @@ def render_mock_source(repo: Path) -> str:
     if "DEFAULT_CONFIG" not in app_constants:
         raise SystemExit("Could not statically read App Settings defaults")
 
+    rag_default = rust_raw_json_const(rag_source, "DEFAULT_RAG_CONFIG")
+    rag_prompt_placeholders = rust_string_array_const(rag_source, "RAG_PROMPT_PLACEHOLDERS")
+    rag_query_placeholders = rust_string_array_const(rag_source, "EMBEDDING_QUERY_PLACEHOLDERS")
+    rag_document_placeholders = rust_string_array_const(rag_source, "DOCUMENT_EMBEDDING_PLACEHOLDERS")
+    rag_source_placeholders = rust_string_array_const(rag_source, "SOURCE_PROMPT_PLACEHOLDERS")
+    rag_answer_placeholders = rust_string_array_const(rag_source, "ANSWER_PROMPT_PLACEHOLDERS")
+
     replacements = {
         "__PROMPT_CONFIG_DEFAULT_JSON__": js_json(prompt_constants["DEFAULT_CONFIG"]),
         "__PROMPT_PRESETS_JSON__": js_json(prompt_constants["PROMPT_PRESETS"]),
         "__PLACEHOLDERS_JSON__": js_json(prompt_constants["PLACEHOLDERS"]),
         "__APP_CONFIG_DEFAULT_JSON__": js_json(app_constants["DEFAULT_CONFIG"]),
+        "__RAG_CONFIG_DEFAULT_JSON__": js_json(rag_default),
+        "__RAG_PROMPT_PLACEHOLDERS_JSON__": js_json(rag_prompt_placeholders),
+        "__RAG_QUERY_PLACEHOLDERS_JSON__": js_json(rag_query_placeholders),
+        "__RAG_DOCUMENT_PLACEHOLDERS_JSON__": js_json(rag_document_placeholders),
+        "__RAG_SOURCE_PLACEHOLDERS_JSON__": js_json(rag_source_placeholders),
+        "__RAG_ANSWER_PLACEHOLDERS_JSON__": js_json(rag_answer_placeholders),
     }
     for marker, value in replacements.items():
         if marker not in mock:
