@@ -15,7 +15,17 @@ It provides three first-class capabilities around an existing Paperless installa
 
 Paperless remains the document system of record and Ollama remains external. `paperless-local-ai` owns these AI pipelines and their runtime behavior while originals, searchable archives, document text and metadata stay in Paperless.
 
-**[Try the live demo](https://lucaperl.github.io/paperless-local-ai/demo/)** - an interactive browser-only preview using synthetic Paperless, Ollama and OCR data.
+<p align="center">
+  <a href="images/document-chat-all-documents.png">
+    <img src="images/document-chat-all-documents.png" alt="paperless-local-ai document chat searching across all Paperless documents" width="80%">
+  </a>
+</p>
+
+<p align="center">
+  <sub>Document chat with synthetic demo documents and responses. Timing values shown in the demo UI are illustrative and are not benchmark results.</sub>
+</p>
+
+**[Try the Control Center live demo](https://lucaperl.github.io/paperless-local-ai/demo/)** - an interactive browser-only preview of the administration UI using synthetic Paperless, Ollama and OCR data. Demo values and timings are illustrative only.
 
 ## Why a separate local-AI path?
 
@@ -70,6 +80,35 @@ See [Tagging](docs/tagging.md) and [Configuration](docs/configuration.md#classif
 ### Document chat
 
 The Paperless UI integration provides persistent multi-turn chats with scopes for the current document, all documents, tags, correspondents and document types. Answers include deterministic links back to the source documents, with source metadata read live from Paperless.
+
+<table>
+<tr>
+<td width="50%" valign="top">
+  <a href="images/document-chat-current-document.png">
+    <img src="images/document-chat-current-document.png" alt="paperless-local-ai chat with the currently open Paperless document" width="100%">
+  </a>
+</td>
+<td width="50%" valign="top">
+  <a href="images/document-chat-tag-scope.png">
+    <img src="images/document-chat-tag-scope.png" alt="paperless-local-ai document chat restricted to a Paperless tag" width="100%">
+  </a>
+</td>
+</tr>
+<tr>
+<td valign="top">
+  <strong>Current document</strong><br>
+  Ask follow-up questions about the document currently being reviewed.
+</td>
+<td valign="top">
+  <strong>Scoped retrieval</strong><br>
+  Restrict retrieval to a tag, correspondent or document type.
+</td>
+</tr>
+</table>
+
+<p align="center">
+  <sub>Examples use synthetic demo documents and responses. Displayed timing values are illustrative and are not representative of local inference performance.</sub>
+</p>
 
 Global administration lives in the Control Center. It exposes chat defaults, prompt assembly, retrieval history, Top-K, similarity/document caps, adjacent chunks, context budgeting, diagnostics, embedding templates/model, chunking, batching/slicing, sync and explicit index lifecycle controls.
 
@@ -151,6 +190,16 @@ The Control Center is the administration UI for the complete stack. It covers:
 - retrieval behavior and diagnostics;
 - embedding/chunking settings and index Sync/Rebuild/Pause/Resume;
 - safe tests and versioned configuration history.
+
+<p align="center">
+  <a href="images/control-center-screenshot.png">
+    <img src="images/control-center-screenshot.png" alt="paperless-local-ai Control Center overview" width="80%">
+  </a>
+</p>
+
+<p align="center">
+  <strong><a href="https://lucaperl.github.io/paperless-local-ai/demo/">Open the interactive Control Center demo →</a></strong>
+</p>
 
 The actual document chat lives inside Paperless. Per-chat overrides remain with each server-side conversation.
 
