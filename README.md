@@ -193,7 +193,7 @@ The Control Center is the administration UI for the complete stack. It covers:
 
 <p align="center">
   <a href="images/control-center-screenshot.png">
-    <img src="images/control-center-screenshot.png" alt="paperless-local-ai Control Center overview" width="100%">
+    <img src="images/control-center-screenshot.png" alt="paperless-local-ai Control Center overview" width="80%">
   </a>
 </p>
 
