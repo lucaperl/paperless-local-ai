@@ -6,7 +6,7 @@ Before changing code, read [`AGENTS.md`](AGENTS.md). It records behavior and arc
 
 ## Scope
 
-Keep changes focused on Paperless/OCRmyPDF-integrated PaddleOCR, local text-only metadata automation, configuration/operability and native human review. Do not casually turn the project into a bundled Paperless/Ollama distribution, RAG/chat system or cloud-dependent OCR service.
+paperless-local-ai adds local OCR, metadata automation and document chat/RAG to an existing Paperless-ngx and Ollama setup.
 
 ## Local checks
 
