@@ -5,7 +5,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        Please keep the project scope in mind: selective OCR, local metadata automation and human review around an existing Paperless/Ollama installation.
+        Please keep the project scope in mind: local OCR, metadata automation and document chat around an existing Paperless/Ollama installation.
+        For early ideas or broader workflow discussions, please use GitHub Discussions first.
   - type: textarea
     id: problem
     attributes:
