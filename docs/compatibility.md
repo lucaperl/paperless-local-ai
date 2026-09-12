@@ -54,6 +54,8 @@ Paperless 2.x is not a supported target for this OCR/plugin path.
 
 The PLAI RAG backend uses the documented Paperless REST API v10 for document synchronization and does not read Paperless' internal LlamaIndex/vector-store database. The Paperless-side UI integration is deliberately fail-open and does not patch Paperless source files. Its primary navbar placement hook (`#chatDropdown`) is present in Paperless-ngx 3.1.2 and 3.1.3 source; fallback placement avoids making that private DOM selector a hard runtime dependency. This is a source-level compatibility check, not an expanded end-to-end tested-version claim.
 
+The native Paperless document-chat behavior described in [Architecture](architecture.md#native-paperless-ai-and-plai) was source-checked in Paperless-ngx **3.1.0, 3.1.1, 3.1.2 and 3.1.3**. This source check does not expand the end-to-end tested reference beyond the table above.
+
 RAG browser writes use Paperless session authentication and explicit CSRF protection. The first implementation is intentionally superuser-only until permission-aware retrieval is separately designed and tested.
 
 ## OCR models and languages

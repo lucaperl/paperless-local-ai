@@ -2,7 +2,7 @@
 
 The **Control Center** is the main interface for `paperless-local-ai` configuration, testing and configuration history. It covers both the import/metadata pipeline and global document-chat/RAG administration.
 
-Defaults are intentionally conservative for modest CPU-only hardware. The project serializes heavyweight OCR/history/embedding/chat/model work through one shared AI slot; increasing context, batch or image-size settings should be treated as a resource trade-off rather than a free speed increase.
+Defaults favor modest CPU-only hardware. Only one heavy PLAI workload runs at a time. Increasing context size, embedding batch size or OCR image size can increase RAM use or processing time, so these settings should be changed with the available hardware in mind.
 
 ## Recommended first-time setup order
 
@@ -85,7 +85,9 @@ Additional memory reference points:
 | Metadata | qwen3.5:4b Q4_K_M · 8k context | ~3.8 GiB |
 | Metadata | qwen3.5:4b Q4_K_M · 16k context | ~4.2 GiB |
 
-PaddleOCR, on-demand Hybrid-history work, metadata Ollama inference, RAG query/chat inference and RAG index slices are serialized through the shared AI resource lock. The scientific history helper is released before automatic/model-test Ollama inference, so its temporary memory does not remain resident through the LLM phase.
+PaddleOCR, Hybrid-history work, metadata Ollama inference, RAG chat and RAG index embedding do not run their heavy work at the same time. They wait for the same shared AI resource lock.
+
+The scientific History helper is stopped before automatic metadata or model-test Ollama inference starts, so its temporary memory is not kept resident during the LLM request.
 
 If RAM is limited, lower **Maximum OCR image side** first when OCR is the problem and reduce the Classification **Context window** when the LLM is the problem. `OCR_MEMORY_LIMIT` is a deployment safety ceiling; raising it does not reduce memory use.
 
@@ -103,7 +105,7 @@ Classification controls one structured local-LLM request. The model always handl
 
 Document type and LLM-selected tags are constrained to current Paperless values. Correspondent output is free text and is resolved locally after the call.
 
-The **Context window** is the maximum capacity available to the request, not the number of tokens processed by every classification. Actual latency mainly follows the rendered prompt size. The **Document text limit** defaults to **6,000 characters**. Longer Paperless text is truncated by retaining **80% from the beginning and 20% from the end**. This keeps prompts bounded on modest hardware while preserving closing content such as totals, signatures and final clauses.
+The **Context window** is the maximum capacity available to the request, not the number of tokens processed by every classification. Actual latency mainly follows the rendered prompt size. The **Document text limit** defaults to **6,000 characters**. Longer Paperless text is truncated by retaining **80% from the beginning and 20% from the end**. This prevents long documents from making the classification prompt grow without limit while still preserving closing content such as totals, signatures and final clauses.
 
 ### Prompt composition
 
@@ -121,10 +123,10 @@ English and German presets populate all three prompt fields. Loading a preset ch
 
 ### Tagging strategy
 
-**Hybrid tagging — Recommended for small models**
+**Hybrid tagging — Recommended for small models**  
 Compares documents with reviewed examples and reuses a complete known leaf-tag set only when similarity and neighbor agreement are strong. Otherwise the LLM decides using Tag Guidance and relevant examples. [How Hybrid tagging works](tagging.md#hybrid-tagging).
 
-**LLM direct — For more capable models**
+**LLM direct — For more capable models**  
 The configured model chooses tags for every document. Reviewed examples are not used for routing or retrieved prompt examples.
 
 ### Advanced History matching
@@ -196,7 +198,9 @@ New correspondents are never auto-created. The optional Paperless Suggestions in
 
 ## Ollama lifecycle
 
-The metadata worker uses the configured model for the structured request and unloads it before releasing the shared AI transaction. `keep_alive` is still available as an Ollama request parameter, while explicit unload is the standard end-of-document behavior.
+After a metadata request finishes, the worker tells Ollama to unload the configured model before allowing the next heavy PLAI workload to start.
+
+`keep_alive` remains available as an Ollama request setting, but PLAI normally unloads the model at the end of each processed document rather than relying on the timeout.
 
 ## Document chat and RAG
 
@@ -204,11 +208,15 @@ Document-chat administration lives under **Document Chat** in the Control Center
 
 ### Chat and prompt assembly
 
-Global defaults include the chat model, Thinking mode, context size, temperature, output limit and the number of previous user/assistant messages sent to the answer model. The default answer-history depth is **8 messages**.
+Global defaults include the chat model, Thinking mode, context size, temperature, maximum output tokens and the number of previous user/assistant messages sent to the answer model. The default answer-history depth is **8 messages**.
 
-The RAG System prompt, **Retrieved source template** and **Answer prompt template** are editable. Source-template metadata is read live from Paperless for each chat turn. The default source block includes title, created date, correspondent, document type and document ID plus the retrieved chunk. Additional variables expose tags, storage path, page count, custom fields and other Paperless document metadata; very large values such as full content/raw JSON are available for expert use but are not part of the default template.
+Optional advanced Ollama generation controls are also available for **Sampler Top-K, Top-P, Min-P, repeat penalty, repeat last N, seed and stop strings**. Leaving one of these fields empty lets the Ollama/model default apply. Sampler Top-K affects token generation and is unrelated to RAG Retrieval Top-K.
 
-Changing source/answer prompts or other non-structural chat settings does **not** require an index rebuild.
+The RAG System prompt, **Retrieved source template** and **Answer prompt template** are editable. Source-template metadata is read live from Paperless for each chat turn. The default source block includes title, created date, correspondent, document type and document ID plus the retrieved text.
+
+Additional variables expose tags, storage path, page count, custom fields and other Paperless document metadata. Very large values such as full content/raw JSON are available for advanced templates but are not used by default.
+
+Changing chat-generation settings, source/answer prompts or other query-side settings does **not** require an index rebuild.
 
 ### Retrieval
 
@@ -243,9 +251,9 @@ Current defaults:
 
 The small batch default is intentional for the CPU-only reference design. Larger batches can increase memory pressure or perform worse on limited CPUs; benchmark before changing them.
 
-Structural changes such as the embedding model, document embedding template, dimensions, document truncation/context behavior or chunk geometry do not replace the active index immediately. They mark the configured state as **rebuild required**. The active index remains usable until an explicit rebuild finishes and is atomically activated.
+Structural changes such as the embedding model, document embedding template, dimensions, document truncation/context behavior or chunk geometry do not replace the active index immediately. They mark the configured state as **rebuild required**. The active index remains usable until a rebuild finishes and is atomically activated.
 
-Runtime-only/query-side settings can change without invalidating the active index. Full rebuilds are sliced and release the shared AI lock between slices. On CPU-only hardware, a complete initial build can take hours; it is therefore never started automatically just because the app was installed or updated.
+Runtime-only/query-side settings can change without invalidating the active index. Full rebuilds run in slices and release the shared AI lock between slices so waiting OCR or metadata work can run. On CPU-only hardware, a complete initial build can take hours; PLAI therefore never starts it automatically just because the app was installed or updated.
 
 See [RAG chat](rag-chat.md) for the end-to-end behavior.
 

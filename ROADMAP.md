@@ -1,6 +1,6 @@
 # Roadmap
 
-`paperless-local-ai` now covers three first-class local-AI workflows around Paperless: scan OCR, metadata automation and lightweight document chat/RAG. Future work should keep the same **CPU-first, resource-bounded** design rather than expanding into a general AI platform.
+`paperless-local-ai` currently covers three local-AI workflows around Paperless: scan OCR, metadata automation and document chat/RAG. Future work should keep useful operation on modest CPU-only hardware as a primary design goal and avoid requiring multiple heavy AI workloads to run concurrently.
 
 Near-term ideas:
 

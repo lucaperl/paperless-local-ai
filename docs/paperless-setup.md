@@ -1,6 +1,6 @@
 # Paperless-ngx setup
 
-OCR integrates directly into Paperless' OCRmyPDF import path. The only tag queue owned by `paperless-local-ai` is the metadata queue.
+OCR integrates directly into Paperless' OCRmyPDF import path. The metadata queue is the only PLAI-specific processing queue; OCR itself does not use a separate PLAI queue.
 
 ## 1. API token
 
@@ -30,7 +30,7 @@ If you do not want to use Paperless' Inbox-tag behavior, explicitly add the conf
 
 ### Paperless matching algorithms
 
-For an exclusive paperless-local-ai metadata workflow, set **Matching algorithm → None** for every Paperless object whose automatic assignment is owned by paperless-local-ai:
+For an exclusive paperless-local-ai metadata workflow, set **Matching algorithm → None** for every Paperless object that paperless-local-ai will assign:
 
 - content tags that paperless-local-ai may assign;
 - document types;
@@ -116,7 +116,7 @@ The configured Control Center URL must be reachable from **inside the Paperless 
 
 The first PLAI RAG index build is started explicitly from **Control Center → Document Chat → Index status**. Paperless' native embedding backend is not required for PLAI RAG. The Paperless chat panel is for conversations/per-chat settings; global prompt, retrieval, embedding and index administration stays in the Control Center. See [RAG chat](rag-chat.md).
 
-The plugin is verified against OCRmyPDF **17.7.1** in Paperless-ngx **3.1.0**.
+The exact Paperless/OCRmyPDF versions tested with the plugin are listed in [Compatibility](compatibility.md).
 
 For pages that OCRmyPDF sends to the plugin, PaddleOCR handles OCR inference instead of Tesseract. Native-text pages can stay on Paperless/OCRmyPDF's normal text path without unnecessary OCR.
 
@@ -180,7 +180,7 @@ Paperless must be able to reach the suggestion bridge. For the default host port
 http://<bridge-host>:30149
 ```
 
-For the tested Paperless-ngx 3.1.0 setup, configure **Application Configuration → AI** as follows:
+For the currently tested Paperless setup, configure **Application Configuration → AI** as follows:
 
 ```text
 Enable AI features:        on

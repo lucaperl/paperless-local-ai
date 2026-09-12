@@ -1,8 +1,10 @@
 # Paperless document chat / RAG
 
-`paperless-local-ai` provides a deliberately lightweight local document-chat path directly inside the Paperless-ngx web interface. It is a first-class project capability, while remaining opt-in for deployments that only want OCR/metadata automation.
+`paperless-local-ai` adds multi-turn document chat directly inside the Paperless-ngx web interface. It is optional; OCR and metadata automation continue to work without it.
 
-The design target is the same as the rest of the project: **useful local AI on modest CPU-only hardware**. RAG therefore reuses the existing core service and shared AI lock, stores vectors in SQLite, and keeps the normal turn to one embedding request plus one chat-generation request.
+The chat follows the same hardware design as the rest of PLAI. A normal turn uses one embedding request and one chat-generation request, and heavy chat work waits if OCR, metadata processing or index embedding is already using the shared AI resources.
+
+Vectors are stored in SQLite, so no separate vector-database service is required.
 
 Paperless remains unmodified and remains the document system of record.
 
@@ -29,38 +31,57 @@ The panel supports:
 - installed Ollama model discovery plus free model entry;
 - Thinking `Auto`, `Off` or `On`;
 - context size, temperature and maximum output tokens;
-- retrieval Top-K plus per-chat overrides for conversation history, adjacent chunks, document-context budget and retrieval diagnostics;
+- optional Ollama generation controls for Sampler Top-K, Top-P, Min-P, repeat penalty, Repeat last N, seed and stop strings;
+- Retrieval Top-K plus per-chat overrides for conversation history, adjacent chunks, document-context budget and retrieval diagnostics;
 - incremental answer/status updates, explicit Stop and smart auto-scroll.
 
 Conversation history is stored below `/data/chat` and keyed by the authenticated Paperless user ID supplied by the trusted relay. No chat content is stored in browser session storage. The browser remembers only the current server-side conversation ID.
 
 Closing or navigating away from a chat does not implicitly cancel a running generation. **Stop** is the explicit cancellation action.
 
+### Generation controls
+
+The Control Center defines the global chat defaults. Model, Thinking, context size, temperature and maximum output tokens cover the common settings.
+
+Advanced Ollama generation controls are also available:
+
+- **Sampler Top-K**;
+- **Top-P**;
+- **Min-P**;
+- **Repeat penalty**;
+- **Repeat last N**;
+- **Seed**;
+- **Stop strings**.
+
+When an optional advanced value is left empty, PLAI does not override the corresponding Ollama/model default.
+
+**Sampler Top-K** controls token generation and is separate from **Retrieval Top-K**, which controls how many document chunks are selected from the RAG index.
+
 ## Normal RAG pipeline
 
-A normal chat turn has a fixed heavy-work shape:
+A normal chat turn always uses the same expensive model steps:
 
 ```text
-question + bounded retrieval history
+question + selected retrieval history
   ↓
 1 × Ollama /api/embed
   ↓
-exact cosine retrieval from the PLAI SQLite index
+find relevant passages in the PLAI index
   ↓
-optional adjacent chunks (local only)
+optionally add neighboring passages
   ↓
-live Paperless metadata for selected source documents
+read current source metadata from Paperless
   ↓
-prompt assembly / context budgeting
+build the answer prompt within the configured context budget
   ↓
 1 × Ollama /api/chat
   ↓
-answer + deterministic Paperless source links
+answer + Paperless source links
 ```
 
-There is no query-rewrite LLM, reranker LLM, response-refine chain, summarizer or agent loop on the normal path.
+There are no additional LLM calls for query rewriting, reranking, answer refinement, summarization or an agent loop.
 
-Paperless metadata lookups and adjacent-chunk expansion are local/API work and do not add model calls.
+Paperless metadata lookups and adjacent-chunk expansion do not add model calls.
 
 ## Prompt assembly and source metadata
 
@@ -83,7 +104,7 @@ Document ID: {{DOCUMENT_ID}}
 {{CHUNK}}
 ```
 
-Source metadata is refreshed from Paperless at chat time, so metadata edits do not require a RAG rebuild. Correspondent/document-type/tag/storage-path names are resolved from Paperless IDs. If supplementary metadata lookup fails, retrieval still has indexed document identity/text and fails open rather than making metadata resolution a second AI dependency.
+Source metadata is refreshed from Paperless at chat time, so metadata edits do not require a RAG rebuild. Correspondent/document-type/tag/storage-path names are resolved from Paperless IDs. If supplementary metadata lookup fails, retrieval still has indexed document identity/text and continues without making metadata resolution a second AI dependency.
 
 The variable catalog also exposes fields such as tags, storage path, page count, MIME type, notes, custom fields, versions, owner/permissions and raw/metadata JSON. `DOCUMENT_CONTENT` and `DOCUMENT_RAW_JSON` can be very large and are intended for expert templates only.
 
@@ -120,7 +141,7 @@ Persistent state lives below:
 /data/rag/
 ```
 
-`rag.db` is the active index. `rag.db.build` is a staging database for a full rebuild. The SQLite store contains regenerable document chunks, float32 embedding vectors and minimal index metadata; Paperless remains authoritative.
+`rag.db` is the active index. `rag.db.build` is a staging database for a full rebuild. The SQLite store contains rebuildable document chunks, float32 embedding vectors and minimal index metadata; Paperless remains authoritative.
 
 Current defaults:
 
@@ -137,23 +158,25 @@ Current defaults:
 | Query/document truncation | enabled |
 | Embedding dimensions/context override | model default / Auto |
 
-Chat defaults are `qwen3.5:4b`, 8192 context, 512 output tokens, temperature `0.1`, Thinking off, Top-K `5` and 8 previous answer-history messages.
+Chat defaults are `qwen3.5:4b`, 8192 context, 512 output tokens, temperature `0.1`, Thinking off, Retrieval Top-K `5` and 8 previous answer-history messages. Advanced generation settings use the Ollama/model defaults unless configured.
 
-The first full index build is explicit. PLAI never starts an expensive initial rebuild merely because the software was installed or updated. Once an active index exists, periodic sync checks for new/modified documents and reconciles deletions.
+The first full index build starts only when requested. PLAI never begins an expensive initial build merely because the software was installed or updated. Once an active index exists, periodic sync checks for new/modified documents and reconciles deletions.
 
-Structural embedding changes are tracked separately from the active index signature. The active index remains usable until an explicit rebuild completes and atomically replaces it. Batch size, slice size, sync interval and query-side/runtime controls do not invalidate the active corpus vectors.
+Structural embedding changes are tracked separately from the active index signature. The active index remains usable until a rebuild completes and atomically replaces it. Batch size, slice size, sync interval and query-side/runtime controls do not invalidate the active corpus vectors.
 
-A rebuild snapshots target document versions and records completed documents in the staging database. Interrupted rebuilds retain completed work. If the core restarts with an interrupted staging index, startup reconciles it to **Paused** and requires explicit Resume rather than automatically resuming heavy work.
+A rebuild snapshots target document versions and records completed documents in the staging database. Interrupted rebuilds retain completed work. If the core restarts with an interrupted staging index, startup marks it **Paused** and requires Resume rather than automatically continuing heavy work.
 
 ## Resource behavior on modest hardware
 
-OCR, metadata classification, Hybrid-history work, RAG chat and index embedding share `/coordination/ai.lock`.
+Only one heavy PLAI workload runs at a time. OCR, metadata classification, Hybrid-history work, document chat and index embedding coordinate through `/coordination/ai.lock`.
 
-A waiting chat can report which heavy workload currently owns the slot. `/coordination/ai-status.json` is display metadata only; the file lock is the synchronization primitive.
+If another heavy task is already running, chat waits until it finishes. The UI can show which task it is waiting for. `/coordination/ai-status.json` contains the status shown to the user; the file lock itself is what prevents the workloads from running concurrently.
 
-Interactive embedding and chat requests use `keep_alive=0`, so each model is released when its request completes. Full-index work is split into bounded slices; the embedding model is reused only within the slice and unloaded before the lock is released.
+Interactive embedding and chat requests use `keep_alive=0`, so the model is released when each request finishes.
 
-The default embedding batch size of `1` and slice size of `16` favor predictable CPU-only behavior. On limited CPUs a full index build should be expected to take substantially longer than on GPU hardware, potentially hours for a non-trivial archive. This is why initial/rebuild work is explicit, resumable and non-destructive to the active index.
+Full-index work runs in slices. The embedding model is reused within a slice, unloaded at the end of that slice, and the shared AI lock is released before the next slice. This gives waiting OCR or metadata work a chance to run during a long index build.
+
+The default embedding batch size of `1` and slice size of `16` favor predictable CPU and memory use. A full build can take hours on a non-trivial CPU-only archive; this is why initial builds and rebuilds start only when requested, can be paused/resumed and do not replace the active index until the new one is ready.
 
 ## Paperless AI settings
 

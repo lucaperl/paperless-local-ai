@@ -140,19 +140,19 @@ See [Paperless setup](paperless-setup.md) for details and the tested OCR contrac
 
 ## 6. Configure the Paperless metadata workflow
 
-Create the required metadata/review tags and a **Document Added** workflow that assigns the configured classification queue tag. The review tag can have any name; the recommended Paperless setup marks that chosen tag as an **Inbox tag** so it is added automatically during import. Set Paperless matching to **None** for the tags, document types and correspondents whose automatic assignment is owned by paperless-local-ai.
+Create the required metadata/review tags and a **Document Added** workflow that assigns the configured classification queue tag. The review tag can have any name; the recommended Paperless setup marks that chosen tag as an **Inbox tag** so it is added automatically during import. Set Paperless matching to **None** for the tags, document types and correspondents that paperless-local-ai will assign.
 
 OCR does not use a separate PaddleOCR queue tag. It happens inside Paperless import before the metadata workflow. See [Paperless setup](paperless-setup.md) for the complete review and matching configuration.
 
 ## 7. Optional: enable document chat
 
-Document chat remains opt-in but is a first-class supported feature.
+Document chat is supported but remains optional.
 
 Add the Paperless-side `PYTHONPATH` / `PAPERLESS_APPS` integration described in [Paperless setup](paperless-setup.md), restart Paperless, then enable the Paperless UI integration from the Control Center.
 
 Review **Control Center → Document Chat** and start the first RAG build explicitly under **Index status**. Paperless' native embedding backend can remain disabled/empty. The index lives in the existing persistent PLAI data mount and does not add a third long-running service.
 
-The defaults are intentionally conservative for CPU-only TrueNAS hosts: embedding batch `1`, slice `16`, 2000-character chunks with 400-character overlap. Full builds are expected to be much slower on CPU than on GPU hardware and can take hours; the active index remains available during later rebuilds and heavy work releases the shared AI slot between slices.
+The defaults are intentionally conservative for CPU-only TrueNAS hosts: embedding batch `1`, slice `16`, 2000-character chunks with 400-character overlap. Full builds are expected to be much slower on CPU than on GPU hardware and can take hours; the active index remains available during later rebuilds, and the embedding work releases the shared AI resource between slices so waiting OCR or metadata work can run.
 
 ## 8. Test one document
 
@@ -195,4 +195,3 @@ The supplied YAML follows the floating `stable` GHCR tag. TrueNAS can present it
 A container image cannot rewrite stored Custom App YAML or Paperless' app configuration. If release notes mention a deployment-contract change, update the stored YAML/mounts/environment as part of that release.
 
 For pinned deployments, replace `stable` in both image names with the exact release.
-
