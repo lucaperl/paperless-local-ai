@@ -4,7 +4,7 @@
 paddleocr==3.7.0
 paddlex==3.7.2
 requests==2.34.2
-numpy==1.26.2
+numpy==2.5.2
 opencv-contrib-python==4.10.0.84
 Pillow==12.3.0
 shapely==2.1.2
