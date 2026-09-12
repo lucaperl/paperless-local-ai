@@ -5,8 +5,8 @@ body:
   - type: markdown
     attributes:
       value: |
-        Please keep the project scope in mind: local OCR, metadata automation and document chat around an existing Paperless/Ollama installation.
-        For early ideas or broader workflow discussions, please use GitHub Discussions first.
+        Please keep the project scope in mind: local OCR, metadata automation and document chat/RAG around an existing Paperless-ngx and Ollama installation.
+        For broader ideas or workflow discussions, GitHub Discussions may be a better fit.
   - type: textarea
     id: problem
     attributes:
