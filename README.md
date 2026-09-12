@@ -133,6 +133,8 @@ The project is designed around CPU-only home-server hardware rather than treatin
 - RAG uses SQLite and local cosine retrieval instead of requiring a separate vector database or agent service.
 - A GPU can make inference faster, but it is not required by the architecture.
 
+After heavy work has finished and both services have returned to cold idle, the validated combined footprint of Core and OCR is about **18.6 MiB RAM** on the reference system.
+
 The trade-off is intentional: PLAI favors predictable CPU and RAM use over running several AI tasks at the same time.
 
 See [Architecture](docs/architecture.md) for the resource-management details.
@@ -178,10 +180,6 @@ Paperless chat panel
 → one local chat generation
 → answer + Paperless source links
 ```
-
-<p align="center">
-  <img src="images/paperless-flow.svg" alt="paperless-local-ai import and metadata workflow" width="65%">
-</p>
 
 The uploaded PDF remains Paperless' original. PLAI stores its own configuration, configuration history and chat conversations plus rebuildable OCR, Hybrid-history and RAG working state.
 
