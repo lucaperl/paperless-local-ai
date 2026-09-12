@@ -1,8 +1,8 @@
 # Control Center
 
-The Control Center is the administration UI for the whole `paperless-local-ai` stack: connections, OCR, metadata automation, tagging/history, document-chat defaults, RAG/index settings, diagnostics, safe tests and configuration history.
+The Control Center is the administration UI for `paperless-local-ai`: connections, OCR, metadata automation, tagging/history, document-chat defaults, RAG/index settings, diagnostics, safe tests and configuration history.
 
-It deliberately separates **global/admin settings** from the actual document chat. Users chat inside Paperless; the Control Center configures how that chat behaves and how its local index is maintained.
+The actual document chat stays inside Paperless. The Control Center configures how PLAI processes documents and how the chat/index should behave.
 
 ## Where settings live
 
@@ -14,7 +14,7 @@ It deliberately separates **global/admin settings** from the actual document cha
 | **Classification → Tagging** | Hybrid/LLM-direct strategy, reviewed-history health and Tag Guidance |
 | **Classification → Prompt** | editable System, Base classification and Tagging prompts |
 | **Classification → Settings** | classification Ollama model, context/document limits and advanced model parameters |
-| **Document Chat → Chat & prompts** | global chat defaults, conversation-history depth, RAG System prompt, retrieved-source template and final answer prompt template |
+| **Document Chat → Chat & prompts** | chat model, Thinking/context/generation settings, conversation-history depth, RAG System prompt, retrieved-source template and final answer prompt template |
 | **Document Chat → Retrieval** | retrieval-history behavior, previous-user-turn window, similarity/document caps, adjacent chunks, context budget and diagnostics defaults |
 | **Document Chat → Embedding & index** | embedding model/templates, dimensions/context/truncation, chunking, batch/slice size and sync interval |
 | **Document Chat → Index status** | Sync, Rebuild, Pause/Resume and active/rebuild-required state |
@@ -24,9 +24,11 @@ The configured review tag can have any name. Paperless-side setup still matters:
 
 ## CPU-first behavior
 
-The Control Center exposes performance-sensitive RAG/OCR/LLM controls, but the default architecture still assumes one modest machine. OCR, Hybrid-history work, metadata inference, RAG chat and index embedding share one AI resource lock. A waiting chat reports the current heavy-work owner instead of starting a second model workload.
+Only one heavy PLAI workload runs at a time. OCR, Hybrid-history work, metadata inference, document chat and index embedding wait for the same shared AI resource.
 
-Increasing embedding batch size, context size, output limits or OCR image size can raise latency or RAM pressure. Defaults favor predictable operation on CPU-only hardware rather than maximum concurrent throughput.
+If chat is waiting because another heavy task is running, the UI shows what it is waiting for rather than starting another model workload in parallel.
+
+Increasing embedding batch size, context size, output limits or OCR image size can raise RAM use or processing time. The defaults favor predictable CPU-only operation rather than running several AI workloads concurrently.
 
 ## Safe testing
 

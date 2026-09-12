@@ -3,17 +3,19 @@
 
 # paperless-local-ai
 
-**Local OCR, metadata automation and document chat for Paperless-ngx, designed for modest CPU-only hardware.**
+**Local OCR, metadata automation and document chat for Paperless-ngx, designed for modest CPU-only hardware and direct control over local AI.**
 
-Paperless-ngx already includes optional AI features. `paperless-local-ai` is designed for a different operating point: local inference on small self-hosted systems, where repeated model work is expensive and the operator may want direct control over prompts, retrieval and resource use.
+`paperless-local-ai` works alongside an existing Paperless-ngx installation. It improves scan OCR with PaddleOCR, classifies new documents with a local LLM, and adds persistent multi-turn document chat directly inside the Paperless interface.
 
-It provides three first-class capabilities around an existing Paperless installation:
+The project assumes that CPU and memory are limited. Expensive OCR, embedding and LLM work runs one task at a time instead of competing for the same resources. The Control Center lets you choose and tune prompts, models, tagging behavior and document-chat settings.
 
-- **PaddleOCR-based scan OCR** with PP-OCRv6 through Paperless' OCRmyPDF import path;
-- **automatic structured metadata** for title, document type, date, correspondent and tags;
-- **lightweight multi-turn document chat** with its own local SQLite RAG index and a chat panel inside Paperless.
+It provides three main capabilities:
 
-Paperless remains the document system of record and Ollama remains external. `paperless-local-ai` owns these AI pipelines and their runtime behavior while originals, searchable archives, document text and metadata stay in Paperless.
+- **Better scan OCR:** PP-OCRv6 handles recognition for pages that Paperless/OCRmyPDF decides need OCR.
+- **Automatic metadata:** a local LLM generates title, document type, date and correspondent, while tags use Hybrid or direct LLM classification. After human review, completed documents can help classify similar ones later.
+- **Document chat:** persistent multi-turn conversations inside Paperless, with search across the current document, the full archive or selected tags, correspondents and document types.
+
+Paperless remains the document system of record, and Ollama remains a separate service. `paperless-local-ai` manages the local AI workflows around them.
 
 <p align="center">
   <a href="images/document-chat-all-documents.png">
@@ -25,61 +27,34 @@ Paperless remains the document system of record and Ollama remains external. `pa
   <sub>Document chat with synthetic demo documents and responses. Timing values shown in the demo UI are illustrative and are not benchmark results.</sub>
 </p>
 
-**[Try the Control Center live demo](https://lucaperl.github.io/paperless-local-ai/demo/)** - an interactive browser-only preview of the administration UI using synthetic Paperless, Ollama and OCR data. Demo values and timings are illustrative only.
-
-## Why a separate local-AI path?
-
-Paperless native AI can already provide AI-assisted metadata suggestions, embedding-backed retrieval and document chat, including with local Ollama. `paperless-local-ai` deliberately uses a smaller and more explicit execution model.
-
-The clearest example is document chat.
-
-In Paperless 3.1.0 through 3.1.3, the native server-side chat path is **single-turn**: it receives the current question and document selection, but no conversation history. It uses a fixed Top-K 5 LlamaIndex retriever, performs a retrieval pass to determine source references, then gives the retriever to a `RetrieverQueryEngine`, which retrieves again for response synthesis. The response synthesizer uses LlamaIndex's compact/refine path.
-
-PLAI instead makes the normal chat turn a fixed project contract:
-
-```text
-question + bounded conversation history
-→ exactly 1 local embedding request
-→ exact cosine retrieval from SQLite
-→ local source expansion / metadata / prompt assembly
-→ exactly 1 local chat-generation request
-→ answer + Paperless source links
-```
-
-There is no query-rewrite LLM, reranker LLM, refine chain, summarizer or agent loop on that normal path. Adjacent chunks, live Paperless metadata and retrieval diagnostics are local/API work and add no model request.
-
-PLAI also stores real server-side conversations. Previous user turns can be included explicitly in the retrieval query, while a separately bounded user/assistant history is sent to the answer model. Chats can be reopened, renamed and deleted instead of each question being an isolated request.
-
-Paperless exposes generation/embedding models, backends, context size and embedding chunk size. PLAI additionally owns and exposes the retrieval and prompt layer itself: retrieval-history behavior, Top-K, similarity/document caps, adjacent chunks, document-context budgeting, retrieval diagnostics, query/document embedding templates, prompt assembly and explicit index lifecycle controls.
-
-The same design principle applies outside chat. Metadata runs as an automatic, reviewable workflow with one structured generation request, optional Hybrid-history routing for tags and conservative local correspondent resolution. Heavy OCR, History, embedding and generation work shares one resource slot so it cannot compete for the same CPU and RAM.
-
-`paperless-local-ai` is not a feature-for-feature clone of every native Paperless AI feature. Paperless' native similar-document UI remains separate, and Paperless native AI can suggest storage paths while PLAI metadata automation currently does not manage them.
-
-See [Architecture](docs/architecture.md#native-paperless-ai-and-plai), [RAG chat](docs/rag-chat.md) and [Paperless setup](docs/paperless-setup.md) for the detailed behavior.
+**[Try the Control Center live demo](https://lucaperl.github.io/paperless-local-ai/demo/)** - an interactive browser-only preview of the administration UI using synthetic Paperless, Ollama and OCR data.
 
 ## What it provides
 
 ### OCR
 
-PP-OCRv6 replaces the recognition stage when Paperless/OCRmyPDF needs OCR. **Medium** is the quality-focused default, with Small and Tiny profiles when lower inference cost matters. The original/archive page is not resized; only the temporary OCR raster is bounded.
+PP-OCRv6 handles recognition when Paperless/OCRmyPDF decides that a page needs OCR. Pages with usable native text stay on Paperless' normal text path instead of being sent through PaddleOCR unnecessarily.
+
+**Medium** is the quality-focused default, with Small and Tiny profiles available when lower inference cost matters. The original/archive page is not resized; only the temporary image used for OCR is bounded.
+
+See [Configuration](docs/configuration.md#ocr) and [Paperless setup](docs/paperless-setup.md#4-ocrmypdf-plugin-integration).
 
 ### Metadata automation
 
-A Paperless **Document Added** workflow queues a document for local classification. One structured request handles title, document type, date and sender/issuer. Tags join the same request only when the selected tagging route needs an LLM decision.
+A Paperless **Document Added** workflow queues a document for local classification. Title, document type, date and sender/issuer are generated together in one structured model request; tags use that same request when the selected tagging strategy needs the LLM.
 
 Two tagging strategies are available:
 
-- **Hybrid tagging**, recommended for compact models, can reuse a complete reviewed tag set only behind explicit similarity/support gates and otherwise falls back to the LLM;
-- **LLM direct** always lets the configured model choose from the current Paperless taxonomy.
+- **Hybrid tagging**, recommended for compact local models, can reuse a complete reviewed tag set when sufficiently similar reviewed documents agree strongly enough. If the evidence is uncertain, the LLM chooses the tags using Tag Guidance and relevant reviewed examples.
+- **LLM direct** lets the configured model choose tags for every document from the current Paperless taxonomy.
 
-Correspondents are resolved conservatively against existing Paperless values. Plausible new names can optionally be exposed through Paperless Document Suggestions, but `paperless-local-ai` never auto-creates correspondents.
+Correspondents are resolved locally against existing Paperless values after the model extracts the sender. Plausible new names can optionally be shown through Paperless Document Suggestions, but `paperless-local-ai` never creates correspondents automatically.
 
 See [Tagging](docs/tagging.md) and [Configuration](docs/configuration.md#classification).
 
 ### Document chat
 
-The Paperless UI integration provides persistent multi-turn chats with scopes for the current document, all documents, tags, correspondents and document types. Answers include deterministic links back to the source documents, with source metadata read live from Paperless.
+The Paperless UI integration provides persistent multi-turn chats with scopes for the current document, all documents, tags, correspondents and document types. Answers include links back to the source documents, with current source metadata read directly from Paperless.
 
 <table>
 <tr>
@@ -107,27 +82,60 @@ The Paperless UI integration provides persistent multi-turn chats with scopes fo
 </table>
 
 <p align="center">
-  <sub>Examples use synthetic demo documents and responses. Displayed timing values are illustrative and are not representative of local inference performance.</sub>
+  <sub>Synthetic demo documents and responses; displayed timings are not performance measurements.</sub>
 </p>
 
-Global administration lives in the Control Center. It exposes chat defaults, prompt assembly, retrieval history, Top-K, similarity/document caps, adjacent chunks, context budgeting, diagnostics, embedding templates/model, chunking, batching/slicing, sync and explicit index lifecycle controls.
+The [Control Center](#control-center) provides the global settings for the chat model, prompts, generation, retrieval, embeddings and index behavior. Conversations and per-chat settings remain inside Paperless.
 
-The index is a regenerable SQLite cache, not a second document store. The first build is explicit. Incremental sync keeps an active index current; full rebuilds use a staging index and atomic activation so the previous index remains usable until the replacement is ready. Interrupted rebuilds become paused/resumable rather than silently restarting expensive work.
+The index is a rebuildable SQLite cache, not a second document store. The first build starts only when requested. Rebuilds are prepared separately so the existing index remains usable until the replacement is ready, and interrupted rebuilds can be resumed instead of starting again.
+
+On CPU-only systems, index embedding is split into small slices so waiting OCR or metadata work can run between them.
 
 See [RAG chat](docs/rag-chat.md).
 
+## Why paperless-local-ai?
+
+Paperless-ngx already provides optional AI features and can use local Ollama. PLAI is built around two additional priorities: predictable resource use on CPU-only hardware and more control over how the local AI works.
+
+Only one heavy PLAI task runs at a time. OCR, metadata generation, document chat and index embedding wait for each other instead of putting their peak CPU and memory load on the server at the same time.
+
+Paperless lets you choose its AI backend and models and configure some basic limits. Its AI prompts and much of its document-chat retrieval behavior are not user-configurable. PLAI exposes these settings in the [Control Center](#control-center), including prompts, generation settings, tagging behavior, retrieval, embeddings and index management.
+
+Document chat is a good example. A normal chat turn follows the same model path every time:
+
+```text
+question + recent conversation context
+→ 1 local embedding request
+→ find relevant passages in the local index
+→ assemble the source context
+→ 1 local chat-generation request
+→ answer + links to the source documents
+```
+
+A normal chat turn does not add separate LLM calls for query rewriting, reranking, answer refinement, summarization or an agent loop. This keeps the amount of expensive model work predictable, which matters much more on a CPU-only server than on fast accelerator hardware.
+
+PLAI also stores conversations server-side, so follow-up questions can use earlier turns instead of treating every question as a new conversation.
+
+Metadata follows the same general approach: one structured model request covers the main metadata fields, while Hybrid tagging can reuse reviewed history for familiar documents and falls back to the LLM when the evidence is not strong enough.
+
+`paperless-local-ai` does not replace every native Paperless AI feature. Paperless' similar-document UI remains separate, and Paperless native AI can suggest storage paths while PLAI metadata automation currently does not manage them.
+
+See [Architecture](docs/architecture.md#native-paperless-ai-and-plai), [RAG chat](docs/rag-chat.md) and [Tagging](docs/tagging.md) for the technical details.
+
 ## Designed for modest hardware
 
-The project treats a CPU-only home server as a first-class target rather than a fallback configuration.
+The project is designed around CPU-only home-server hardware rather than treating it as a fallback configuration.
 
-- OCR, Hybrid-history work, metadata inference, RAG chat and index embedding slices share **one global AI slot**.
-- Heavy helpers are loaded on demand and released again.
-- Ollama models are explicitly unloaded after work.
-- Full-index embedding is divided into bounded slices that release the AI slot between slices.
-- RAG uses SQLite and exact cosine retrieval instead of requiring a separate vector database or agent service.
+- Only one heavy PLAI task runs at a time, so OCR, Ollama inference and index embedding do not put their peak load on the machine simultaneously.
+- Heavy helper processes are started when needed and released again afterward.
+- Ollama models are unloaded after PLAI finishes using them.
+- Full-index embedding runs in slices and gives other waiting work a chance to run between slices.
+- RAG uses SQLite and local cosine retrieval instead of requiring a separate vector database or agent service.
 - A GPU can make inference faster, but it is not required by the architecture.
 
-The trade-off is intentional: predictable resource use is prioritized over concurrent AI throughput.
+The trade-off is intentional: PLAI favors predictable CPU and RAM use over running several AI tasks at the same time.
+
+See [Architecture](docs/architecture.md) for the resource-management details.
 
 ## Reference performance
 
@@ -163,10 +171,10 @@ Paperless import
 
 ```text
 Paperless chat panel
-→ current question + bounded prior context
+→ current question + recent conversation context
 → one local query embedding
-→ exact retrieval from the PLAI SQLite index
-→ live Paperless metadata for selected sources
+→ retrieve relevant passages from the PLAI index
+→ current Paperless metadata for selected sources
 → one local chat generation
 → answer + Paperless source links
 ```
@@ -175,21 +183,21 @@ Paperless chat panel
   <img src="images/paperless-flow.svg" alt="paperless-local-ai import and metadata workflow" width="65%">
 </p>
 
-The uploaded PDF remains Paperless' original. PLAI stores its own configuration, configuration history and chat conversations plus regenerable OCR, Hybrid-history and RAG working state.
+The uploaded PDF remains Paperless' original. PLAI stores its own configuration, configuration history and chat conversations plus rebuildable OCR, Hybrid-history and RAG working state.
 
 ## Control Center
 
-The Control Center is the administration UI for the complete stack. It covers:
+The Control Center is where `paperless-local-ai` is configured and tested. It covers:
 
 - Paperless and Ollama connections;
-- OCR model/language/image limits and recovery behavior;
+- OCR model, language, image limits and recovery behavior;
 - metadata workflow, Dry Run and correspondent matching;
-- classification model settings and editable prompts;
-- Hybrid tagging, reviewed-history health and tag guidance;
-- document-chat defaults and prompt assembly;
+- classification models, editable prompts and safe prompt/model tests;
+- Hybrid tagging, reviewed-history diagnostics and Tag Guidance;
+- document-chat models, prompts and generation settings;
 - retrieval behavior and diagnostics;
-- embedding/chunking settings and index Sync/Rebuild/Pause/Resume;
-- safe tests and versioned configuration history.
+- embedding, chunking and index Sync/Rebuild/Pause/Resume;
+- versioned configuration history.
 
 <p align="center">
   <a href="images/control-center-screenshot.png">
@@ -201,7 +209,7 @@ The Control Center is the administration UI for the complete stack. It covers:
   <strong><a href="https://lucaperl.github.io/paperless-local-ai/demo/">Open the interactive Control Center demo →</a></strong>
 </p>
 
-The actual document chat lives inside Paperless. Per-chat overrides remain with each server-side conversation.
+The actual document chat lives inside Paperless. See [Control Center](docs/control-center.md) and [Configuration](docs/configuration.md) for the available settings.
 
 ## Requirements
 
@@ -218,7 +226,7 @@ Choose one deployment guide:
 
 Then complete the required [Paperless integration](docs/paperless-setup.md) and review [Configuration](docs/configuration.md).
 
-Further reading: [RAG chat](docs/rag-chat.md) · [Tagging](docs/tagging.md) · [Architecture](docs/architecture.md) · [Troubleshooting](docs/troubleshooting.md) · [Compatibility](docs/compatibility.md)
+Further reading: [RAG chat](docs/rag-chat.md) · [Tagging](docs/tagging.md) · [Architecture](docs/architecture.md) · [Control Center](docs/control-center.md) · [Troubleshooting](docs/troubleshooting.md) · [Compatibility](docs/compatibility.md)
 
 ## Security
 

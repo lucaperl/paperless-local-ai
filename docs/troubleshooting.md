@@ -90,7 +90,7 @@ Check:
 - Paperless and Control Center tag names match;
 - the model configured in Classification exists in Ollama;
 - the metadata worker can reach both Paperless and Ollama;
-- `ai.lock` is not held by an active OCR session.
+- another heavy PLAI task is not currently using the shared AI lock.
 
 OCR has no queue/error tags to clear because it runs during Paperless import.
 
@@ -199,17 +199,17 @@ After a deployment/update, use a hard browser reload once to avoid testing an ol
 
 ## Document chat is waiting for AI resources
 
-This is expected when OCR, metadata classification, another chat or an index slice currently owns the shared AI slot.
+This is expected when OCR, metadata classification, another chat or an index slice is already doing heavy work.
 
-The chat status reports the current owner/reason/elapsed time when available. `paperless-local-ai` deliberately serializes heavyweight work on modest hardware rather than loading multiple models or PaddleOCR concurrently.
+PLAI runs only one heavy workload at a time on the shared AI resource. The chat status shows what it is currently waiting for and, when available, how long that task has been running.
 
-Do not delete `/coordination/ai.lock` while a real workload is running. The file lock is the synchronization primitive; `ai-status.json` is informational only.
+Do not delete `/coordination/ai.lock` while a real workload is running. The file lock is what prevents heavy workloads from running concurrently; `ai-status.json` contains status information only.
 
 ## RAG index build is slow
 
-A full embedding build is intentionally CPU-friendly rather than throughput-maximized. Current defaults are embedding batch `1` and slice `16`. On CPU-only hardware a non-trivial archive can take hours.
+The default index settings favor predictable CPU and memory use rather than maximum indexing speed. The current defaults are embedding batch `1` and slice `16`, so a non-trivial archive can take hours on CPU-only hardware.
 
-The first build and every structural rebuild are explicit. Later rebuilds use `rag.db.build` while the old active index remains available. Pause/Resume is supported, and an interrupted staging build is retained.
+The first build and structural rebuilds start only when requested. A rebuild uses `rag.db.build` while the existing index remains available. Pause/Resume is supported, and completed work from an interrupted rebuild is retained.
 
 Increasing batch size is not guaranteed to make a limited CPU faster and can increase memory pressure. Benchmark before changing it.
 
@@ -241,7 +241,7 @@ A historical tag is reused only when the strict confidence gate passes. Check:
 - nearest similarity reaches the configured gate (default 0.62), minimum support is met (default 2) and weighted winner share reaches the configured gate (default 0.50);
 - **Classification → Tagging → History health** is not reporting a refresh error.
 
-Use **Refresh reviewed history** after correcting historical tags if you want an immediate rebuild. The persistent UI/worker do not keep the scientific index in RAM; a Hybrid request starts the history helper on demand and a stale/invalid local cache is rebuilt automatically. If the Control Center reports that the history broker is unavailable, check the `core-service` container because it owns the lightweight broker. A fallback to the LLM is expected when the archive does not provide a sufficiently strong and internally consistent historical match.
+Use **Refresh reviewed history** after correcting historical tags if you want an immediate rebuild. The persistent UI/worker do not keep the scientific index in RAM; a Hybrid request starts the history helper on demand and a stale/invalid local cache is rebuilt automatically. If the Control Center reports that the history broker is unavailable, check the `core-service` container because the lightweight History broker runs there. A fallback to the LLM is expected when the archive does not provide a sufficiently strong and internally consistent historical match.
 
 ## New correspondent does not appear in native Suggestions
 

@@ -4,13 +4,13 @@
 
 ## Which strategy should I use?
 
-### Hybrid tagging — recommended for small local models
+### Hybrid tagging — recommended for compact local models
 
-Hybrid tagging combines a confidence-gated reviewed-document lookup with an LLM fallback.
+Hybrid tagging first checks whether sufficiently similar reviewed documents already agree on the same complete tag set.
 
-For each document, `paperless-local-ai` compares the full Paperless text with documents that have already passed human review. A complete reviewed leaf-tag set is reused only when the nearest document is sufficiently similar **and** the nearest neighborhood agrees strongly enough on that exact set. The set may contain one or multiple tags. History never combines individually supported tags into a new, unseen combination. If any gate fails, the LLM chooses tags instead and receives the current Tag Guidance plus a small set of relevant reviewed examples.
+For each document, `paperless-local-ai` compares the full Paperless text with documents that have already passed human review. If the evidence is strong enough, the complete reviewed leaf-tag set is reused. If it is not, Hybrid lets the LLM choose the tags and gives it the current Tag Guidance plus a small number of relevant reviewed examples.
 
-This creates an explicit abstention/fallback path: uncertain historical evidence is not treated as a tag decision.
+History never combines individual tags into a new combination that has not appeared in a reviewed document.
 
 ### LLM direct — suited to larger or more capable models
 
@@ -30,9 +30,11 @@ The tagging design was tested with several established prompting approaches befo
 - **Retrieval-augmented few-shot prompting with positive reviewed examples:** relevant labeled examples produced the clearest and most repeatable improvement for the LLM fallback.
 - **Contrastive/negative examples and additional boundary rules:** added prompt cost without a reliable net improvement and are not part of the default fallback.
 
-The resulting architecture uses deterministic reviewed evidence for familiar cases and reserves LLM taxonomy mapping for cases where the evidence gate abstains.
+The resulting approach is simple: reuse a reviewed tag set when the historical evidence is strong, and let the LLM decide when it is not. Relevant reviewed documents are still useful in those fallback cases because they become examples in the prompt.
 
 ## Trusted reviewed documents
+
+Only documents that have completed human review are used as trusted History examples.
 
 The configured **review tag** is the trust boundary and can have any name. Keep it on a document until human review is complete, then remove it. A document is eligible for Hybrid retrieval only after it has left that tag and no longer carries the classification queue or classification error tag. The recommended Paperless setup marks the chosen review tag as an **Inbox tag** so it is added automatically during import.
 
@@ -57,7 +59,7 @@ A reviewed set is reused only when **all** of these conditions hold:
 - the winning set receives at least the configured **Minimum winner share** of the similarity-weighted set vote; default `0.50`;
 - the complete set contains no more tags than the configured **Maximum LLM tags** limit.
 
-If any condition fails, Hybrid tagging abstains and routes tag selection to the LLM. History can only return complete tag sets that occur in reviewed documents; it never constructs a new set from individually supported tags.
+If any condition fails, Hybrid lets the LLM choose the tags instead. History can only return complete tag sets that occur in reviewed documents; it never constructs a new set from individually supported tags.
 
 ### Advanced History matching
 
@@ -73,7 +75,7 @@ Retrieved examples are for **tag selection only**. Their text is treated as untr
 
 ## Editable prompt composition
 
-Prompt behavior is not hidden in a fixed tag-classification prompt. The Control Center exposes three editable components:
+The tag-classification prompts are user-configurable in the Control Center. Three editable components are available:
 
 - **System prompt** — global instructions/security framing;
 - **Base classification prompt** — title, document type, sender/issuer, date and document text;
@@ -150,23 +152,23 @@ A finding is a **review hint, not an error detector**. Similar documents can leg
 
 ## Paperless native classifier vs Hybrid tagging
 
-Paperless-ngx already includes its own automatic metadata classifier. `paperless-local-ai` does not claim that Hybrid tagging is universally more accurate. The two approaches solve the integration problem differently.
+Paperless-ngx already includes its own automatic metadata classifier. `paperless-local-ai` does not claim that Hybrid tagging is universally more accurate. The two approaches solve the classification problem differently.
 
-For Paperless-ngx **3.1.0**, the native classifier trains on non-Inbox documents. Tag labels come from tags whose matching algorithm is **Automatic**. Document text is vectorized with a word `CountVectorizer` using 1–2-grams (`min_df=0.01`), and tag labels are learned with scikit-learn's `MLPClassifier` through a label/multilabel binarizer. See the [Paperless 3.1.0 classifier source](https://github.com/paperless-ngx/paperless-ngx/blob/v3.1.0/src/documents/classifier.py).
+The comparison below describes the Paperless classifier in the tested reference environment listed in [Compatibility](compatibility.md). In that reference, tag labels come from tags whose matching algorithm is **Automatic**. Document text is vectorized with a word `CountVectorizer` using 1–2-grams (`min_df=0.01`), and tag labels are learned with scikit-learn's `MLPClassifier` through a label/multilabel binarizer. See the [Paperless 3.1.0 classifier source](https://github.com/paperless-ngx/paperless-ngx/blob/v3.1.0/src/documents/classifier.py).
 
 | | Paperless native automatic classifier | `paperless-local-ai` Hybrid tagging |
 |---|---|---|
 | Core method | trained supervised classifier | confidence-gated nearest-reviewed-document retrieval + LLM fallback |
 | Text features | word CountVectorizer, 1–2-grams | equal-weight word TF-IDF 1–2 + character `char_wb` TF-IDF 3–5 |
 | Tag training/evidence | tags configured with Automatic matching | reviewed content tags; no Paperless Automatic matching requirement |
-| Decision control | classifier prediction | explicit whole-tag-set similarity + neighborhood support/agreement gate |
-| Uncertain historical evidence | native classifier behavior | explicit abstention to the configured LLM |
+| Decision control | classifier prediction | whole-tag-set similarity + neighborhood support/agreement gate |
+| Uncertain historical evidence | native classifier behavior | fall back to the configured LLM |
 | LLM examples | not part of the native classifier | nearest reviewed documents become few-shot examples on fallback |
-| Personal tag instructions | learned implicitly from labeled documents | optional explicit Tag Guidance plus reviewed examples |
+| Personal tag instructions | learned implicitly from labeled documents | optional Tag Guidance plus reviewed examples |
 | User-visible evidence | normal Paperless suggestion/prediction behavior | route, similarity, support, reuse diagnostics and retrieved examples in Control Center |
 | Refresh model | Paperless classifier training lifecycle | lightweight source check; validated local TF-IDF cache, rebuilt only when reviewed data/taxonomy/runtime version changes |
 
-The Hybrid layer exists because its **explicit evidence gate, abstention path, retrieved examples and diagnostics** are directly useful to this local-LLM workflow. Users who prefer Paperless' native automatic matching can continue to use that Paperless feature independently.
+The Hybrid layer exists because its whole-tag-set confidence checks, LLM fallback, retrieved examples and diagnostics are directly useful to this local-LLM workflow. Users who prefer Paperless' native automatic matching can continue to use that Paperless feature independently.
 
 ## Privacy
 
