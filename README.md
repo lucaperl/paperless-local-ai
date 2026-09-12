@@ -11,8 +11,8 @@ The project assumes that CPU and memory are limited. Expensive OCR, embedding an
 
 It provides three main capabilities:
 
-- **Better scan OCR:** PP-OCRv6 handles recognition for pages that Paperless/OCRmyPDF decides need OCR.
-- **Automatic metadata:** a local LLM generates title, document type, date and correspondent, while tags use Hybrid or direct LLM classification. After human review, completed documents can help classify similar ones later.
+- **PaddleOCR-based scan OCR:** PP-OCRv6 handles recognition for pages that Paperless/OCRmyPDF decides need OCR.
+- **Automatic metadata:** a local LLM generates title, document type, date and correspondent, while tags use Hybrid or direct LLM classification. After human review, completed documents can help assign tags to similar documents later.
 - **Document chat:** persistent multi-turn conversations inside Paperless, with search across the current document, the full archive or selected tags, correspondents and document types.
 
 Paperless remains the document system of record, and Ollama remains a separate service. `paperless-local-ai` manages the local AI workflows around them.

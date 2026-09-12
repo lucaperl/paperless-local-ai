@@ -31,7 +31,7 @@ The panel supports:
 - installed Ollama model discovery plus free model entry;
 - Thinking `Auto`, `Off` or `On`;
 - context size, temperature and maximum output tokens;
-- optional Ollama generation controls for Sampler Top-K, Top-P, Min-P, repeat penalty, repeat window, seed and stop strings;
+- optional Ollama generation controls for Sampler Top-K, Top-P, Min-P, repeat penalty, Repeat last N, seed and stop strings;
 - Retrieval Top-K plus per-chat overrides for conversation history, adjacent chunks, document-context budget and retrieval diagnostics;
 - incremental answer/status updates, explicit Stop and smart auto-scroll.
 
@@ -62,7 +62,7 @@ When an optional advanced value is left empty, PLAI does not override the corres
 A normal chat turn always uses the same expensive model steps:
 
 ```text
-question + selected conversation history
+question + selected retrieval history
   ↓
 1 × Ollama /api/embed
   ↓
