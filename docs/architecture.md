@@ -18,6 +18,16 @@ The architecture is designed around modest CPU-only home-server hardware. Only o
 
 The import/automation and interactive-chat paths share the same Paperless archive but have different lifecycles.
 
+### Import and metadata flow
+
+The detailed import, OCR, metadata and review path:
+
+<p align="center">
+  <img src="../images/paperless-flow.svg" alt="paperless-local-ai import and metadata workflow" width="65%">
+</p>
+
+### End-to-end paths
+
 ```text
 IMPORT / AUTOMATION
 
@@ -79,6 +89,8 @@ One Compose project runs two long-lived services from two images:
 |---|---|
 | `ocr-service` | authenticated PaddleOCR service used by the OCRmyPDF plugin |
 | `core-service` | one lightweight Rust process hosting metadata queue polling, the Control Center, the optional suggestion bridge, the RAG relay/job launcher and the on-demand History broker |
+
+On the reference system, the validated combined cold-idle footprint of `core-service` and `ocr-service` is about **18.6 MiB RAM** after heavy helpers have been released and both services have recycled back to idle.
 
 The optional `doctor` profile uses the core image as a one-shot deployment check. Paperless and Ollama are external services. The suggestion-bridge endpoint is included in `core-service`, but configuring Paperless to use it is optional; without it, safe matching to existing correspondents still works and unmatched sender candidates are handled manually during review.
 
