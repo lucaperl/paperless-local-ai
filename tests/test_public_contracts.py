@@ -414,3 +414,18 @@ def test_ocrmypdf_dpi_workaround_is_version_gated_and_documented():
         in agents
     )
     assert "_install_ocrmypdf_fpdf2_dpi_compat" in agents
+
+
+
+def test_release_publish_rechecks_supported_ocrmypdf_versions():
+    pr_ci = (ROOT / ".github/workflows/test.yml").read_text(encoding="utf-8")
+    publish_ci = (ROOT / ".github/workflows/publish.yml").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    matrix = 'ocrmypdf: ["17.7.1", "17.11.0"]'
+
+    assert matrix in pr_ci
+    assert matrix in publish_ci
+    assert "pytest -q tests/test_ocr_plugin.py" in publish_ci
+    assert "needs: [verify, verify-ocrmypdf, verify-rust]" in publish_ci
+    assert "Compatible with Paperless-ngx 3.2.0." in readme
+    assert "[Compatibility](docs/compatibility.md)" in readme
