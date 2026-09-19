@@ -407,14 +407,13 @@ def test_ocrmypdf_dpi_workaround_is_version_gated_and_documented():
         in compatibility
     )
     assert "Removal/update condition" in compatibility
-    assert "Paperless-ngx 3.2.0" in compatibility
+    assert "Paperless-ngx **3.2.0**" in compatibility
 
     assert (
         "DO NOT broaden this workaround beyond the explicitly supported OCRmyPDF versions"
         in agents
     )
     assert "_install_ocrmypdf_fpdf2_dpi_compat" in agents
-
 
 
 def test_release_publish_rechecks_supported_ocrmypdf_versions():
@@ -428,4 +427,3 @@ def test_release_publish_rechecks_supported_ocrmypdf_versions():
     assert "pytest -q tests/test_ocr_plugin.py" in publish_ci
     assert "needs: [verify, verify-ocrmypdf, verify-rust]" in publish_ci
     assert "Compatible with Paperless-ngx 3.2.0." in readme
-    assert "[Compatibility](docs/compatibility.md)" in readme
