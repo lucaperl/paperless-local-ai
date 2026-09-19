@@ -7,6 +7,12 @@
 - support Paperless-ngx 3.2.0's OCRmyPDF 17.11.0 runtime by extending the existing fail-closed native-fpdf2 DPI compatibility contract only to the source-verified 17.11.0 surface, with a GitHub CI matrix that loads and tests both 17.7.1 and 17.11.0.
 - keep new-correspondent Document Suggestions identity exact under Paperless-ngx 3.2.0 in both the primary Rust bridge and retained Python compatibility bridge by using Paperless' authenticated `X-Version` header to select the 3.0/3.1 or 3.2 prompt shape, excluding the generated similar-document/Tantivy context only for 3.2 and failing closed on missing, repeated or unverified wrapper/version contracts.
 
+
+### Changed
+
+- gate release image publication on the same real OCRmyPDF **17.7.1 / 17.11.0** plugin compatibility matrix used by pull-request CI, so a release cannot publish after validating only the default development pin.
+- document **Paperless-ngx 3.2.0 support prominently in the README** and narrow the Paperless 3.0/3.1 suggestion-bridge prompt claim to the no-native-embedding path; Paperless 3.1.x with its own `llm_embedding_backend` remains outside that compatibility claim, while PLAI's separate RAG index is unaffected.
+
 ## 0.5.0 - 2026-09-09
 
 ### Added

@@ -7,6 +7,8 @@
 
 `paperless-local-ai` works alongside an existing Paperless-ngx installation. It improves scan OCR with PaddleOCR, classifies new documents with a local LLM, and adds persistent multi-turn document chat directly inside the Paperless interface.
 
+> **Compatible with Paperless-ngx 3.2.0.**
+
 The project assumes that CPU and memory are limited. Expensive OCR, embedding and LLM work runs one task at a time instead of competing for the same resources. The Control Center lets you choose and tune prompts, models, tagging behavior and document-chat settings.
 
 It provides three main capabilities:
