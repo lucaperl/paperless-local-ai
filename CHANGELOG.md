@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.1 - 2026-09-19
+
 ### Fixed
 
 - support Paperless-ngx 3.2.0's OCRmyPDF 17.11.0 runtime by extending the existing fail-closed native-fpdf2 DPI compatibility contract only to the source-verified 17.11.0 surface, with a GitHub CI matrix that loads and tests both 17.7.1 and 17.11.0.
