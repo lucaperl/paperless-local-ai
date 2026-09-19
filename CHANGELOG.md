@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixed
+
+- support Paperless-ngx 3.2.0's OCRmyPDF 17.11.0 runtime by extending the existing fail-closed native-fpdf2 DPI compatibility contract only to the source-verified 17.11.0 surface, with a GitHub CI matrix that loads and tests both 17.7.1 and 17.11.0.
+- keep new-correspondent Document Suggestions identity exact under Paperless-ngx 3.2.0 by excluding its appended similar-document/Tantivy classification context from the current-document review signature.
+
 ## 0.5.0 - 2026-09-09
 
 ### Added

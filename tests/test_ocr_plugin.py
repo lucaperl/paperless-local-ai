@@ -13,14 +13,14 @@ def test_default_ocr_raster_limit_is_3000():
     assert plugin.PADDLE_MAX_SIDE_PIXELS == 4000
 
 
-def test_ocrmypdf_17_7_1_fpdf2_dpi_fallback_order():
+def test_ocrmypdf_fpdf2_dpi_fallback_order():
     assert plugin._effective_fpdf2_dpi(288.0, 300.0, 400.0) == 288.0
     assert plugin._effective_fpdf2_dpi(None, 300.0, 400.0) == 300.0
     assert plugin._effective_fpdf2_dpi(0.0, 0.0, 400.0) == 400.0
     assert plugin._effective_fpdf2_dpi(float("nan"), 300.0, 400.0) == 300.0
 
 
-def test_ocrmypdf_17_7_1_fpdf2_zero_pdfinfo_dpi_uses_ocr_tree_dpi(
+def test_supported_ocrmypdf_fpdf2_zero_pdfinfo_dpi_uses_ocr_tree_dpi(
     monkeypatch,
 ):
     rendered_dpis = []
@@ -37,9 +37,12 @@ def test_ocrmypdf_17_7_1_fpdf2_zero_pdfinfo_dpi_uses_ocr_tree_dpi(
         fake_render,
     )
 
+    installed_version = plugin._installed_ocrmypdf_version()
+    assert installed_version in plugin.OCRMY_PDF_FPDF2_DPI_COMPAT_VERSIONS
+
     assert (
         plugin._install_ocrmypdf_fpdf2_dpi_compat(
-            ocrmypdf_version="17.7.1"
+            ocrmypdf_version=installed_version
         )
         is True
     )
@@ -47,7 +50,7 @@ def test_ocrmypdf_17_7_1_fpdf2_zero_pdfinfo_dpi_uses_ocr_tree_dpi(
     # Same process must never wrap the renderer repeatedly.
     assert (
         plugin._install_ocrmypdf_fpdf2_dpi_compat(
-            ocrmypdf_version="17.7.1"
+            ocrmypdf_version=installed_version
         )
         is False
     )
@@ -92,7 +95,7 @@ def test_ocrmypdf_fpdf2_dpi_compat_does_not_patch_unknown_versions():
 
     assert (
         plugin._install_ocrmypdf_fpdf2_dpi_compat(
-            ocrmypdf_version="17.8.0"
+            ocrmypdf_version="17.12.0"
         )
         is False
     )
@@ -103,7 +106,7 @@ def test_ocrmypdf_fpdf2_dpi_compat_does_not_patch_unknown_versions():
     )
 
 
-def test_ocrmypdf_17_7_1_fpdf2_dpi_compat_fails_closed_on_contract_change(
+def test_ocrmypdf_fpdf2_dpi_compat_fails_closed_on_contract_change(
     monkeypatch,
 ):
     monkeypatch.delattr(
@@ -111,12 +114,15 @@ def test_ocrmypdf_17_7_1_fpdf2_dpi_compat_fails_closed_on_contract_change(
         "Fpdf2ParsedPage",
     )
 
+    installed_version = plugin._installed_ocrmypdf_version()
+    assert installed_version in plugin.OCRMY_PDF_FPDF2_DPI_COMPAT_VERSIONS
+
     with pytest.raises(
         RuntimeError,
-        match="OCRmyPDF 17.7.1 fpdf2 compatibility contract changed",
+        match=rf"OCRmyPDF {installed_version} fpdf2 compatibility contract changed",
     ):
         plugin._install_ocrmypdf_fpdf2_dpi_compat(
-            ocrmypdf_version="17.7.1"
+            ocrmypdf_version=installed_version
         )
 
 

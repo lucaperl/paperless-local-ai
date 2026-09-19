@@ -33,6 +33,28 @@ jobs:
       - name: Unit and regression tests
         run: pytest -q
 
+  ocrmypdf-compat:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ocrmypdf: ["17.7.1", "17.11.0"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements/dev.txt
+      - name: Install test dependencies
+        run: |
+          python -m pip install --disable-pip-version-check -r requirements/dev.txt
+          python -m pip install --disable-pip-version-check --upgrade "ocrmypdf==${{ matrix.ocrmypdf }}"
+      - name: Verify installed OCRmyPDF
+        run: python -c "import importlib.metadata as m; print(m.version('ocrmypdf'))"
+      - name: OCRmyPDF plugin compatibility regressions
+        run: pytest -q tests/test_ocr_plugin.py
+
   rust:
     runs-on: ubuntu-latest
     steps:

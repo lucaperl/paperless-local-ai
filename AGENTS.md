@@ -73,13 +73,15 @@ Keep externally documented ports, secrets and integration contracts stable unles
 
 ## Compatibility
 
-The OCRmyPDF plugin and native suggestion bridge are verified against Paperless-ngx 3.1.0; the plugin targets OCRmyPDF 17.7.1's native `generate_ocr()` / `OcrElement` contract.
+The end-to-end reference remains Paperless-ngx 3.1.0 / OCRmyPDF 17.7.1. Paperless-ngx 3.2.0 / OCRmyPDF 17.11.0 has a checked source contract and dedicated CI regression path; do not promote it to the end-to-end tested reference until the production smoke tests are complete.
 
-### OCRmyPDF 17.7.1 fpdf2 DPI compatibility shim
+### OCRmyPDF 17.7.1 / 17.11.0 fpdf2 DPI compatibility shim
 
-`src/ocr/ocrmypdf_plai.py` contains a deliberately **17.7.1-only** compatibility shim for OCRmyPDF's native `generate_ocr()` / fpdf2 path. Some hybrid/vector PDFs expose zero `PdfInfo` DPI after successful PaddleOCR, which otherwise causes fpdf2 rendering to fail. The shim uses `OcrElement` DPI, then usable PDFInfo DPI, then `VECTOR_PAGE_DPI`, and is installed through OCRmyPDF's official `initialize()` plugin hook without changing `site-packages`.
+`src/ocr/ocrmypdf_plai.py` contains a deliberately version-gated compatibility shim for OCRmyPDF's native `generate_ocr()` / fpdf2 path. Both supported versions, **17.7.1** and **17.11.0**, retain the zero-`PdfInfo`-DPI behavior for some hybrid/vector PDFs after successful PaddleOCR. The shim uses `OcrElement` DPI, then usable PDFInfo DPI, then `VECTOR_PAGE_DPI`, and is installed through OCRmyPDF's official `initialize()` plugin hook without changing `site-packages`.
 
-**DO NOT broaden this workaround to a newer OCRmyPDF version without compatibility testing.** On every OCRmyPDF/Paperless version bump, explicitly inspect the newer native fpdf2 graft path, check whether the upstream zero-DPI behavior is fixed, run the OCR plugin regressions, and run one real Paperless hybrid-PDF reprocess with PaddleOCR. If upstream handles the case correctly, do not carry the shim forward to that version. Search for `_install_ocrmypdf_fpdf2_dpi_compat` when reviewing an OCRmyPDF upgrade.
+**DO NOT broaden this workaround beyond the explicitly supported OCRmyPDF versions without compatibility testing.** On every OCRmyPDF/Paperless version bump, explicitly inspect the target native fpdf2 graft path, check whether the upstream zero-DPI behavior is fixed, add the real package version to the GitHub compatibility matrix only after that review, run the OCR plugin regressions, and run one real Paperless hybrid-PDF reprocess with PaddleOCR. If upstream handles the case correctly, do not carry the shim forward to that version. Search for `_install_ocrmypdf_fpdf2_dpi_compat` when reviewing an OCRmyPDF upgrade.
+
+The suggestion bridge must keep Paperless-owned RAG/similar-document context out of review-record identity. Paperless-ngx 3.2.0 appends `Additional context from similar documents` even without an embedding backend; parser changes must remain exact and fail-closed.
 
 Hybrid tagging uses documented Paperless REST document/tag fields and depends on the configured review-tag workflow semantics. Do not broaden compatibility claims without integration testing the target Paperless release.
 
