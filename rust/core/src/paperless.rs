@@ -126,6 +126,23 @@ impl PaperlessClient {
         Ok(self.send(method, path, query, json).await?.json().await?)
     }
 
+    pub async fn server_version(&self) -> Result<String> {
+        let query = vec![("page_size".into(), "1".into())];
+        let response = self
+            .send(Method::GET, "/api/documents/", Some(&query), None)
+            .await?;
+        let version = response
+            .headers()
+            .get("X-Version")
+            .and_then(|value| value.to_str().ok())
+            .ok_or_else(|| {
+                Error::Invalid(
+                    "Authenticated Paperless API response is missing X-Version header".into(),
+                )
+            })?;
+        Ok(version.to_owned())
+    }
+
     pub async fn all_objects(&self, path: &str) -> Result<Vec<Value>> {
         let mut objects = Vec::new();
         let mut page = 1u64;

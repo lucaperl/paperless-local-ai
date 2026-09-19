@@ -81,7 +81,7 @@ The end-to-end reference remains Paperless-ngx 3.1.0 / OCRmyPDF 17.7.1. Paperles
 
 **DO NOT broaden this workaround beyond the explicitly supported OCRmyPDF versions without compatibility testing.** On every OCRmyPDF/Paperless version bump, explicitly inspect the target native fpdf2 graft path, check whether the upstream zero-DPI behavior is fixed, add the real package version to the GitHub compatibility matrix only after that review, run the OCR plugin regressions, and run one real Paperless hybrid-PDF reprocess with PaddleOCR. If upstream handles the case correctly, do not carry the shim forward to that version. Search for `_install_ocrmypdf_fpdf2_dpi_compat` when reviewing an OCRmyPDF upgrade.
 
-The suggestion bridge must keep Paperless-owned RAG/similar-document context out of review-record identity. Paperless-ngx 3.2.0 appends `Additional context from similar documents` even without an embedding backend; parser changes must remain exact and fail-closed.
+The suggestion bridge must keep Paperless-owned RAG/similar-document context out of review-record identity in both the primary Rust bridge and retained Python compatibility bridge. Paperless-ngx 3.2.0 appends `Additional context from similar documents` even without an embedding backend. Use the authenticated Paperless `X-Version` response header to select the known prompt contract: 3.0/3.1 have no mandatory wrapper, while the source-checked 3.2.0 contract requires exactly one wrapper. Missing/repeated 3.2 markers and unverified Paperless version families must fail closed.
 
 Hybrid tagging uses documented Paperless REST document/tag fields and depends on the configured review-tag workflow semantics. Do not broaden compatibility claims without integration testing the target Paperless release.
 
