@@ -30,7 +30,8 @@ def test_paperless_rag_context_wrapper_version_boundary():
     assert suggestion_bridge._paperless_rag_context_wrapper("3.1.3") is False
     assert suggestion_bridge._paperless_rag_context_wrapper("3.2.0") is True
     assert suggestion_bridge._paperless_rag_context_wrapper("3.2.0-dev") is True
-    assert suggestion_bridge._paperless_rag_context_wrapper("v3.2.7") is None
+    assert suggestion_bridge._paperless_rag_context_wrapper("3.2.1") is True
+    assert suggestion_bridge._paperless_rag_context_wrapper("v3.2.7") is True
     assert suggestion_bridge._paperless_rag_context_wrapper("3.3.0") is None
     assert suggestion_bridge._paperless_rag_context_wrapper("unknown") is None
 

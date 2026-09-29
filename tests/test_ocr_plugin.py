@@ -38,7 +38,6 @@ def test_supported_ocrmypdf_fpdf2_zero_pdfinfo_dpi_uses_ocr_tree_dpi(
     )
 
     installed_version = plugin._installed_ocrmypdf_version()
-    assert installed_version in plugin.OCRMY_PDF_FPDF2_DPI_COMPAT_VERSIONS
 
     assert (
         plugin._install_ocrmypdf_fpdf2_dpi_compat(
@@ -90,20 +89,35 @@ def test_supported_ocrmypdf_fpdf2_zero_pdfinfo_dpi_uses_ocr_tree_dpi(
     ]
 
 
-def test_ocrmypdf_fpdf2_dpi_compat_does_not_patch_unknown_versions():
-    original = ocrmypdf_graft.OcrGrafter._render_and_graft_fpdf2_pages
+def test_ocrmypdf_fpdf2_dpi_compat_is_contract_gated_not_version_gated(
+    monkeypatch,
+):
+    rendered = []
+
+    def fake_render(self):
+        rendered.append(True)
+        return "rendered"
+
+    monkeypatch.setattr(
+        ocrmypdf_graft.OcrGrafter,
+        "_render_and_graft_fpdf2_pages",
+        fake_render,
+    )
 
     assert (
         plugin._install_ocrmypdf_fpdf2_dpi_compat(
-            ocrmypdf_version="17.12.0"
+            ocrmypdf_version="99.0.0"
         )
-        is False
+        is True
     )
 
+    grafter = object.__new__(ocrmypdf_graft.OcrGrafter)
+    grafter.fpdf2_parsed_pages = []
     assert (
-        ocrmypdf_graft.OcrGrafter._render_and_graft_fpdf2_pages
-        is original
+        ocrmypdf_graft.OcrGrafter._render_and_graft_fpdf2_pages(grafter)
+        == "rendered"
     )
+    assert rendered == [True]
 
 
 def test_ocrmypdf_fpdf2_dpi_compat_fails_closed_on_contract_change(
@@ -115,7 +129,6 @@ def test_ocrmypdf_fpdf2_dpi_compat_fails_closed_on_contract_change(
     )
 
     installed_version = plugin._installed_ocrmypdf_version()
-    assert installed_version in plugin.OCRMY_PDF_FPDF2_DPI_COMPAT_VERSIONS
 
     with pytest.raises(
         RuntimeError,

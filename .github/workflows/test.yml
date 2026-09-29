@@ -38,7 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ocrmypdf: ["17.7.1", "17.11.0"]
+        ocrmypdf: ["17.7.1", "17.11.0", "17.12.1"]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

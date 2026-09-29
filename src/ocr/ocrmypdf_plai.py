@@ -1,9 +1,10 @@
 """OCRmyPDF engine plugin for paperless-local-ai.
 
-The native OCR engine contract is supported for OCRmyPDF 17.7.1 and 17.11.0.
-OCRmyPDF rasterizes a page, this bridge preconditions oversized OCR-only
-rasters to PaddleX's input limit, streams them to paperless-local-ai and returns
-OCRmyPDF's native OcrElement tree. No hOCR/XML roundtrip is used.
+The native OCR engine contract is checked at runtime before the fpdf2 DPI
+compatibility shim is installed. OCRmyPDF rasterizes a page, this bridge
+preconditions oversized OCR-only rasters to PaddleX's input limit, streams them
+to paperless-local-ai and returns OCRmyPDF's native OcrElement tree. No
+hOCR/XML roundtrip is used.
 """
 from __future__ import annotations
 
@@ -35,14 +36,13 @@ DEFAULT_RETRY_DELAYS_SECONDS = [15, 60, 300, 600]
 RETRY_STATUS_POLL_SECONDS = 2.0
 MAX_TOTAL_ATTEMPTS = 11
 
-# OCRmyPDF native-fpdf2 compatibility is deliberately version-gated.
+# OCRmyPDF native-fpdf2 compatibility is guarded by a runtime contract check.
 #
-# Paperless-ngx 3.1.x bundles 17.7.1 and Paperless-ngx 3.2.0 bundles 17.11.0.
-# Both versions retain the same generate_ocr()/OcrElement contract and the same
-# native fpdf2 graft behavior that can pass zero PdfInfo DPI for hybrid/vector
-# PDFs. Do not broaden this set without inspecting the target OCRmyPDF source
-# and running the dedicated compatibility regressions.
-OCRMY_PDF_FPDF2_DPI_COMPAT_VERSIONS = frozenset({"17.7.1", "17.11.0"})
+# Paperless-ngx 3.1.x / 3.2.0 / 3.2.1 have shipped OCRmyPDF 17.7.1 /
+# 17.11.0 / 17.12.1 respectively. These validated versions retain the same
+# generate_ocr()/OcrElement contract and the private fpdf2 graft surface used
+# by the zero-PdfInfo-DPI workaround below. Future versions are not accepted
+# blindly: the private surface must still pass _ocrmypdf_fpdf2_contract().
 _FPDF2_DPI_COMPAT_MARKER = "_paperless_local_ai_fpdf2_dpi_compat"
 
 
@@ -132,12 +132,13 @@ def _install_ocrmypdf_fpdf2_dpi_compat(
     *,
     ocrmypdf_version: str | None = None,
 ) -> bool:
-    """Install the version-gated native-fpdf2 DPI workaround.
+    """Install the contract-checked native-fpdf2 DPI workaround.
 
-    OCRmyPDF 17.7.1 and 17.11.0 store PdfInfo DPI directly in Fpdf2ParsedPage
-    for the native generate_ocr()/OcrElement path. Hybrid/vector PDFs can
-    report zero there even though the actual OCR raster and returned OcrElement
-    carry a valid DPI, causing fpdf2 to divide by zero after OCR completed.
+    OCRmyPDF 17.7.1, 17.11.0 and 17.12.1 store PdfInfo DPI directly in
+    Fpdf2ParsedPage for the native generate_ocr()/OcrElement path.
+    Hybrid/vector PDFs can report zero there even though the actual OCR raster
+    and returned OcrElement carry a valid DPI, causing fpdf2 to divide by zero
+    after OCR completed.
 
     Immediately before fpdf2 rendering, normalize each parsed page using the
     same preference order OCRmyPDF already uses for its hOCR path:
@@ -147,9 +148,9 @@ def _install_ocrmypdf_fpdf2_dpi_compat(
     This also preserves physical text-layer geometry when filter_ocr_image()
     downsamples the OCR-only raster and adjusts its DPI.
 
-    The shim is deliberately version-gated. Unknown OCRmyPDF versions are not
-    patched. For supported versions, an unexpected private contract fails
-    clearly instead of applying an unsafe monkeypatch.
+    The shim is guarded by the exact private surface it uses rather than an
+    OCRmyPDF patch-version allowlist. If that private contract changes, startup
+    fails clearly instead of applying an unsafe monkeypatch.
     """
 
     running_version = (
@@ -158,23 +159,11 @@ def _install_ocrmypdf_fpdf2_dpi_compat(
         else _installed_ocrmypdf_version()
     )
 
-    # Local build metadata is harmless, but pre/post releases remain distinct.
-    base_version = running_version.split("+", 1)[0]
-
-    if base_version not in OCRMY_PDF_FPDF2_DPI_COMPAT_VERSIONS:
-        LOG.info(
-            "OCRmyPDF %s is outside the version-gated fpdf2 DPI "
-            "compatibility set %s; leaving OCRmyPDF internals untouched",
-            running_version,
-            ", ".join(sorted(OCRMY_PDF_FPDF2_DPI_COMPAT_VERSIONS)),
-        )
-        return False
-
     import ocrmypdf._graft as graft
 
     grafter_cls, original, vector_page_dpi = _ocrmypdf_fpdf2_contract(
         graft,
-        base_version,
+        running_version,
     )
 
     if getattr(original, _FPDF2_DPI_COMPAT_MARKER, False):
