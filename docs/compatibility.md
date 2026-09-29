@@ -2,6 +2,8 @@
 
 Compatibility claims are intentionally narrow: an environment is listed as tested only after integration testing.
 
+Supported Paperless-ngx range for the current release: **3.1.0–3.2.1**.
+
 ## Tested reference environment
 
 | Component | Tested reference |
