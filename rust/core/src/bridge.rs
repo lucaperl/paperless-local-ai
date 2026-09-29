@@ -156,15 +156,7 @@ fn paperless_rag_context_wrapper(version: &str) -> Option<bool> {
 
     match (major, minor) {
         (3, 0 | 1) => Some(false),
-        (3, 2) => {
-            let patch = parts
-                .next()?
-                .split(|character: char| !character.is_ascii_digit())
-                .next()?
-                .parse::<u64>()
-                .ok()?;
-            (patch == 0).then_some(true)
-        }
+        (3, 2) => Some(true),
         _ => None,
     }
 }
@@ -625,7 +617,8 @@ mod tests {
         assert_eq!(paperless_rag_context_wrapper("3.1.3"), Some(false));
         assert_eq!(paperless_rag_context_wrapper("3.2.0"), Some(true));
         assert_eq!(paperless_rag_context_wrapper("3.2.0-dev"), Some(true));
-        assert_eq!(paperless_rag_context_wrapper("v3.2.7"), None);
+        assert_eq!(paperless_rag_context_wrapper("3.2.1"), Some(true));
+        assert_eq!(paperless_rag_context_wrapper("v3.2.7"), Some(true));
         assert_eq!(paperless_rag_context_wrapper("3.3.0"), None);
         assert_eq!(paperless_rag_context_wrapper("unknown"), None);
     }

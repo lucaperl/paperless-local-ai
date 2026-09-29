@@ -391,39 +391,33 @@ def test_public_docs_describe_current_tagging_product():
     assert "pre-0.3" not in combined
     assert "correspondent fallback" not in combined.lower()
 
-def test_ocrmypdf_dpi_workaround_is_version_gated_and_documented():
+def test_ocrmypdf_dpi_workaround_is_contract_gated_and_documented():
     plugin = (ROOT / "src/ocr/ocrmypdf_plai.py").read_text(encoding="utf-8")
     compatibility = (ROOT / "docs/compatibility.md").read_text(encoding="utf-8")
     agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
 
-    assert "OCRMY_PDF_FPDF2_DPI_COMPAT_VERSIONS" in plugin
-    assert '"17.7.1"' in plugin
-    assert '"17.11.0"' in plugin
+    assert "OCRMY_PDF_FPDF2_DPI_COMPAT_VERSIONS" not in plugin
+    assert "def _ocrmypdf_fpdf2_contract" in plugin
     assert "def _install_ocrmypdf_fpdf2_dpi_compat" in plugin
-    assert "outside the version-gated fpdf2 DPI" in plugin
+    assert "Fpdf2ParsedPage contract changed" in plugin
 
     assert (
-        "OCRmyPDF 17.7.1 / 17.11.0 native fpdf2 DPI workaround"
+        "OCRmyPDF 17.7.1 / 17.11.0 / 17.12.1 native fpdf2 DPI workaround"
         in compatibility
     )
     assert "Removal/update condition" in compatibility
-    assert "Paperless-ngx **3.2.0**" in compatibility
+    assert "Paperless-ngx **3.2.1**" in compatibility
 
-    assert (
-        "DO NOT broaden this workaround beyond the explicitly supported OCRmyPDF versions"
-        in agents
-    )
+    assert "runtime contract check" in agents
     assert "_install_ocrmypdf_fpdf2_dpi_compat" in agents
 
 
 def test_release_publish_rechecks_supported_ocrmypdf_versions():
     pr_ci = (ROOT / ".github/workflows/test.yml").read_text(encoding="utf-8")
     publish_ci = (ROOT / ".github/workflows/publish.yml").read_text(encoding="utf-8")
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    matrix = 'ocrmypdf: ["17.7.1", "17.11.0"]'
+    matrix = 'ocrmypdf: ["17.7.1", "17.11.0", "17.12.1"]'
 
     assert matrix in pr_ci
     assert matrix in publish_ci
     assert "pytest -q tests/test_ocr_plugin.py" in publish_ci
     assert "needs: [verify, verify-ocrmypdf, verify-rust]" in publish_ci
-    assert "Compatible with Paperless-ngx 3.2.0." in readme

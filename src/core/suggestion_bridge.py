@@ -124,16 +124,7 @@ def _paperless_rag_context_wrapper(version: str):
     if major == 3 and minor in {0, 1}:
         return False
     if major == 3 and minor == 2:
-        if len(parts) < 3:
-            return None
-        patch_digits = ""
-        for char in parts[2]:
-            if not char.isdigit():
-                break
-            patch_digits += char
-        if not patch_digits:
-            return None
-        return True if int(patch_digits) == 0 else None
+        return True
     return None
 
 
