@@ -123,7 +123,7 @@ def _paperless_rag_context_wrapper(version: str):
 
     if major == 3 and minor in {0, 1}:
         return False
-    if major == 3 and minor == 2:
+    if major == 3 and minor >= 2:
         return True
     return None
 

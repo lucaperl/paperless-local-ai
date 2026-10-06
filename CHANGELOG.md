@@ -5,11 +5,12 @@
 ### Fixed
 
 - support Paperless-ngx 3.2.1 / OCRmyPDF 17.12.1 by replacing the exact OCRmyPDF patch-version allowlist with runtime validation of the private fpdf2 contract actually used by the zero-DPI workaround, while adding 17.12.1 to the CI and release compatibility matrices.
-- treat Paperless-ngx 3.2.x as one checked suggestion-bridge prompt family after verifying that 3.2.1 retains the 3.2.0 classification wrapper contract; Paperless 3.3 and other unreviewed minor-version families remain fail-closed.
+- treat Paperless-ngx 3.x from minor version 2 onward as one suggestion-bridge prompt-contract family instead of maintaining a per-release allowlist; source review confirms Paperless 3.3.0 retains the 3.2.1 classifier and prompt templates, while Paperless 4.x remains fail-closed until reviewed.
 
 ### Changed
 
 - remove the README compatibility string assertion from CI; compatibility is documented and reviewed per Paperless release while executable compatibility checks stay focused on the actual OCRmyPDF and suggestion-bridge contracts.
+- extend the documented supported Paperless-ngx range to **3.1.0–3.3.0**; Paperless 3.3.0 keeps OCRmyPDF 17.12.1, so the OCR compatibility matrix does not need another version entry.
 
 ## 0.5.1 - 2026-09-19
 

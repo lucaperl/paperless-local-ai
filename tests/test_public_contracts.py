@@ -406,7 +406,7 @@ def test_ocrmypdf_dpi_workaround_is_contract_gated_and_documented():
         in compatibility
     )
     assert "Removal/update condition" in compatibility
-    assert "Paperless-ngx **3.2.1**" in compatibility
+    assert "Paperless-ngx **3.3.0**" in compatibility
 
     assert "runtime contract check" in agents
     assert "_install_ocrmypdf_fpdf2_dpi_compat" in agents
