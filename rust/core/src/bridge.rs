@@ -156,7 +156,7 @@ fn paperless_rag_context_wrapper(version: &str) -> Option<bool> {
 
     match (major, minor) {
         (3, 0 | 1) => Some(false),
-        (3, 2) => Some(true),
+        (3, minor) if minor >= 2 => Some(true),
         _ => None,
     }
 }
@@ -612,14 +612,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn paperless_prompt_shape_is_version_gated() {
+    fn paperless_prompt_shape_uses_version_family_contracts() {
         assert_eq!(paperless_rag_context_wrapper("3.0.5"), Some(false));
         assert_eq!(paperless_rag_context_wrapper("3.1.3"), Some(false));
         assert_eq!(paperless_rag_context_wrapper("3.2.0"), Some(true));
         assert_eq!(paperless_rag_context_wrapper("3.2.0-dev"), Some(true));
         assert_eq!(paperless_rag_context_wrapper("3.2.1"), Some(true));
-        assert_eq!(paperless_rag_context_wrapper("v3.2.7"), Some(true));
-        assert_eq!(paperless_rag_context_wrapper("3.3.0"), None);
+        assert_eq!(paperless_rag_context_wrapper("3.3.0"), Some(true));
+        assert_eq!(paperless_rag_context_wrapper("v3.9.9"), Some(true));
+        assert_eq!(paperless_rag_context_wrapper("4.0.0"), None);
         assert_eq!(paperless_rag_context_wrapper("unknown"), None);
     }
 
