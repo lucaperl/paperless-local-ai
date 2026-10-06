@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.2 - 2026-10-06
+
 ### Fixed
 
 - support Paperless-ngx 3.2.1 / OCRmyPDF 17.12.1 by replacing the exact OCRmyPDF patch-version allowlist with runtime validation of the private fpdf2 contract actually used by the zero-DPI workaround, while adding 17.12.1 to the CI and release compatibility matrices.
