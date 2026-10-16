@@ -3,6 +3,6 @@
 # OCRmyPDF is supplied by Paperless, not PLAI. Keep this dev/test pin aligned
 # with the OCRmyPDF version used by the tested Paperless reference stack.
 # Change it only together with Paperless/OCR plugin compatibility validation.
-ocrmypdf==17.7.1
+ocrmypdf==17.12.1
 
 pytest==9.1.1
