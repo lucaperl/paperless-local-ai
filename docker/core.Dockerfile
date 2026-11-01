@@ -8,7 +8,7 @@ COPY src/core/prompt_ui.py src/core/prompt_ui.py
 
 RUN cargo build --locked --release -p plai-core --bin plai-core --bin plai-healthcheck
 
-FROM python:3.14-slim-bookworm
+FROM python:3.15-slim-bookworm
 
 ARG APP_VERSION=dev
 ARG SOURCE_URL=""
